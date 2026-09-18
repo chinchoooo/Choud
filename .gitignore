@@ -1,0 +1,49 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# --- Node / Web ---
+node_modules/
+web/dist/
+web/.vite/
+*.tsbuildinfo
+
+# --- C++ / CMake ---
+engine/build/
+engine/cmake-build-*/
+*.o
+*.obj
+*.so
+*.a
+*.exe
+CMakeFiles/
+CMakeCache.txt
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Data / storage ---
+data/
+backups/
+*.db
+*.sqlite3
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# --- Logs ---
+*.log
+logs/
