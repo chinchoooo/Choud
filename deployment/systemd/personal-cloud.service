@@ -1,0 +1,24 @@
+# Runs the Docker Compose stack on boot. Implemented for Phase 9 (Remote
+# Access); see docs/deployment.md.
+#
+# Install with:
+#   sudo cp deployment/systemd/personal-cloud.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now personal-cloud
+
+[Unit]
+Description=Personal Cloud (Docker Compose stack)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/personal-cloud
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

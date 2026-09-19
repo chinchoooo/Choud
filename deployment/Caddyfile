@@ -1,0 +1,19 @@
+# Reverse proxy for LAN / Tailscale access. See docs/deployment.md.
+#
+# For a public domain with automatic HTTPS, replace ":80" with your
+# hostname (e.g. "cloud.example.com") and Caddy will provision a
+# certificate automatically.
+
+:80 {
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    handle /s/* {
+        reverse_proxy backend:8000
+    }
+
+    handle {
+        reverse_proxy frontend:5173
+    }
+}
