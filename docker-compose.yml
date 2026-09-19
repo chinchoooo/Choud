@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cloud}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-personal_cloud}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cloud} -d ${POSTGRES_DB:-personal_cloud}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  engine:
+    build:
+      context: ./engine
+    restart: unless-stopped
+    environment:
+      ENGINE_HOST: 0.0.0.0
+      ENGINE_PORT: ${ENGINE_PORT:-9000}
+      STORAGE_ROOT: ${STORAGE_ROOT:-/data/cloud}
+    volumes:
+      - storage_data:${STORAGE_ROOT:-/data/cloud}
+    # Not published to the host: the engine is only reachable from the
+    # backend, over the internal Docker network.
+    expose:
+      - "9000"
+    healthcheck:
+      test: ["CMD", "/app/scripts/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      engine:
+        condition: service_started
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cloud}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-personal_cloud}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      ENGINE_HOST: engine
+      ENGINE_PORT: ${ENGINE_PORT:-9000}
+      STORAGE_ROOT: ${STORAGE_ROOT:-/data/cloud}
+      JWT_SECRET: ${JWT_SECRET:-changeme-generate-a-long-random-string}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      BACKEND_LOG_LEVEL: ${BACKEND_LOG_LEVEL:-info}
+    volumes:
+      - storage_data:${STORAGE_ROOT:-/data/cloud}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+
+  frontend:
+    build:
+      context: ./web
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+
+  reverse-proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deployment/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+  storage_data:
+  caddy_data:
+  caddy_config:
