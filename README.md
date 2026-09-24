@@ -39,18 +39,19 @@ See [`docs/architecture.md`](docs/architecture.md) for details.
 This repository is being built incrementally, phase by phase (see
 [`docs/architecture.md`](docs/architecture.md#development-phases)).
 
-**Currently implemented: Phase 1 — Infrastructure scaffold.**
+**Currently implemented: Phase 2 — Authentication.**
 
-- Repository layout matching `docs/architecture.md`'s design
+- Repository layout
 - Docker Compose (PostgreSQL, backend, engine, frontend, reverse proxy)
 - FastAPI skeleton with configuration and structured logging
 - Local HTTP communication between the Python backend and the C++ engine
 - Health endpoints on both services
 - Test infrastructure (pytest, GoogleTest, Vitest)
-- Every module for later phases exists as a stub file pointing at the
-  phase that implements it — see `CLAUDE.md` for the roadmap.
+- User registration, login, JWT access/refresh tokens (Argon2id password
+  hashing), and a `get_current_user` dependency every later endpoint uses
+  (see `docs/api.md#auth`)
 
-Auth, files, storage, uploads, versioning, sync, and sharing are **not
+Files/folders, storage, uploads, versioning, sync, and sharing are **not
 yet implemented** — they land in later phases.
 
 ## Getting started
