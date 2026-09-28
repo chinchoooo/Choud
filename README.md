@@ -39,7 +39,7 @@ See [`docs/architecture.md`](docs/architecture.md) for details.
 This repository is being built incrementally, phase by phase (see
 [`docs/architecture.md`](docs/architecture.md#development-phases)).
 
-**Currently implemented: Phase 2 — Authentication.**
+**Currently implemented: Phase 3 — Basic Files.**
 
 - Repository layout
 - Docker Compose (PostgreSQL, backend, engine, frontend, reverse proxy)
@@ -48,11 +48,19 @@ This repository is being built incrementally, phase by phase (see
 - Health endpoints on both services
 - Test infrastructure (pytest, GoogleTest, Vitest)
 - User registration, login, JWT access/refresh tokens (Argon2id password
-  hashing), and a `get_current_user` dependency every later endpoint uses
+  hashing), and a `get_current_user` dependency every file endpoint uses
   (see `docs/api.md#auth`)
+- Folders and files: create/rename/move/delete folders, upload/download/
+  rename/move/delete files (soft delete — trash proper lands in Phase 6),
+  filename search — all owner-scoped, with path-traversal-safe storage
+  (bytes are never written to a client-supplied path); bytes are written
+  directly under `STORAGE_ROOT` for now, ahead of Phase 4's
+  content-addressed engine
+- A working web UI: register/login, a file browser (breadcrumb
+  navigation, upload, new folder, rename, move, delete, download, search)
 
-Files/folders, storage, uploads, versioning, sync, and sharing are **not
-yet implemented** — they land in later phases.
+Content-addressed storage, resumable uploads, versioning, sync, and
+sharing are **not yet implemented** — they land in later phases.
 
 ## Getting started
 
