@@ -39,7 +39,7 @@ See [`docs/architecture.md`](docs/architecture.md) for details.
 This repository is being built incrementally, phase by phase (see
 [`docs/architecture.md`](docs/architecture.md#development-phases)).
 
-**Currently implemented: Phase 3 — Basic Files.**
+**Currently implemented: Phase 4 — C++ Storage Engine.**
 
 - Repository layout
 - Docker Compose (PostgreSQL, backend, engine, frontend, reverse proxy)
@@ -53,14 +53,16 @@ This repository is being built incrementally, phase by phase (see
 - Folders and files: create/rename/move/delete folders, upload/download/
   rename/move/delete files (soft delete — trash proper lands in Phase 6),
   filename search — all owner-scoped, with path-traversal-safe storage
-  (bytes are never written to a client-supplied path); bytes are written
-  directly under `STORAGE_ROOT` for now, ahead of Phase 4's
-  content-addressed engine
+  (bytes are never written to a client-supplied path)
+- A real C++ storage engine: streaming SHA-256 (OpenSSL), a
+  content-addressed object store sharded by hash prefix, and
+  deduplication — uploading the same bytes twice stores them once
+  physically, verified by a test that inspects storage directly
 - A working web UI: register/login, a file browser (breadcrumb
   navigation, upload, new folder, rename, move, delete, download, search)
 
-Content-addressed storage, resumable uploads, versioning, sync, and
-sharing are **not yet implemented** — they land in later phases.
+Chunked uploads, versioning, sync, and sharing are **not yet
+implemented** — they land in later phases.
 
 ## Getting started
 
