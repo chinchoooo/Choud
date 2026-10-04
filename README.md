@@ -39,7 +39,7 @@ See [`docs/architecture.md`](docs/architecture.md) for details.
 This repository is being built incrementally, phase by phase (see
 [`docs/architecture.md`](docs/architecture.md#development-phases)).
 
-**Currently implemented: Phase 4 — C++ Storage Engine.**
+**Currently implemented: Phase 5 — Chunked Uploads.**
 
 - Repository layout
 - Docker Compose (PostgreSQL, backend, engine, frontend, reverse proxy)
@@ -58,14 +58,19 @@ This repository is being built incrementally, phase by phase (see
   content-addressed object store sharded by hash prefix, and
   deduplication — uploading the same bytes twice stores them once
   physically, verified by a test that inspects storage directly
+- Resumable chunked uploads: large files are split into chunks client-side,
+  uploaded independently, and reconstructed server-side with a streaming
+  hash check — killing the connection partway and resuming only resends
+  the chunks that never arrived (see `docs/api.md#uploads--resumable-chunked-uploads`
+  and `docs/storage.md#chunked-uploads`)
 - A working web UI: register/login, a file browser (breadcrumb
-  navigation, upload, new folder, rename, move, delete, download, search)
+  navigation, upload — chunked with a "Resume upload" button for large
+  files — new folder, rename, move, delete, download, search)
 
-Chunked uploads, versioning, sync, and sharing are **not yet
+Versioning, trash restore/purge, sync, and sharing are **not yet
 implemented** — they land in later phases.
 
 ## Getting started
-
 
 ```bash
 cp .env.example .env
