@@ -21,7 +21,12 @@ format:
 	cd web && npm run format
 
 migrate:
-	cd server && alembic upgrade head
+	cd server && bash scripts/migrate.sh
+
+# Run migrations inside the running backend container (use this after
+# `make docker-up` / `docker compose up` on a fresh database).
+docker-migrate:
+	docker compose exec backend bash scripts/migrate.sh
 
 docker-up:
 	docker compose up -d --build
