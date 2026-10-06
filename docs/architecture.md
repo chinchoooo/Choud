@@ -16,6 +16,12 @@ distributed databases, complicated cloud infrastructure, enterprise
 multi-tenancy, unnecessary abstractions, rewriting mature cryptographic
 primitives.
 
+One deliberate exception: **Meilisearch** is allowed as a single,
+optional search service for full-text search over file contents
+(Phase 14). It is a small single-binary service, not a cluster, and the
+core system must keep working when it is absent (filename search stays in
+PostgreSQL). Elasticsearch-class stacks remain out of scope.
+
 See [Explicit Non-Goals](#explicit-non-goals) for the full list of things
 this project will not become.
 
@@ -316,6 +322,41 @@ Phase 1: `docker compose up` starts all services.
 10. **Hardening** — rate limiting, security headers, logging, backup,
     restore, health monitoring, failure recovery.
 
+### Extended roadmap (Phases 11–18)
+
+Added after the original ten phases when the product vision grew from a
+single-user personal cloud to an open-source, self-hostable Google Drive
+alternative. **Strategy: backend and functionality first; the Google
+Drive-style web redesign (Phase 17) is built last.** Until then the web UI
+stays minimal — each feature gets only the bare UI needed to exercise it.
+
+11. **Activity, Favorites, Quotas** — activity log, starred files, recent
+    files, per-user storage usage and quota enforcement (API first).
+12. **Sharing and Collaboration** — public link shares (unguessable token,
+    optional expiry/password), sharing with specific users (viewer/editor),
+    "shared with me", comments.
+13. **Two-Factor Authentication** — TOTP with recovery codes, passkeys
+    (WebAuthn), optional enforcement for admins.
+14. **Search and Media** — Meilisearch full-text search over file contents
+    (text extraction for PDF/Office/plain text), thumbnails, inline preview
+    endpoints. Runs as background work, never inside a request handler.
+15. **Self-Hosting Release Readiness** — open-registration admin toggle,
+    admin dashboard (users, quotas, storage stats), first-run setup wizard,
+    published Docker images, desktop installers, license choice, backup
+    scheduling and alerting, object garbage collection.
+16. **Mobile API Support** — whatever the backend needs for a native
+    client: photo-backup endpoints, resumable background uploads, offline
+    manifests. (Server side only.)
+17. **Web Redesign** — the Drive-like frontend: grid/list views,
+    thumbnails, drag-and-drop, multi-select and bulk actions, sharing and
+    version dialogs, Starred/Recent/Trash/Shared views.
+18. **Native Mobile App** — feature parity with the web UI as far as
+    practical, photo auto-backup, offline files. Framework to be chosen
+    (React Native/Expo is the leading candidate).
+
+**Intended execution order:** 6 → 11 → 12 → 13 → 14 → 7 → 8 → 15 → 9 → 10
+→ 16 → 17 → 18. Each phase still follows the Implementation Rules below.
+
 ## Implementation Rules
 
 1. **Work incrementally.** One phase at a time. After each: build, run
@@ -340,10 +381,13 @@ Not implemented unless the core system is finished, and most never at
 all: Kubernetes, microservices everywhere, distributed PostgreSQL, S3
 compatibility, multi-region replication, CRDT-based synchronization,
 end-to-end encrypted collaborative editing, an online Office/Docs clone,
-video transcoding, enterprise RBAC, complex billing, multi-tenant SaaS, a
-mobile app, AI features, blockchain, custom cryptography.
+video transcoding, enterprise RBAC, complex billing, multi-tenant SaaS, AI
+features, blockchain, custom cryptography.
 
-The project stays a personal cloud, not a startup incubator.
+A native mobile app was originally on this list; it moved into the roadmap
+as Phase 18 (see the extended roadmap above).
+
+The project stays a self-hostable personal cloud, not a startup incubator.
 
 ## See also
 
