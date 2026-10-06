@@ -11,11 +11,24 @@ This runs `docker compose up -d --build`, starting PostgreSQL, the C++
 engine, the FastAPI backend, the React frontend (Vite dev server), and a
 Caddy reverse proxy. See [`docker-compose.yml`](../docker-compose.yml).
 
+**On a fresh database, apply migrations before using the app** — the
+containers starting up does not create any tables:
+
+```bash
+make docker-migrate
+```
+
 Verify with:
 
 ```bash
 ./scripts/healthcheck.sh
 ```
+
+Accessing the app from a different machine than the one running Docker
+(LAN, Tailscale, a real domain)? Set `VITE_API_BASE_URL=` (empty) in
+`.env` instead of leaving the `localhost` default — see
+[`errors.md`](errors.md) for why, and for other real problems people
+hit during first-time setup.
 
 ## Networking
 
