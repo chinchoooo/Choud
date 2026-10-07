@@ -333,8 +333,9 @@ roadmap is therefore split into two milestones:
 - **Milestone 1 — "Daily driver" (build first):** everything needed to
   actually replace paid cloud storage on the owner's own laptop: files,
   versions, trash, a working web UI for all of it, desktop sync with
-  offline/conflict handling, remote access over Tailscale, and backups.
-  Nothing in Milestone 1 is optional.
+  offline/conflict handling, **phone folder sync that keeps working in the
+  background**, remote access over Tailscale, and backups. Nothing in
+  Milestone 1 is optional.
 - **Milestone 2 — "Everything else" (build after Milestone 1 is in daily
   use):** sharing, 2FA, search/thumbnails, release packaging, the Drive-style
   redesign and the native mobile app.
@@ -358,22 +359,39 @@ UI stays functional-but-plain during Milestone 1 (tables, `window.prompt` /
     admin dashboard (users, quotas, storage stats), first-run setup wizard,
     published Docker images, desktop installers, license choice, backup
     scheduling and alerting, object garbage collection.
-16. **Mobile API Support** — whatever the backend needs for a native
-    client: photo-backup endpoints, resumable background uploads, offline
-    manifests. (Server side only.)
+16. **Mobile API Support** *(Milestone 1)* — whatever the backend needs for
+    a phone sync client: stable device-friendly auth/token refresh, cheap
+    "what changed since X" listing, resumable uploads that tolerate being
+    killed by the OS, and server-side idempotency so retried background
+    uploads never create duplicates.
 17. **Web Redesign** — the Drive-like frontend: grid/list views,
     thumbnails, drag-and-drop, multi-select and bulk actions, sharing and
     version dialogs, Starred/Recent/Trash/Shared views.
-18. **Native Mobile App** — feature parity with the web UI as far as
-    practical, photo auto-backup, offline files. Framework to be chosen
-    (React Native/Expo is the leading candidate).
+18. **Native Mobile App** — split in two:
+    - **18a — Phone folder sync** *(Milestone 1)*: the user picks folders on
+      the phone (camera roll, Downloads, Documents, …), they are mapped to
+      server folders, and new/changed files upload — and server changes
+      download — **in the background** without the app being open, using the
+      OS background-work facilities (Android WorkManager; iOS background
+      tasks/BGTaskScheduler, which are far more limited). Reuses the
+      Phase 7/8 sync model (local state DB, durable queue, conflict
+      copies). UI is bare-minimum: login, folder pairing, sync status.
+    - **18b — Full mobile app** *(Milestone 2)*: Drive-style browsing,
+      previews, sharing, offline-available files.
+
+    Framework is undecided. Background folder sync is the deciding factor:
+    it needs native platform APIs (Android scoped storage/MediaStore +
+    WorkManager, iOS Photos/Files access), which weighs toward Kotlin
+    (+ Swift) or a framework with first-class native-module support; a
+    pure Expo managed app is likely too restrictive. Decide at the start of
+    18a after confirming which phone platform(s) the owner uses.
 
 **Intended execution order**
 
 | Milestone | Order | Notes |
 | --- | --- | --- |
-| 1 — Daily driver | 6 → 9 → 10-lite → 7 → 8 | Phase 6 includes a plain Trash page and version list in the web UI. Phase 9 (deploy to the laptop over Tailscale) comes right after Phase 6 so the owner uses the real thing early. 10-lite = scheduled backup + restore test, scheduled upload-session sweep, basic rate limiting. Phases 7–8 add desktop sync, offline queue and conflict copies. |
-| 2 — Everything else | 11 → 15 (GC + backup alerting first) → 12 → 14 → 13 → 16 → 17 → 18 | Order inside Milestone 2 is flexible and can be re-ranked by what the owner misses most. |
+| 1 — Daily driver | 6 → 9 → 10-lite → 7 → 8 → 16 → 18a | Phase 6 includes a plain Trash page and version list in the web UI. Phase 9 (deploy to the laptop over Tailscale) comes right after Phase 6 so the owner uses the real thing early. 10-lite = scheduled backup + restore test, scheduled upload-session sweep, basic rate limiting. Phases 7–8 add desktop sync, offline queue and conflict copies. Phases 16 + 18a add the mobile API support and background phone-folder sync. |
+| 2 — Everything else | 11 → 15 (GC + backup alerting first) → 12 → 14 → 13 → 17 → 18b | Order inside Milestone 2 is flexible and can be re-ranked by what the owner misses most. |
 
 The rest of Phase 10 (full hardening pass) happens before Phase 15's public
 release work. Each phase still follows the Implementation Rules below.
