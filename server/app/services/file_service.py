@@ -24,25 +24,14 @@ from app.core.config import get_settings
 from app.models.file import File
 from app.models.folder import Folder
 from app.models.user import User
+from app.services.errors import ConflictError, NotFoundError, StorageError, ValidationError
 from app.services.storage_service import get_storage_service
 
 settings = get_settings()
 
-
-class NotFoundError(Exception):
-    """The requested file/folder doesn't exist, isn't owned by this user, or is deleted."""
-
-
-class ConflictError(Exception):
-    """The operation would violate a business rule (duplicate name, cycle, non-empty folder)."""
-
-
-class ValidationError(Exception):
-    """The request data is well-formed JSON/multipart but semantically invalid."""
-
-
-class StorageError(Exception):
-    """The storage engine couldn't complete the request (unreachable, object missing/corrupted)."""
+# NotFoundError/ConflictError/ValidationError/StorageError are imported from
+# app.services.errors above but stay reachable as `file_service.<Name>` (the
+# API layer and upload_service rely on that); see errors.py for why they moved.
 
 
 def _staging_dir() -> Path:
