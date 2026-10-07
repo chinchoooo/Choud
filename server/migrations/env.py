@@ -7,9 +7,9 @@ from app.core.config import get_settings
 from app.core.database import Base
 
 # Import models so they register on Base.metadata as they're added.
-from app.models import file, folder, upload, user  # noqa: F401
+from app.models import file, file_version, folder, upload, user  # noqa: F401
 
-# from app.models import file_version, share  # noqa: E501
+# from app.models import share  # noqa: E501
 
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)

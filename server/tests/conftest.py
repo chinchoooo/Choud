@@ -10,7 +10,7 @@ from app.main import app
 
 # Import every model so its table registers on Base.metadata before
 # create_all runs below. Add new models here as later phases land.
-from app.models import file, folder, upload  # noqa: F401
+from app.models import file, file_version, folder, upload  # noqa: F401
 from app.models.user import User
 
 
