@@ -326,9 +326,23 @@ Phase 1: `docker compose up` starts all services.
 
 Added after the original ten phases when the product vision grew from a
 single-user personal cloud to an open-source, self-hostable Google Drive
-alternative. **Strategy: backend and functionality first; the Google
-Drive-style web redesign (Phase 17) is built last.** Until then the web UI
-stays minimal — each feature gets only the bare UI needed to exercise it.
+alternative. **Strategy: get a usable, full-scale app into the owner's
+hands as soon as possible; anything that is a luxury comes later.** The
+roadmap is therefore split into two milestones:
+
+- **Milestone 1 — "Daily driver" (build first):** everything needed to
+  actually replace paid cloud storage on the owner's own laptop: files,
+  versions, trash, a working web UI for all of it, desktop sync with
+  offline/conflict handling, remote access over Tailscale, and backups.
+  Nothing in Milestone 1 is optional.
+- **Milestone 2 — "Everything else" (build after Milestone 1 is in daily
+  use):** sharing, 2FA, search/thumbnails, release packaging, the Drive-style
+  redesign and the native mobile app.
+
+Rule of thumb for deciding which side a feature lands on: *if the owner
+could stop paying for cloud storage without it, it is Milestone 2.* The web
+UI stays functional-but-plain during Milestone 1 (tables, `window.prompt` /
+`confirm`); each Milestone 1 feature gets just enough UI to be usable.
 
 11. **Activity, Favorites, Quotas** — activity log, starred files, recent
     files, per-user storage usage and quota enforcement (API first).
@@ -354,8 +368,15 @@ stays minimal — each feature gets only the bare UI needed to exercise it.
     practical, photo auto-backup, offline files. Framework to be chosen
     (React Native/Expo is the leading candidate).
 
-**Intended execution order:** 6 → 11 → 12 → 13 → 14 → 7 → 8 → 15 → 9 → 10
-→ 16 → 17 → 18. Each phase still follows the Implementation Rules below.
+**Intended execution order**
+
+| Milestone | Order | Notes |
+| --- | --- | --- |
+| 1 — Daily driver | 6 → 9 → 10-lite → 7 → 8 | Phase 6 includes a plain Trash page and version list in the web UI. Phase 9 (deploy to the laptop over Tailscale) comes right after Phase 6 so the owner uses the real thing early. 10-lite = scheduled backup + restore test, scheduled upload-session sweep, basic rate limiting. Phases 7–8 add desktop sync, offline queue and conflict copies. |
+| 2 — Everything else | 11 → 15 (GC + backup alerting first) → 12 → 14 → 13 → 16 → 17 → 18 | Order inside Milestone 2 is flexible and can be re-ranked by what the owner misses most. |
+
+The rest of Phase 10 (full hardening pass) happens before Phase 15's public
+release work. Each phase still follows the Implementation Rules below.
 
 ## Implementation Rules
 
