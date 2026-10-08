@@ -114,6 +114,8 @@ def update(
         return file_service.update_file(db, current_user, file_id, data)
     except file_service.NotFoundError as exc:
         raise _not_found(exc) from exc
+    except file_service.ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)

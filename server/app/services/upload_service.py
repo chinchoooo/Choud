@@ -22,6 +22,7 @@ from app.core.config import get_settings
 from app.models.file import File
 from app.models.upload import Upload
 from app.models.user import User
+from app.services import version_service
 from app.services.engine_client import EngineError, ObjectCorruptedError
 from app.services.file_service import (
     ConflictError,
@@ -153,19 +154,19 @@ def complete_upload(db: Session, owner: User, upload_id: uuid.UUID) -> File:
         raise StorageError(f"could not complete upload: {exc}") from exc
 
     mime_type = mimetypes.guess_type(upload.file_name)[0]
-    file = File(
-        id=uuid.uuid4(),
-        owner_id=owner.id,
-        folder_id=upload.folder_id,
-        name=upload.file_name,
-        mime_type=mime_type,
-        size=size,
-        content_hash=content_hash,
-        storage_key=content_hash,
-    )
     upload.status = "completed"
-    db.add(file)
     try:
+        # Same rule as a plain upload: a new file, or the next version of the
+        # live file with this name in this folder (version_service.save_content).
+        file = version_service.save_content(
+            db,
+            owner,
+            folder_id=upload.folder_id,
+            name=upload.file_name,
+            mime_type=mime_type,
+            size=size,
+            content_hash=content_hash,
+        )
         db.commit()
     except Exception:
         db.rollback()

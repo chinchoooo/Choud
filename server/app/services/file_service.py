@@ -24,6 +24,7 @@ from app.core.config import get_settings
 from app.models.file import File
 from app.models.folder import Folder
 from app.models.user import User
+from app.services import version_service
 from app.services.errors import ConflictError, NotFoundError, StorageError, ValidationError
 from app.services.storage_service import get_storage_service
 
@@ -248,21 +249,19 @@ async def upload_file(
         staging_path.unlink(missing_ok=True)
         raise StorageError(f"could not store uploaded file: {exc}") from exc
 
-    file = File(
-        id=uuid.uuid4(),
-        owner_id=owner.id,
-        folder_id=folder_id,
-        name=resolved_name,
-        mime_type=mime_type,
-        size=len(content),
-        content_hash=content_hash,
-        # The object is located purely by content hash now — storage_key
-        # keeps its original meaning ("the key used to locate bytes in
-        # the storage backend"), it's just that that key is the hash.
-        storage_key=content_hash,
-    )
-    db.add(file)
+    # Creates the file (version 1), or appends a new version if the owner
+    # already has a live file with this name in this folder, or does nothing
+    # if the bytes are identical (see version_service.save_content).
     try:
+        file = version_service.save_content(
+            db,
+            owner,
+            folder_id=folder_id,
+            name=resolved_name,
+            mime_type=mime_type,
+            size=len(content),
+            content_hash=content_hash,
+        )
         db.commit()
     except Exception:
         db.rollback()
@@ -279,8 +278,12 @@ def get_file(db: Session, owner: User, file_id: uuid.UUID) -> File:
     return _get_file_or_404(db, owner, file_id)
 
 
-def prepare_download(file: File) -> Path:
+def prepare_download(file: File, content_hash: str | None = None) -> Path:
     """Copies `file`'s bytes out of the engine's store to a fresh staging path.
+
+    Downloads the current content by default; pass `content_hash` to fetch an
+    older version's bytes instead (the file's name is still used for the
+    staging path, so the download keeps its filename).
 
     Returns the staging path so the API layer can stream it in a response
     and then delete it (see the `BackgroundTask` in `app/api/files.py`) —
@@ -294,7 +297,7 @@ def prepare_download(file: File) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
     storage = get_storage_service()
     try:
-        storage.retrieve(file.content_hash, destination)
+        storage.retrieve(content_hash or file.content_hash, destination)
     except Exception as exc:
         raise StorageError(f"could not retrieve stored file: {exc}") from exc
     return destination
@@ -309,8 +312,18 @@ def update_file(db: Session, owner: User, file_id: uuid.UUID, data: dict) -> Fil
         if new_folder_id is not None:
             _get_folder_or_404(db, owner, new_folder_id)
 
-    if "name" in data:
-        file.name = data["name"]
+    new_name = data.get("name", file.name)
+
+    # Versioning treats (owner, folder, name) as a file's identity: uploading
+    # that name again adds a version. Two live files sharing one would make
+    # that ambiguous, so reject the rename/move instead (Rule 5: surface it,
+    # don't guess which file the user meant).
+    if (new_name, new_folder_id) != (file.name, file.folder_id):
+        clash = version_service.find_live_file(db, owner, new_folder_id, new_name)
+        if clash is not None and clash.id != file.id:
+            raise ConflictError("a file with that name already exists in that folder")
+
+    file.name = new_name
     file.folder_id = new_folder_id
 
     db.commit()
