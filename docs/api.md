@@ -96,6 +96,13 @@ is stored as metadata only and never used to build a filesystem path
 (see [`security.md`](security.md#filesystem-safety)); the actual on-disk
 key is server-generated.
 
+**Same name = new version.** If the caller already has a live (non-trashed)
+file with that name in that folder, the upload does not create a second
+file: it appends a new [version](#versions) and returns the *existing*
+file's metadata (same `id`, new `content_hash`/`size`), still `201`.
+Uploading **identical bytes** under the same name is a no-op that returns
+the file unchanged. The same rule applies when a chunked upload completes.
+
 `GET /api/files/{id}` — metadata only. `GET /api/files/{id}/download` —
 streams the bytes with a `Content-Disposition` built from the stored
 name. Both `404` for a missing/not-owned/deleted file.
@@ -105,7 +112,9 @@ in one call; only fields present in the request body are applied (so
 `{"folder_id": null}` moves a file to the root, while omitting
 `folder_id` entirely leaves it where it is). `404` if the target parent
 doesn't exist/isn't owned. Moving a folder into itself or one of its own
-subfolders is rejected with `409` (cycle prevention).
+subfolders is rejected with `409` (cycle prevention). Renaming or moving a
+**file** onto a name that already exists in the destination folder is also
+`409` — a file's identity for versioning is (owner, folder, name).
 
 `DELETE /api/files/{id}` — **soft** delete (sets `deleted_at`); the file
 disappears from listings, search, and direct access, but a proper
@@ -187,17 +196,38 @@ wired to a scheduler — call it from a cron job, a management script, or
 alongside `scripts/healthcheck.sh` once this runs somewhere that has one
 (Rule 2: no infrastructure this project doesn't need yet).
 
+### Versions
+
+```text
+GET    /api/files/{id}/versions
+GET    /api/files/{id}/versions/{version_id}/download
+POST   /api/files/{id}/versions/{version_id}/restore
+```
+
+`GET .../versions` → `{file_id, versions: [...]}`, **newest first**. Each
+version: `id`, `file_id`, `version_number` (1-based, strictly increasing),
+`content_hash`, `size`, `restored_from_version` (the number it copied, or
+`null`), `created_by`, `created_at`, `is_current`.
+
+`GET .../versions/{version_id}/download` streams that version's bytes under
+the file's current name. A missing/corrupted object is a clean `500`.
+
+`POST .../versions/{version_id}/restore` makes an old version's content
+current by **appending a new version** (`201`, returns the new version).
+History is never rewritten, so the version you restored *from* stays
+listed and downloadable. Restoring the version that is already current is
+`409`. All three endpoints `404` for a file that is missing, not owned by
+the caller, or in the trash, and for a `version_id` that belongs to a
+different file.
+
 ## Planned (not yet implemented)
 
 Endpoints below are listed for reference; they land with their
 corresponding phase (see [`architecture.md`](architecture.md#development-phases)).
 
-### Versions & Trash — Phase 6
+### Trash — Phase 6
 
 ```text
-GET    /api/files/{id}/versions
-POST   /api/files/{id}/versions/{version_id}/restore
-
 GET    /api/trash
 POST   /api/trash/{id}/restore
 DELETE /api/trash/{id}

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, files, folders, health, search, uploads
+from app.api import auth, files, folders, health, search, uploads, versions
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -23,6 +23,6 @@ app.include_router(folders.router)
 app.include_router(files.router)
 app.include_router(search.router)
 app.include_router(uploads.router)
+app.include_router(versions.router)
 
-# Routers for versions and shares are added as their respective phases
-# land (see docs/architecture.md).
+# The shares router is added when its phase lands (see docs/architecture.md).
