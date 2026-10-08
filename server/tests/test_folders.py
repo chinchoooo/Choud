@@ -204,3 +204,28 @@ def test_delete_folder_with_file_returns_409(
     response = client.delete(f"/api/folders/{folder['id']}", headers=headers)
 
     assert response.status_code == 409
+
+
+def test_delete_folder_whose_only_file_is_trashed_detaches_that_file(
+    client: TestClient, db_session, make_user, auth_headers
+) -> None:
+    from app.models.file import File
+
+    user = make_user()
+    headers = auth_headers(user)
+    folder = client.post("/api/folders", json={"name": "Old"}, headers=headers).json()
+    uploaded = client.post(
+        "/api/files/upload",
+        files={"file": ("note.txt", b"keep me", "text/plain")},
+        data={"folder_id": folder["id"]},
+        headers=headers,
+    ).json()
+    client.delete(f"/api/files/{uploaded['id']}", headers=headers)
+
+    response = client.delete(f"/api/folders/{folder['id']}", headers=headers)
+
+    assert response.status_code == 204
+    trashed = db_session.get(File, uploaded["id"])
+    assert trashed is not None  # not destroyed (Rule 5)
+    assert trashed.deleted_at is not None
+    assert trashed.folder_id is None  # restores to the root

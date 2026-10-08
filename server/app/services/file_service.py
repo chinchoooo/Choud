@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import UploadFile
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -189,6 +189,15 @@ def delete_folder(db: Session, owner: User, folder_id: uuid.UUID) -> None:
     if has_subfolder or has_file:
         # Rule 5: never silently destroy data — refuse rather than cascade.
         raise ConflictError("folder is not empty")
+
+    # Trashed files may still point at this folder. Detach them (they restore
+    # to the root, see trash_service.restore_file) rather than letting the
+    # foreign key block the delete or silently dropping them (Rule 5).
+    db.execute(
+        update(File)
+        .where(File.folder_id == folder.id, File.deleted_at.is_not(None))
+        .values(folder_id=None)
+    )
 
     db.delete(folder)
     db.commit()
