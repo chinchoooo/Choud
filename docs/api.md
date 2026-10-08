@@ -117,8 +117,8 @@ subfolders is rejected with `409` (cycle prevention). Renaming or moving a
 `409` — a file's identity for versioning is (owner, folder, name).
 
 `DELETE /api/files/{id}` — **soft** delete (sets `deleted_at`); the file
-disappears from listings, search, and direct access, but a proper
-trash/restore flow (`GET /api/trash`, etc.) lands in Phase 6.
+disappears from listings, search, and direct access and shows up in the
+[trash](#trash), where it can be restored or permanently deleted.
 `DELETE /api/folders/{id}` — **hard** delete, and only succeeds on an
 empty folder (`409` otherwise) — folders don't have `deleted_at` in the
 schema, and cascading a delete would violate
@@ -220,18 +220,42 @@ listed and downloadable. Restoring the version that is already current is
 the caller, or in the trash, and for a `version_id` that belongs to a
 different file.
 
-## Planned (not yet implemented)
-
-Endpoints below are listed for reference; they land with their
-corresponding phase (see [`architecture.md`](architecture.md#development-phases)).
-
-### Trash — Phase 6
+### Trash
 
 ```text
 GET    /api/trash
 POST   /api/trash/{id}/restore
 DELETE /api/trash/{id}
 ```
+
+`DELETE /api/files/{id}` moves a file into the trash (soft delete); these
+endpoints manage it from there. Trash holds **files only** and never
+expires on its own.
+
+`GET /api/trash` → `{files: [...]}`, most recently deleted first; each item
+has `id`, `name`, `folder_id`, `mime_type`, `size`, `content_hash`,
+`deleted_at`.
+
+`POST /api/trash/{id}/restore` → `200` with the file's metadata. It returns
+to its original folder; if that folder has since been deleted it goes to the
+root, and if a live file already has its name there it is renamed
+`name (restored).ext` (then `(restored 2)`, `(restored 3)`, ...). Nothing is
+ever overwritten. Version history comes back with it.
+
+`DELETE /api/trash/{id}` → `204`. **Permanent.** Removes the file and all
+its versions, then deletes each stored object only if no other file or
+version — of *any* user, since identical bytes are shared — still references
+that content hash. If the engine can't delete an object, the request still
+succeeds and the object is left as an unreferenced orphan for a future
+garbage-collection pass.
+
+All three `404` for a file that isn't in the caller's trash (unknown, live,
+or someone else's). A live file must be deleted before it can be purged.
+
+## Planned (not yet implemented)
+
+Endpoints below are listed for reference; they land with their
+corresponding phase (see [`architecture.md`](architecture.md#development-phases)).
 
 ### Sharing
 
