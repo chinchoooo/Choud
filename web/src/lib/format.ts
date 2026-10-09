@@ -8,3 +8,8 @@ export function formatBytes(bytes: number): string {
   const value = bytes / 1024 ** exponent;
   return `${exponent === 0 ? value : value.toFixed(1)} ${units[exponent]}`;
 }
+
+export function formatDateTime(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+}

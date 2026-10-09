@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { ApiError } from "../api/client";
 import {
@@ -15,6 +15,7 @@ import {
 import { createFolder, deleteFolder, moveFolder, renameFolder } from "../api/folders";
 import { ResumableUploadError, resumeUpload } from "../api/uploads";
 import { useAuth } from "../auth/AuthContext";
+import { VersionHistory } from "../components/VersionHistory";
 import { formatBytes } from "../lib/format";
 import type { FileResponse, FolderResponse } from "../types/files";
 
@@ -42,6 +43,8 @@ export function Files() {
   // instead of starting over (docs/architecture.md#10-chunked-uploads).
   const [pausedUpload, setPausedUpload] = useState<{ uploadId: string; file: File } | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  // Which file's version list is expanded (one at a time keeps the table readable).
+  const [versionsOpenFor, setVersionsOpenFor] = useState<string | null>(null);
 
   const directoryQuery = useQuery({
     queryKey: ["directory", folderId],
@@ -59,6 +62,9 @@ export function Files() {
   function invalidate() {
     void queryClient.invalidateQueries({ queryKey: ["directory"] });
     void queryClient.invalidateQueries({ queryKey: ["search"] });
+    // A same-name upload adds a version and a deleted file moves to the trash.
+    void queryClient.invalidateQueries({ queryKey: ["versions"] });
+    void queryClient.invalidateQueries({ queryKey: ["trash"] });
   }
 
   const createFolderMutation = useMutation({
@@ -225,7 +231,7 @@ export function Files() {
   }
 
   function handleDeleteFile(file: FileResponse) {
-    if (!window.confirm(`Delete "${file.name}"?`)) return;
+    if (!window.confirm(`Move "${file.name}" to the trash?`)) return;
     deleteFileMutation.mutate(file.id);
   }
 
@@ -249,12 +255,20 @@ export function Files() {
           <h1 className="text-2xl font-semibold text-gray-900">My Cloud</h1>
           <p className="mt-1 text-sm text-gray-500">Signed in as {user?.email}</p>
         </div>
-        <button
-          onClick={() => void logout()}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-        >
-          Log out
-        </button>
+        <div className="flex gap-2">
+          <Link
+            to="/trash"
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Trash
+          </Link>
+          <button
+            onClick={() => void logout()}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Log out
+          </button>
+        </div>
       </div>
 
       <form onSubmit={handleSearchSubmit} className="mt-6 flex gap-2">
@@ -371,28 +385,35 @@ export function Files() {
         ))}
 
         {files.map((file) => (
-          <div
-            key={file.id}
-            className="flex items-center justify-between border-b border-gray-100 px-4 py-3 last:border-b-0"
-          >
-            <span className="flex-1 truncate text-sm text-gray-900">📄 {file.name}</span>
-            <span className="mr-3 hidden text-xs text-gray-400 sm:inline">
-              {formatBytes(file.size)}
-            </span>
-            <div className="flex shrink-0 gap-2 text-xs">
-              <button onClick={() => void handleDownload(file)} className="text-gray-600 hover:underline">
-                Download
-              </button>
-              <button onClick={() => handleRenameFile(file)} className="text-gray-600 hover:underline">
-                Rename
-              </button>
-              <button onClick={() => handleMoveFile(file)} className="text-gray-600 hover:underline">
-                Move
-              </button>
-              <button onClick={() => handleDeleteFile(file)} className="text-red-600 hover:underline">
-                Delete
-              </button>
+          <div key={file.id} className="border-b border-gray-100 last:border-b-0">
+            <div className="flex items-center justify-between px-4 py-3">
+              <span className="flex-1 truncate text-sm text-gray-900">📄 {file.name}</span>
+              <span className="mr-3 hidden text-xs text-gray-400 sm:inline">
+                {formatBytes(file.size)}
+              </span>
+              <div className="flex shrink-0 gap-2 text-xs">
+                <button onClick={() => void handleDownload(file)} className="text-gray-600 hover:underline">
+                  Download
+                </button>
+                <button
+                  onClick={() => setVersionsOpenFor((open) => (open === file.id ? null : file.id))}
+                  aria-expanded={versionsOpenFor === file.id}
+                  className="text-gray-600 hover:underline"
+                >
+                  Versions
+                </button>
+                <button onClick={() => handleRenameFile(file)} className="text-gray-600 hover:underline">
+                  Rename
+                </button>
+                <button onClick={() => handleMoveFile(file)} className="text-gray-600 hover:underline">
+                  Move
+                </button>
+                <button onClick={() => handleDeleteFile(file)} className="text-red-600 hover:underline">
+                  Delete
+                </button>
+              </div>
             </div>
+            {versionsOpenFor === file.id && <VersionHistory file={file} />}
           </div>
         ))}
       </div>

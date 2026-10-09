@@ -68,9 +68,12 @@ export function search(query: string): Promise<SearchResponse> {
   return apiGet<SearchResponse>(`/api/search?q=${encodeURIComponent(query)}`);
 }
 
-export async function downloadFile(id: string, filename: string): Promise<void> {
+// Fetches an authenticated endpoint and hands the bytes to the browser as a
+// file download. A plain <a href> can't be used because the bearer token lives
+// in localStorage, not in a cookie.
+export async function downloadAuthenticated(path: string, filename: string): Promise<void> {
   const token = getAccessToken();
-  const response = await fetch(`${API_BASE_URL}/api/files/${id}/download`, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   if (!response.ok) {
@@ -85,4 +88,8 @@ export async function downloadFile(id: string, filename: string): Promise<void> 
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
+}
+
+export function downloadFile(id: string, filename: string): Promise<void> {
+  return downloadAuthenticated(`/api/files/${id}/download`, filename);
 }
