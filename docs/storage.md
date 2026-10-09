@@ -81,13 +81,22 @@ copy that a `BackgroundTask` deletes after the response is sent (see
 Two files with the same content hash share one physical object. The
 `files` table's `content_hash` column and `file_versions.content_hash`
 are the reference-counting mechanism: an object is only a garbage
-collection candidate once nothing references it. Physical deletion is a
-deliberate, later step (see [Rule 5](architecture.md#implementation-rules),
-"never silently destroy data") — not implemented in the first pass.
-`StorageManager::remove_object` exists (Phase 4 built it since the
-engine's `/objects/delete` endpoint is in the API table), but nothing
-calls it yet; Phase 6 (Trash purge) is what will need to check reference
-counts before calling it.
+collection candidate once nothing references it.
+
+Physical deletion happens in exactly one place: **permanently deleting a
+file from the trash** (`app/services/trash_service.purge_file`). It removes
+the file's rows first, then asks the engine (`/objects/delete`) to delete
+each of its objects *only if no remaining `files` or `file_versions` row —
+of any user — references that hash*. The engine's `remove_object` itself is
+still unconditional; the reference check lives in Python, where the
+references live. If the engine can't delete an object, the purge still
+succeeds and the object is left as an unreferenced orphan (disk space is
+leaked rather than data risked).
+
+Two gaps remain until the garbage-collection work in Phase 15: orphans left
+behind by failed deletes or failed uploads are never swept, and the
+reference check is not atomic with a concurrent identical upload by someone
+else (see the note in `trash_service.py`).
 
 Track the distinction between **logical size** (what a user's quota sees)
 and **physical size on disk** (deduplicated) — see

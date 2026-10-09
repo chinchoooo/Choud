@@ -39,7 +39,7 @@ See [`docs/architecture.md`](docs/architecture.md) for details.
 This repository is being built incrementally, phase by phase (see
 [`docs/architecture.md`](docs/architecture.md#development-phases)).
 
-**Currently implemented: Phase 5 — Chunked Uploads.**
+**Currently implemented: Phase 6 — Versioning and Trash.**
 
 - Repository layout
 - Docker Compose (PostgreSQL, backend, engine, frontend, reverse proxy)
@@ -51,7 +51,7 @@ This repository is being built incrementally, phase by phase (see
   hashing), and a `get_current_user` dependency every file endpoint uses
   (see `docs/api.md#auth`)
 - Folders and files: create/rename/move/delete folders, upload/download/
-  rename/move/delete files (soft delete — trash proper lands in Phase 6),
+  rename/move/delete files (delete moves a file to the trash),
   filename search — all owner-scoped, with path-traversal-safe storage
   (bytes are never written to a client-supplied path)
 - A real C++ storage engine: streaming SHA-256 (OpenSSL), a
@@ -63,12 +63,22 @@ This repository is being built incrementally, phase by phase (see
   hash check — killing the connection partway and resuming only resends
   the chunks that never arrived (see `docs/api.md#uploads--resumable-chunked-uploads`
   and `docs/storage.md#chunked-uploads`)
+- Versioning: uploading a file with the same name into the same folder adds
+  a new version instead of a duplicate (identical bytes are a no-op).
+  Every version is kept, can be downloaded, and can be restored — a restore
+  adds a new version, so history is never rewritten
+  (see `docs/api.md#versions`)
+- Trash: deleted files can be listed, restored (to the original folder, or
+  the root if it is gone; renamed `name (restored).ext` on a clash), or
+  permanently deleted — which frees a stored object only when no other file
+  or version, of any user, still uses it (see `docs/api.md#trash`)
 - A working web UI: register/login, a file browser (breadcrumb
   navigation, upload — chunked with a "Resume upload" button for large
-  files — new folder, rename, move, delete, download, search)
+  files — new folder, rename, move, delete, download, search), a per-file
+  version list with download/restore, and a Trash page
 
-Versioning, trash restore/purge, sync, and sharing are **not yet
-implemented** — they land in later phases.
+Desktop and phone sync, sharing, 2FA and search-by-content are **not yet
+implemented** — see the roadmap in `CLAUDE.md` for the order they land in.
 
 ## Getting started
 
