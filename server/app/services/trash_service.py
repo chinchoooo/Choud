@@ -142,6 +142,10 @@ def purge_file(db: Session, owner: User, file_id: uuid.UUID) -> int:
 
     for version in versions:
         db.delete(version)
+    # File and FileVersion have no ORM relationship(), so SQLAlchemy can't
+    # order these DELETEs itself: flush the versions first or PostgreSQL
+    # rejects deleting the file while file_versions still references it.
+    db.flush()
     db.delete(file)
     db.commit()
 

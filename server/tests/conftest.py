@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -16,17 +18,34 @@ from app.models.user import User
 
 @pytest.fixture
 def db_session() -> Session:
-    """An isolated in-memory SQLite database, fresh for every test.
+    """A fresh, isolated database for every test.
 
-    Production always runs PostgreSQL (see docker-compose.yml); a real
-    Postgres server isn't needed to exercise the ORM/API layer in tests
-    (see app/core/types.py's GUID type, which is what makes this possible).
+    By default an in-memory SQLite database — production always runs
+    PostgreSQL (see docker-compose.yml), but a real server isn't needed to
+    exercise the ORM/API layer (see app/core/types.py's GUID type, which is
+    what makes this possible).
+
+    SQLite does not enforce foreign keys, so a bug that only Postgres would
+    reject can pass here (that is how the 'delete a folder that still has
+    trashed files' bug stayed hidden). To run the suite against a real
+    PostgreSQL instead, point TEST_DATABASE_URL at a *disposable* database:
+
+        TEST_DATABASE_URL=postgresql+psycopg2://cloud:pw@127.0.0.1:55432/personal_cloud pytest
+
+    Every table is created before and dropped after each test, so never aim
+    this at a database that holds data you care about.
     """
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    test_database_url = os.environ.get("TEST_DATABASE_URL")
+    if test_database_url:
+        engine = create_engine(test_database_url)
+        # Start from a clean slate even if an earlier run was killed mid-test.
+        Base.metadata.drop_all(bind=engine)
+    else:
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
     Base.metadata.create_all(bind=engine)
     testing_session_local = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     session = testing_session_local()
