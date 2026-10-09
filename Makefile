@@ -5,8 +5,10 @@ install:
 	cd server && pip install -r requirements.txt
 	cd web && npm install
 
+# Development stack: Vite hot reload, ports on 127.0.0.1, placeholder secrets.
+# The proxy is on http://localhost:8080 (see .env.dev).
 dev:
-	docker compose up
+	docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 test:
 	cd server && pytest

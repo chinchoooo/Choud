@@ -1,10 +1,25 @@
+# Production-shaped stack: this is what runs on the server/laptop.
+#
+#   - Only the reverse proxy publishes a port. The database, engine, backend
+#     and frontend are reachable only on the internal Docker network.
+#   - Secrets are REQUIRED (no weak defaults): run `scripts/setup.sh` to
+#     generate a .env with strong random values.
+#   - The backend applies database migrations on start.
+#
+# For local development (hot reload, ports published on 127.0.0.1) add the dev
+# override:  docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Server / client split: this file is the SERVER. The desktop sync client
+# (client/) and the future phone client run on user devices and talk to the
+# reverse proxy over HTTP; they are not part of this stack.
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-cloud}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set - run scripts/setup.sh}
       POSTGRES_DB: ${POSTGRES_DB:-personal_cloud}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -42,43 +57,58 @@ services:
       postgres:
         condition: service_healthy
       engine:
-        condition: service_started
+        condition: service_healthy
     environment:
+      ENVIRONMENT: production
       POSTGRES_USER: ${POSTGRES_USER:-cloud}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set - run scripts/setup.sh}
       POSTGRES_DB: ${POSTGRES_DB:-personal_cloud}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       ENGINE_HOST: engine
       ENGINE_PORT: ${ENGINE_PORT:-9000}
       STORAGE_ROOT: ${STORAGE_ROOT:-/data/cloud}
-      JWT_SECRET: ${JWT_SECRET:-changeme-generate-a-long-random-string}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is not set - run scripts/setup.sh}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      DEFAULT_STORAGE_QUOTA_BYTES: ${DEFAULT_STORAGE_QUOTA_BYTES:-10737418240}
       BACKEND_LOG_LEVEL: ${BACKEND_LOG_LEVEL:-info}
     volumes:
       - storage_data:${STORAGE_ROOT:-/data/cloud}
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
+    expose:
+      - "8000"
+    healthcheck:
+      # /api/health returns 503 when the database, engine or storage is down,
+      # so `curl -f` makes the container unhealthy exactly when it should be.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   frontend:
     build:
       context: ./web
+      target: prod
+      args:
+        # Empty = same origin (the reverse proxy routes /api/*).
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
     restart: unless-stopped
-    environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL-http://localhost:8000}
-    ports:
-      - "${FRONTEND_PORT:-5173}:5173"
+    expose:
+      - "80"
 
   reverse-proxy:
     image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
     ports:
-      - "80:80"
-      - "443:443"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     volumes:
       - ./deployment/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

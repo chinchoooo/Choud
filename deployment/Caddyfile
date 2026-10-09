@@ -1,10 +1,17 @@
-# Reverse proxy for LAN / Tailscale access. See docs/deployment.md.
+# Reverse proxy: the only service published to the network. See
+# docs/deployment.md.
 #
-# For a public domain with automatic HTTPS, replace ":80" with your
-# hostname (e.g. "cloud.example.com") and Caddy will provision a
-# certificate automatically.
+# Plain HTTP on :80 is right for LAN / Tailscale access (Tailscale already
+# encrypts the traffic between devices). For a public domain with automatic
+# HTTPS, replace ":80" with your hostname (e.g. "cloud.example.com") and Caddy
+# will provision a certificate automatically.
 
 :80 {
+    # Large uploads are chunked by the client, but be generous anyway.
+    request_body {
+        max_size 10GB
+    }
+
     handle /api/* {
         reverse_proxy backend:8000
     }
@@ -14,6 +21,6 @@
     }
 
     handle {
-        reverse_proxy frontend:5173
+        reverse_proxy frontend:80
     }
 }

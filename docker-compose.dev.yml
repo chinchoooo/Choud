@@ -1,0 +1,32 @@
+# Development override. Use it together with the base file and .env.dev:
+#
+#   docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# (or just `make dev`). Compared with the production stack it:
+#   - runs the backend in ENVIRONMENT=development (placeholder secrets from
+#     .env.dev are allowed there),
+#   - publishes the backend and database on 127.0.0.1 only,
+#   - serves the web app from the Vite dev server (hot reload) instead of the
+#     static nginx build.
+#
+# The base file requires real secrets, so the placeholders live in .env.dev
+# rather than here: Compose checks each file's variables BEFORE merging, so an
+# override cannot supply a default for a variable the base file requires.
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT_DEV:-5432}:5432"
+
+  backend:
+    environment:
+      ENVIRONMENT: development
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+
+  frontend:
+    build:
+      context: ./web
+      target: dev
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:5173"

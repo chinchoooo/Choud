@@ -1,0 +1,8 @@
+# A host-side cmake build directory holds a CMakeCache.txt with absolute host
+# paths; copying it into the image makes the in-container cmake refuse to run
+# ("CMakeCache.txt directory is different from ...").
+build
+cmake-build-*
+CMakeFiles
+CMakeCache.txt
+.git
