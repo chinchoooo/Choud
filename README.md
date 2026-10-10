@@ -82,20 +82,28 @@ implemented** — see the roadmap in `CLAUDE.md` for the order they land in.
 
 ## Getting started
 
-```bash
-cp .env.example .env
-# edit .env if you want non-default credentials
+**Run it for real** (a Linux machine with Docker; full guide in
+[`docs/deployment.md`](docs/deployment.md)):
 
-make docker-up
+```bash
+scripts/setup.sh      # creates .env with strong random secrets
+scripts/deploy.sh     # checks the machine, builds, starts, waits until healthy
 ```
 
-This starts PostgreSQL, the C++ engine, the FastAPI backend, the React
-frontend, and a Caddy reverse proxy.
+**Develop on it** (hot reload, placeholder secrets, nothing to configure):
+
+```bash
+make dev              # then open http://localhost:8080
+```
+
+Either way this starts PostgreSQL, the C++ engine, the FastAPI backend, the
+web app and a Caddy reverse proxy. Database migrations run automatically when
+the backend starts. In the real stack only the proxy publishes a port.
 
 Check that everything is healthy:
 
 ```bash
-curl http://localhost:8000/api/health
+scripts/healthcheck.sh        # or: curl http://localhost/api/health
 ```
 
 ```json
@@ -124,7 +132,7 @@ make lint            # lint backend + frontend
 make format          # format backend + frontend
 make engine-build    # build the C++ engine with CMake
 make engine-test     # build and run engine tests via ctest
-make migrate         # run Alembic database migrations
+make migrate         # run Alembic migrations by hand (the backend also does this on start)
 ```
 
 ## Documentation
@@ -134,7 +142,8 @@ make migrate         # run Alembic database migrations
 - [`docs/synchronization.md`](docs/synchronization.md) — desktop sync algorithm, conflicts
 - [`docs/api.md`](docs/api.md) — HTTP API reference
 - [`docs/security.md`](docs/security.md) — auth, authorization, and hardening notes
-- [`docs/deployment.md`](docs/deployment.md) — running this on real hardware
+- [`docs/deployment.md`](docs/deployment.md) — running this on real hardware (laptop server + Tailscale)
+- [`docs/errors.md`](docs/errors.md) — real problems hit during setup, and their fixes
 
 ## License
 

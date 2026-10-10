@@ -177,6 +177,62 @@ docker compose exec backend alembic upgrade head
 (swap the username/db name if yours differ from `.env`'s
 `POSTGRES_USER`/`POSTGRES_DB`)
 
+## Fixed at the source in Phase 9 (and what to know now)
+
+Some entries above describe problems the Phase 9 deployment work removed. They
+are kept because the symptoms are still what you will search for if you run an
+older checkout.
+
+| Old symptom | Why it no longer happens |
+| --- | --- |
+| `relation "users" does not exist` / manual `make docker-migrate` | The backend entrypoint runs migrations on every start (`server/entrypoint.sh`). A fresh database migrates `0001` → head by itself. |
+| `StringDataRightTruncation` on `alembic_version` | `server/scripts/migrate.sh` (run by the entrypoint) creates the wide table first. |
+| Web UI calls `localhost:8000` and fails from another machine | `VITE_API_BASE_URL` now defaults to empty = same origin; the proxy routes `/api/*`. One image works on any hostname. |
+| `make migrate` / `make docker-migrate` did nothing useful | `migrate.sh` used to live at the repo root while the Makefile and the image looked in `server/scripts/`. It moved. |
+| App ran with `changeme` secrets without complaint | Compose now requires real secrets and the backend refuses placeholders in production. Run `scripts/setup.sh`. |
+
+New things worth knowing:
+
+### `docker compose up` stops with `required variable JWT_SECRET is missing a value`
+
+Expected on a fresh checkout. Run `scripts/setup.sh` to create `.env` with
+strong random secrets (or `make dev` for the development stack, which uses
+`.env.dev`).
+
+### Backend container exits with `insecure configuration: JWT_SECRET is a placeholder…`
+
+`ENVIRONMENT=production` rejects placeholders and secrets shorter than 32
+characters. You probably copied `.env.example` by hand with an old
+`changeme…` value. Delete `.env` and run `scripts/setup.sh`, or put a real
+value in (`openssl rand -hex 32`). Changing `POSTGRES_PASSWORD` on an existing
+database does **not** change the password inside Postgres — restore the old
+value or recreate the volume.
+
+### `bash: No such file or directory` / `/bin/bash^M: bad interpreter`
+
+A shell script has Windows (CRLF) line endings, usually from cloning on
+Windows with `core.autocrlf=true`. `.gitattributes` now pins LF for scripts,
+Dockerfiles and YAML, and `scripts/preflight.sh` reports any CRLF file. Fix an
+existing checkout: `git config core.autocrlf input && git rm --cached -r . -q
+&& git reset --hard`.
+
+### `CMakeCache.txt directory is different from …` while building the engine
+
+A host-side `engine/build/` directory was copied into the image. `engine/.dockerignore`
+now excludes it. If you still see it, delete `engine/build/` and rebuild.
+
+### Windows only: `tar: C:/Program Files/Git/data/cloud: Cannot open`
+
+Git Bash rewrites arguments that look like Unix paths (`/data/cloud`) before
+handing them to `docker.exe`. The scripts are meant for Linux servers; on
+Windows run them with `MSYS_NO_PATHCONV=1`.
+
+### A multi-gigabyte upload fails after a long wait with 502
+
+The engine call timed out. Whole-file engine calls use
+`ENGINE_DATA_TIMEOUT_SECONDS` (default 1800 s); raise it for very large files
+on slow disks.
+
 ## Verifying it actually worked
 
 Don't just trust a green checkmark in the UI — you can verify the
