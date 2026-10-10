@@ -1,26 +1,42 @@
 #!/usr/bin/env bash
-# Bootstrap a local development environment: create .env, verify Docker is
-# available, and build the images.
+# Create .env with strong, random secrets. Never overwrites an existing .env.
+#
+#   scripts/setup.sh           create .env if it does not exist
+#   scripts/setup.sh --build   ...and also build the images
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-if [ ! -f .env ]; then
-    cp .env.example .env
-    echo "Created .env from .env.example. Edit it before deploying to a real server."
+random_secret() {
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -hex 32
+    else
+        python3 -c 'import secrets; print(secrets.token_hex(32))'
+    fi
+}
+
+if [ -f .env ]; then
+    echo ".env already exists - leaving it untouched."
+else
+    # Copy .env.example line by line, replacing only the two secrets.
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            JWT_SECRET=*)        echo "JWT_SECRET=$(random_secret)" ;;
+            POSTGRES_PASSWORD=*) echo "POSTGRES_PASSWORD=$(random_secret)" ;;
+            *)                   printf '%s\n' "$line" ;;
+        esac
+    done < .env.example > .env
+    chmod 600 .env
+    echo "Created .env with freshly generated secrets (mode 600)."
+    echo "Back this file up somewhere safe: losing JWT_SECRET logs everyone out,"
+    echo "losing POSTGRES_PASSWORD makes the existing database unreadable."
 fi
 
-if ! command -v docker >/dev/null 2>&1; then
-    echo "docker is not installed. See https://docs.docker.com/engine/install/" >&2
-    exit 1
+if [ "${1:-}" = "--build" ]; then
+    command -v docker >/dev/null 2>&1 || { echo "docker is not installed. See https://docs.docker.com/engine/install/" >&2; exit 1; }
+    docker compose version >/dev/null 2>&1 || { echo "docker compose (v2 plugin) is not available." >&2; exit 1; }
+    echo "Building images..."
+    docker compose build
 fi
 
-if ! docker compose version >/dev/null 2>&1; then
-    echo "docker compose (v2 plugin) is not available." >&2
-    exit 1
-fi
-
-echo "Building images..."
-docker compose build
-
-echo "Setup complete. Run 'make docker-up' (or 'docker compose up') to start."
+echo "Next: scripts/deploy.sh  (checks everything, then starts the stack)"

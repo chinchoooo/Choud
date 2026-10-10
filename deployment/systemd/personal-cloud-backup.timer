@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily Personal Cloud backup
+
+[Timer]
+# 03:15 every night. If the machine was off at that time (a laptop often is),
+# run the missed backup as soon as it is next on.
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

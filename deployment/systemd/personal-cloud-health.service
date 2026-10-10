@@ -1,0 +1,15 @@
+# Checks the API through the reverse proxy. If it is unhealthy the unit FAILS
+# (visible in `systemctl status personal-cloud-health` and `journalctl`) after
+# first asking Docker to bring any stopped container back up.
+
+[Unit]
+Description=Personal Cloud health check
+After=personal-cloud.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@INSTALL_DIR@
+# The leading "-" ignores a failure of this self-heal step; the next line is
+# what decides pass/fail.
+ExecStartPre=-/usr/bin/docker compose up -d --no-recreate
+ExecStart=@INSTALL_DIR@/scripts/healthcheck.sh

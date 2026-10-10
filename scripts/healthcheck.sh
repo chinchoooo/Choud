@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
-# Check backend API health (which in turn verifies the database, the C++
-# engine, and storage). Exits non-zero if unhealthy.
+# Check API health through the reverse proxy (which in turn reports on the
+# database, the C++ engine, and storage). Exits non-zero if unhealthy.
+#
+# Used by the optional monitoring timer in deployment/systemd/ and handy by
+# hand:  scripts/healthcheck.sh
 set -euo pipefail
 
-BACKEND_URL="${BACKEND_URL:-http://localhost:${BACKEND_PORT:-8000}}"
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+if [ -f .env ]; then set -a; . ./.env; set +a; fi
 
-response="$(curl -fsS "${BACKEND_URL}/api/health")" || {
-    echo "Backend API is unreachable at ${BACKEND_URL}" >&2
+BASE_URL="${BASE_URL:-http://localhost:${HTTP_PORT:-80}}"
+
+response="$(curl -fsS --max-time 10 "${BASE_URL}/api/health")" || {
+    echo "API is unreachable or unhealthy at ${BASE_URL}" >&2
     exit 1
 }
 
 echo "$response"
 
-status="$(echo "$response" | grep -o '"status":"[a-z]*"' | cut -d'"' -f4)"
-if [ "$status" != "healthy" ]; then
+if ! echo "$response" | grep -q '"status":"healthy"'; then
     exit 1
 fi

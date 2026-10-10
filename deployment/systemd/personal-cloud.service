@@ -1,10 +1,9 @@
-# Runs the Docker Compose stack on boot. Implemented for Phase 9 (Remote
-# Access); see docs/deployment.md.
+# Runs the Docker Compose stack on boot. Installed (with the right path filled
+# in) by deployment/scripts/install-systemd.sh - see docs/deployment.md.
 #
-# Install with:
-#   sudo cp deployment/systemd/personal-cloud.service /etc/systemd/system/
-#   sudo systemctl daemon-reload
-#   sudo systemctl enable --now personal-cloud
+# The containers also have `restart: unless-stopped`, so a crashed container is
+# restarted by Docker itself; this unit is what brings the stack up after a
+# reboot and gives you `systemctl status personal-cloud`.
 
 [Unit]
 Description=Personal Cloud (Docker Compose stack)
@@ -15,9 +14,9 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/opt/personal-cloud
-ExecStart=/usr/bin/docker compose up -d
-ExecStop=/usr/bin/docker compose down
+WorkingDirectory=@INSTALL_DIR@
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose stop
 TimeoutStartSec=0
 
 [Install]

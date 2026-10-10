@@ -1,0 +1,14 @@
+# One backup run (database + object storage). Triggered daily by
+# personal-cloud-backup.timer; run it by hand with
+#   sudo systemctl start personal-cloud-backup
+# Set BACKUP_KEEP and BACKUP_COPY_TO in .env (see scripts/backup.sh).
+
+[Unit]
+Description=Personal Cloud backup
+Requires=personal-cloud.service
+After=personal-cloud.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@INSTALL_DIR@
+ExecStart=@INSTALL_DIR@/scripts/backup.sh
