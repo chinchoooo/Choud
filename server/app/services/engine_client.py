@@ -43,6 +43,8 @@ class EngineClient:
     def __init__(self, base_url: str | None = None, timeout: float | None = None) -> None:
         self._base_url = base_url or settings.engine_base_url
         self._timeout = timeout or settings.engine_timeout_seconds
+        # Long-running whole-file operations get their own, much larger limit.
+        self._data_timeout = timeout or settings.engine_data_timeout_seconds
 
     def check_health(self) -> bool:
         try:
@@ -51,9 +53,10 @@ class EngineClient:
         except httpx.HTTPError:
             return False
 
-    def _post(self, path: str, payload: dict) -> dict:
+    def _post(self, path: str, payload: dict, *, data_plane: bool = False) -> dict:
+        timeout = self._data_timeout if data_plane else self._timeout
         try:
-            response = httpx.post(f"{self._base_url}{path}", json=payload, timeout=self._timeout)
+            response = httpx.post(f"{self._base_url}{path}", json=payload, timeout=timeout)
         except httpx.HTTPError as exc:
             raise EngineUnavailableError(f"could not reach the storage engine: {exc}") from exc
 
@@ -70,7 +73,7 @@ class EngineClient:
 
     def hash_file(self, path: str) -> str:
         """Streaming SHA-256 of a file already on the shared storage volume."""
-        return self._post("/hash", {"path": path})["hash"]
+        return self._post("/hash", {"path": path}, data_plane=True)["hash"]
 
     def exists(self, content_hash: str) -> bool:
         return self._post("/objects/exists", {"hash": content_hash})["exists"]
@@ -82,13 +85,19 @@ class EngineClient:
         store) — treat it as consumed after this call, whether or not an
         object already existed under that hash (deduplication).
         """
-        body = self._post("/objects/put", {"hash": content_hash, "source_path": source_path})
+        body = self._post(
+            "/objects/put",
+            {"hash": content_hash, "source_path": source_path},
+            data_plane=True,
+        )
         return body["size"]
 
     def get(self, content_hash: str, destination_path: str) -> int:
         """Copies the stored object for `content_hash` to `destination_path`."""
         body = self._post(
-            "/objects/get", {"hash": content_hash, "destination_path": destination_path}
+            "/objects/get",
+            {"hash": content_hash, "destination_path": destination_path},
+            data_plane=True,
         )
         return body["size"]
 
@@ -111,7 +120,9 @@ class EngineClient:
         resending a chunk the client isn't sure arrived is always safe.
         """
         self._post(
-            "/chunks/write", {"upload_id": upload_id, "index": index, "source_path": source_path}
+            "/chunks/write",
+            {"upload_id": upload_id, "index": index, "source_path": source_path},
+            data_plane=True,
         )
 
     def finalize_chunks(
@@ -129,7 +140,7 @@ class EngineClient:
         payload: dict = {"upload_id": upload_id, "total_chunks": total_chunks}
         if expected_hash is not None:
             payload["expected_hash"] = expected_hash
-        body = self._post("/chunks/finalize", payload)
+        body = self._post("/chunks/finalize", payload, data_plane=True)
         return body["hash"], body["size"]
 
     def abandon_chunks(self, upload_id: str) -> bool:

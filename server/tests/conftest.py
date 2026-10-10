@@ -1,6 +1,12 @@
 import os
 
-import pytest
+# Set before the app is imported: no background housekeeping loop and no auth
+# rate limiting during tests (test_rate_limit.py / test_maintenance.py turn them
+# on explicitly when they are what is under test).
+os.environ.setdefault("MAINTENANCE_INTERVAL_SECONDS", "0")
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
+
+import pytest  # noqa: E402
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker

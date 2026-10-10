@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.rate_limit import rate_limit
 from app.core.security import (
     REFRESH_TOKEN_TYPE,
     TokenError,
@@ -51,7 +52,12 @@ def _issue_tokens(user: User) -> TokenResponse:
     )
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit("register", 10, 3600))],
+)
 def register(body: RegisterRequest, db: Session = Depends(get_db)) -> User:
     duplicate = db.execute(
         select(User).where((User.email == body.email) | (User.username == body.username))
@@ -74,7 +80,11 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)) -> User:
     return user
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    dependencies=[Depends(rate_limit("login", 10, 60))],
+)
 def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     user = db.execute(select(User).where(User.email == body.email)).scalar_one_or_none()
 
@@ -86,7 +96,11 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     return _issue_tokens(user)
 
 
-@router.post("/refresh", response_model=TokenResponse)
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    dependencies=[Depends(rate_limit("refresh", 60, 60))],
+)
 def refresh(body: RefreshRequest, db: Session = Depends(get_db)) -> TokenResponse:
     try:
         payload = decode_token(body.refresh_token, expected_type=REFRESH_TOKEN_TYPE)
