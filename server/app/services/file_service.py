@@ -25,7 +25,13 @@ from app.models.file import File
 from app.models.folder import Folder
 from app.models.user import User
 from app.services import version_service
-from app.services.errors import ConflictError, NotFoundError, StorageError, ValidationError
+from app.services.errors import (
+    ConflictError,
+    NotFoundError,
+    StorageError,
+    ValidationError,
+    VersionConflictError,
+)
 from app.services.storage_service import get_storage_service
 
 settings = get_settings()
@@ -232,6 +238,8 @@ async def upload_file(
     upload: UploadFile,
     folder_id: uuid.UUID | None,
     name: str | None = None,
+    base_version_id: uuid.UUID | None = None,
+    expect_new: bool = False,
 ) -> File:
     resolved_name = _validate_filename(name or upload.filename)
 
@@ -270,6 +278,8 @@ async def upload_file(
             mime_type=mime_type,
             size=len(content),
             content_hash=content_hash,
+            base_version_id=base_version_id,
+            expect_new=expect_new,
         )
         db.commit()
     except Exception:
@@ -340,8 +350,25 @@ def update_file(db: Session, owner: User, file_id: uuid.UUID, data: dict) -> Fil
     return file
 
 
-def delete_file(db: Session, owner: User, file_id: uuid.UUID) -> None:
+def delete_file(
+    db: Session,
+    owner: User,
+    file_id: uuid.UUID,
+    base_version_id: uuid.UUID | None = None,
+) -> None:
+    """Moves a file to the trash.
+
+    With `base_version_id`, only if the file is still on that version - a sync
+    client uses this so deleting a file locally can never trash an edit made on
+    another device in the meantime (raises `VersionConflictError`).
+    """
     file = _get_file_or_404(db, owner, file_id)
+    if base_version_id is not None and file.current_version_id != base_version_id:
+        raise VersionConflictError(
+            "the file was changed since the version this delete was based on",
+            file_id=file.id,
+            current_version_id=file.current_version_id,
+        )
     file.deleted_at = datetime.now(UTC)
     db.commit()
 

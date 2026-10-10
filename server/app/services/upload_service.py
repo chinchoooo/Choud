@@ -24,6 +24,7 @@ from app.models.upload import Upload
 from app.models.user import User
 from app.services import version_service
 from app.services.engine_client import EngineError, ObjectCorruptedError
+from app.services.errors import VersionConflictError
 from app.services.file_service import (
     ConflictError,
     NotFoundError,
@@ -68,6 +69,7 @@ def create_session(
     chunk_size: int,
     folder_id: uuid.UUID | None,
     expected_hash: str | None,
+    base_version_id: str | None = None,
 ) -> Upload:
     resolved_name = _validate_filename(file_name)
 
@@ -78,6 +80,8 @@ def create_session(
         raise ValidationError("file_size must be positive")
     if chunk_size <= 0:
         raise ValidationError("chunk_size must be positive")
+    # Reject a malformed precondition now, not after the whole file is uploaded.
+    version_service.parse_base_version(base_version_id)
 
     total_chunks = math.ceil(file_size / chunk_size)
 
@@ -90,6 +94,7 @@ def create_session(
         chunk_size=chunk_size,
         total_chunks=total_chunks,
         expected_hash=expected_hash,
+        base_version_id=base_version_id,
         status="pending",
         expires_at=datetime.now(UTC) + timedelta(hours=settings.upload_session_expire_hours),
     )
@@ -154,6 +159,7 @@ def complete_upload(db: Session, owner: User, upload_id: uuid.UUID) -> File:
         raise StorageError(f"could not complete upload: {exc}") from exc
 
     mime_type = mimetypes.guess_type(upload.file_name)[0]
+    base_version_id, expect_new = version_service.parse_base_version(upload.base_version_id)
     upload.status = "completed"
     try:
         # Same rule as a plain upload: a new file, or the next version of the
@@ -166,8 +172,20 @@ def complete_upload(db: Session, owner: User, upload_id: uuid.UUID) -> File:
             mime_type=mime_type,
             size=size,
             content_hash=content_hash,
+            base_version_id=base_version_id,
+            expect_new=expect_new,
         )
         db.commit()
+    except VersionConflictError:
+        # Someone else changed the file while this was uploading. The chunks
+        # were already consumed by the finalize, so the session can't be
+        # retried: mark it aborted so the client starts a fresh upload (usually
+        # of a conflict copy) instead of re-completing it.
+        db.rollback()
+        upload = _get_upload_or_404(db, owner, upload_id)
+        upload.status = "aborted"
+        db.commit()
+        raise
     except Exception:
         db.rollback()
         # Same reasoning as file_service.upload_file: the physical object

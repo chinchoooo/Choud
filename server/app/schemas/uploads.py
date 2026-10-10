@@ -19,6 +19,10 @@ class UploadCreateRequest(BaseModel):
     # /complete (docs/architecture.md#11-chunk-storage). Omit it to skip
     # verification and just trust the reconstructed bytes.
     expected_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    # Optional precondition, applied when the upload completes: the id of the
+    # version this file was based on, or "none" to require that nothing exists
+    # at the path yet. Same meaning as on POST /api/files/upload.
+    base_version_id: str | None = Field(default=None, max_length=36)
 
     @field_validator("file_name")
     @classmethod

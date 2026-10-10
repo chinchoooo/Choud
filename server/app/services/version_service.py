@@ -28,7 +28,31 @@ from sqlalchemy.orm import Session
 from app.models.file import File
 from app.models.file_version import FileVersion
 from app.models.user import User
-from app.services.errors import ConflictError, NotFoundError
+from app.services.errors import (
+    ConflictError,
+    NotFoundError,
+    ValidationError,
+    VersionConflictError,
+)
+
+NO_FILE = "none"
+
+
+def parse_base_version(raw: str | None) -> tuple[uuid.UUID | None, bool]:
+    """Interprets a client's `base_version_id` string as `(base_version_id, expect_new)`.
+
+    `None`/empty -> no precondition. `"none"` -> the caller expects no live file
+    at the path (create-only). A UUID -> the version the caller started from.
+    Anything else raises `ValidationError`.
+    """
+    if raw is None or raw == "":
+        return None, False
+    if raw == NO_FILE:
+        return None, True
+    try:
+        return uuid.UUID(raw), False
+    except ValueError as exc:
+        raise ValidationError(f"base_version_id must be a version id or '{NO_FILE}'") from exc
 
 
 def _next_version_number(db: Session, file_id: uuid.UUID) -> int:
@@ -103,12 +127,28 @@ def save_content(
     mime_type: str | None,
     size: int,
     content_hash: str,
+    base_version_id: uuid.UUID | None = None,
+    expect_new: bool = False,
 ) -> File:
     """Records `content_hash` as the content of `name` in `folder_id`.
 
     - No live file by that name: creates the file with version 1.
     - Live file with different content: appends the next version.
     - Live file with identical content: returns it unchanged (no new version).
+
+    Optional preconditions make this a compare-and-swap, which is what lets a
+    sync client detect that someone else changed the file since it last looked
+    (and avoid silently overwriting them):
+
+    - `base_version_id`: the version the caller started from. If the live file
+      is on a different version, raises `VersionConflictError`.
+    - `expect_new`: the caller believes no live file exists at this path. If
+      one does, raises `VersionConflictError`.
+
+    Identical content is never a conflict - both sides already agree. If the
+    file is gone while `base_version_id` is set, the content is simply saved as
+    a new file: the other side deleted it, and the caller's data must not be
+    dropped (Rule 5).
 
     The bytes must already be in the object store. Flushes but does not
     commit; the caller commits (and rolls back on failure).
@@ -133,6 +173,19 @@ def save_content(
 
     if existing.content_hash == content_hash:
         return existing
+
+    if expect_new:
+        raise VersionConflictError(
+            "a file already exists at that path",
+            file_id=existing.id,
+            current_version_id=existing.current_version_id,
+        )
+    if base_version_id is not None and existing.current_version_id != base_version_id:
+        raise VersionConflictError(
+            "the file was changed since the version this upload was based on",
+            file_id=existing.id,
+            current_version_id=existing.current_version_id,
+        )
 
     if mime_type:
         existing.mime_type = mime_type

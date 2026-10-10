@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse as FastAPIFileResponse
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
+from app.api.preconditions import conflict_http, parse_base_version
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
@@ -47,13 +48,31 @@ async def upload(
     file: UploadFile = FastAPIFile(...),
     folder_id: uuid.UUID | None = Form(default=None),
     name: str | None = Form(default=None),
+    base_version_id: str | None = Form(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Upload a file. Same name in the same folder = new version.
+
+    `base_version_id` (optional) makes the upload conditional: the id of the
+    version you started from, or `none` to require that nothing exists at that
+    path yet. A mismatch is a structured `409` (see app/api/preconditions.py).
+    """
+    base, expect_new = parse_base_version(base_version_id)
     try:
-        return await file_service.upload_file(db, current_user, file, folder_id, name)
+        return await file_service.upload_file(
+            db,
+            current_user,
+            file,
+            folder_id,
+            name,
+            base_version_id=base,
+            expect_new=expect_new,
+        )
     except file_service.NotFoundError as exc:
         raise _not_found(exc) from exc
+    except file_service.ConflictError as exc:
+        raise conflict_http(exc) from exc
     except file_service.ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except file_service.StorageError as exc:
@@ -115,16 +134,21 @@ def update(
     except file_service.NotFoundError as exc:
         raise _not_found(exc) from exc
     except file_service.ConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise conflict_http(exc) from exc
 
 
 @router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete(
     file_id: uuid.UUID,
+    base_version_id: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
+    """Move a file to the trash. With `base_version_id`, only if still on that version."""
+    base, _ = parse_base_version(base_version_id)
     try:
-        file_service.delete_file(db, current_user, file_id)
+        file_service.delete_file(db, current_user, file_id, base_version_id=base)
     except file_service.NotFoundError as exc:
         raise _not_found(exc) from exc
+    except file_service.ConflictError as exc:
+        raise conflict_http(exc) from exc

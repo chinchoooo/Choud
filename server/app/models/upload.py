@@ -59,6 +59,13 @@ class Upload(Base):
     # hash is still always computed either way.
     expected_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # Optional precondition carried to completion, same meaning as the
+    # `base_version_id` of a plain upload (see app/api/preconditions.py): a
+    # version id the client started from, or "none" to require that no live
+    # file exists at the path. Stored as the raw string the client sent, since
+    # it is only interpreted when the session completes. NULL = unconditional.
+    base_version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
     # "pending" | "completed" | "aborted" | "expired". Kept as a plain
     # string rather than a DB enum (Rule 2: no unnecessary
     # abstraction/dependency for a handful of values only this module

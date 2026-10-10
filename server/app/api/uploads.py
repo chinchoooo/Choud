@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from fastapi import File as FastAPIFile
 from sqlalchemy.orm import Session
 
+from app.api.preconditions import conflict_http
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
@@ -50,6 +51,7 @@ def create_upload(
             body.chunk_size,
             body.folder_id,
             body.expected_hash,
+            body.base_version_id,
         )
     except upload_service.NotFoundError as exc:
         raise _not_found(exc) from exc
@@ -116,7 +118,8 @@ def complete_upload(
     except upload_service.NotFoundError as exc:
         raise _not_found(exc) from exc
     except upload_service.ConflictError as exc:
-        raise _conflict(exc) from exc
+        # A structured body when it is a version conflict (see preconditions.py).
+        raise conflict_http(exc) from exc
     except upload_service.StorageError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
