@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, files, folders, health, search, trash, uploads, versions
+from app.api import auth, files, folders, health, search, sync, trash, uploads, versions
 from app.core.config import enforce_safe_settings, get_settings
 from app.core.logging import configure_logging
 from app.core.maintenance import maintenance_loop
@@ -48,6 +48,7 @@ app.include_router(files.router)
 app.include_router(search.router)
 app.include_router(uploads.router)
 app.include_router(versions.router)
+app.include_router(sync.router)
 app.include_router(trash.router)
 
 # The shares router is added when its phase lands (see docs/architecture.md).

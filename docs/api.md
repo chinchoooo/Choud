@@ -103,6 +103,26 @@ file's metadata (same `id`, new `content_hash`/`size`), still `201`.
 Uploading **identical bytes** under the same name is a no-op that returns
 the file unchanged. The same rule applies when a chunked upload completes.
 
+**Conditional writes (`base_version_id`).** Sync clients must not overwrite an
+edit they have never seen. The upload form accepts an optional
+`base_version_id`: the id of the version the client started from (as reported
+by the snapshot or a previous upload), or the literal `none` meaning "nothing
+should exist at this path yet". If the precondition no longer holds nothing is
+written and the response is `409`:
+
+```json
+{"detail": {"code": "version_conflict", "message": "...",
+            "file_id": "<uuid or null>", "current_version_id": "<uuid or null>"}}
+```
+
+Identical content is never a conflict, and a `base_version_id` for a file that
+has since been deleted simply creates a new file (the caller's data is never
+dropped). `POST /api/uploads` takes the same `base_version_id` in its JSON
+body and applies it on `/complete`; a conflict there marks the session
+`aborted` because its chunks were already consumed. `DELETE
+/api/files/{id}?base_version_id=<uuid>` moves a file to the trash only if it is
+still on that version. A malformed value is `422`.
+
 `GET /api/files/{id}` — metadata only. `GET /api/files/{id}/download` —
 streams the bytes with a `Content-Disposition` built from the stored
 name. Both `404` for a missing/not-owned/deleted file.
@@ -251,6 +271,32 @@ garbage-collection pass.
 
 All three `404` for a file that isn't in the caller's trash (unknown, live,
 or someone else's). A live file must be deleted before it can be purged.
+
+### Sync
+
+```text
+GET  /api/sync/snapshot
+POST /api/sync/folders
+```
+
+Used by the desktop client (and later the phone client); they need the whole
+tree by *path*, not a folder-by-folder walk.
+
+`GET /api/sync/snapshot` → `{generated_at, folders: [...], files: [...]}`. Each
+folder has `id`, `parent_id`, `path`; each file has `id`, `folder_id`, `name`,
+`path`, `size`, `content_hash`, `version_id`, `updated_at`. Paths are
+`/`-separated, relative to the root, with no leading slash. **Trashed files are
+absent** — to a sync client a file in the trash is a deleted file (it stays
+recoverable on the server). `version_id` is what the client remembers after a
+sync and sends back as `base_version_id`. A file and a folder may share a name
+in the same parent on the server; a local filesystem cannot hold both, so
+clients must detect that collision and skip the entry.
+
+`POST /api/sync/folders` with `{"path": "Research/2026"}` creates any missing
+folders and returns `{id, path}` of the leaf (`{id: null, path: ""}` for the
+root). Idempotent; reuses existing folders; leading/trailing slashes are
+ignored. Components with `..`, `.`, backslashes, null bytes, over 255
+characters, or more than 64 levels are `422` and nothing is created.
 
 ## Planned (not yet implemented)
 
