@@ -12,10 +12,17 @@ dev:
 
 test:
 	cd server && pytest
+	$(MAKE) client-test
 	$(MAKE) engine-test
+
+# The sync client's tests run the real server application in-process (they
+# import ../server), so they need the server's dependencies installed too.
+client-test:
+	cd client && pytest
 
 lint:
 	cd server && ruff check app tests
+	cd client && ruff check .
 	cd web && npm run lint
 
 format:

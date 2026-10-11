@@ -1,0 +1,24 @@
+# systemd USER service: keeps your sync folder in sync while you are logged in.
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp packaging/cloudsync.service ~/.config/systemd/user/
+#   systemctl --user enable --now cloudsync
+#   journalctl --user -u cloudsync -f          # watch it work
+#
+# Run `cloudsync login ...` once first. If you installed into a virtualenv,
+# change ExecStart to that venv's `cloudsync` (e.g. %h/cloudsync/.venv/bin/cloudsync).
+
+[Unit]
+Description=Personal Cloud sync client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/cloudsync run
+Restart=on-failure
+RestartSec=30
+# Exit code 3 = login expired: restarting would not help, so do not.
+RestartPreventExitStatus=3
+
+[Install]
+WantedBy=default.target

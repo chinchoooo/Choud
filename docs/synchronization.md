@@ -1,8 +1,24 @@
 # Synchronization
 
-> **Status:** not yet implemented. This documents the design for Phase 7
-> (Desktop Sync) and Phase 8 (Offline + Conflicts). See
+> **Status:** implemented in `client/` (Phases 7 and 8) and verified end to end
+> against the real Docker stack: two devices, a 25 MB chunked upload, conflicts,
+> a real network outage, recoverable deletes, and `run` mode. This page is the
+> design; [`client/README.md`](../client/README.md) is the user guide and
+> `client/cloudsync/reconciler.py` holds the exact decision table. See
 > [`architecture.md`](architecture.md#development-phases).
+
+## What the server provides for sync
+
+The client uses the ordinary HTTP API plus three additions made for it:
+
+- `GET /api/sync/snapshot` — the whole live tree as flat lists with full paths,
+  content hashes and each file's `version_id`; trashed files are absent.
+- `POST /api/sync/folders` — idempotently create a nested folder path.
+- **Conditional writes**: `base_version_id` on upload (plain and chunked) and
+  delete. The server applies the change only if the file is still on that
+  version, otherwise `409 {"code": "version_conflict", ...}`. This is what makes
+  conflict detection atomic instead of a client-side guess. See
+  [`api.md`](api.md#files--folders).
 
 ## Desktop client architecture
 
