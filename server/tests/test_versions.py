@@ -245,9 +245,7 @@ def test_download_an_old_version_returns_its_original_bytes(
     versions = _version_list(client, headers, v1["id"])
     old = next(v for v in versions if v["version_number"] == 1)
 
-    response = client.get(
-        f"/api/files/{v1['id']}/versions/{old['id']}/download", headers=headers
-    )
+    response = client.get(f"/api/files/{v1['id']}/versions/{old['id']}/download", headers=headers)
 
     assert response.status_code == 200
     assert response.content == b"version one"
@@ -261,13 +259,9 @@ def test_restore_creates_a_new_version_and_keeps_all_history(
 ) -> None:
     headers = auth_headers(make_user())
     v1, _ = _two_versions(client, headers)
-    old = next(
-        v for v in _version_list(client, headers, v1["id"]) if v["version_number"] == 1
-    )
+    old = next(v for v in _version_list(client, headers, v1["id"]) if v["version_number"] == 1)
 
-    response = client.post(
-        f"/api/files/{v1['id']}/versions/{old['id']}/restore", headers=headers
-    )
+    response = client.post(f"/api/files/{v1['id']}/versions/{old['id']}/restore", headers=headers)
 
     assert response.status_code == 201, response.text
     restored = response.json()
@@ -277,9 +271,7 @@ def test_restore_creates_a_new_version_and_keeps_all_history(
     assert restored["content_hash"] == v1["content_hash"]
 
     # The file now serves v1's bytes...
-    assert (
-        client.get(f"/api/files/{v1['id']}/download", headers=headers).content == b"version one"
-    )
+    assert client.get(f"/api/files/{v1['id']}/download", headers=headers).content == b"version one"
     meta = client.get(f"/api/files/{v1['id']}", headers=headers).json()
     assert meta["content_hash"] == v1["content_hash"]
     assert meta["size"] == len(b"version one")
@@ -349,14 +341,10 @@ def test_versions_of_another_users_file_are_hidden(
     bob_headers = auth_headers(bob)
     assert client.get(f"/api/files/{a['id']}/versions", headers=bob_headers).status_code == 404
     assert (
-        client.get(
-            f"/api/files/{a['id']}/versions/{version['id']}/download", headers=bob_headers
-        )
+        client.get(f"/api/files/{a['id']}/versions/{version['id']}/download", headers=bob_headers)
     ).status_code == 404
     assert (
-        client.post(
-            f"/api/files/{a['id']}/versions/{version['id']}/restore", headers=bob_headers
-        )
+        client.post(f"/api/files/{a['id']}/versions/{version['id']}/restore", headers=bob_headers)
     ).status_code == 404
 
 
@@ -382,13 +370,29 @@ def test_download_of_a_corrupted_old_version_returns_a_clean_500(
 ) -> None:
     headers = auth_headers(make_user())
     v1, _ = _two_versions(client, headers)
-    old = next(
-        v for v in _version_list(client, headers, v1["id"]) if v["version_number"] == 1
-    )
+    old = next(v for v in _version_list(client, headers, v1["id"]) if v["version_number"] == 1)
     fake_engine_client._path_for(old["content_hash"]).write_bytes(b"tampered")
 
-    response = client.get(
-        f"/api/files/{v1['id']}/versions/{old['id']}/download", headers=headers
-    )
+    response = client.get(f"/api/files/{v1['id']}/versions/{old['id']}/download", headers=headers)
 
     assert response.status_code == 500
+
+
+def test_file_responses_expose_the_current_version_id(
+    client: TestClient, make_user, auth_headers
+) -> None:
+    headers = auth_headers(make_user())
+    first = _upload(client, headers, content=b"one").json()
+    second = _upload(client, headers, content=b"two").json()
+
+    current = next(
+        v
+        for v in client.get(f"/api/files/{first['id']}/versions", headers=headers).json()[
+            "versions"
+        ]
+        if v["is_current"]
+    )
+    assert second["current_version_id"] == current["id"]
+    assert first["current_version_id"] != second["current_version_id"]
+    meta = client.get(f"/api/files/{first['id']}", headers=headers).json()
+    assert meta["current_version_id"] == current["id"]

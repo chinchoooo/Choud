@@ -37,6 +37,9 @@ class FileResponse(BaseModel):
     mime_type: str | None
     size: int
     content_hash: str | None
+    # The version this file is currently on. A sync client remembers it after an
+    # upload and sends it back as `base_version_id` to detect concurrent edits.
+    current_version_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
 
