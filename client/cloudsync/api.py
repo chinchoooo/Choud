@@ -121,6 +121,9 @@ class ApiClient:
         self._access = access_token
         self._refresh = refresh_token
         self._on_tokens = on_tokens
+        # The last snapshot and its ETag: an unchanged tree is a bodyless 304.
+        self._snapshot_cache: RemoteSnapshot | None = None
+        self._snapshot_etag: str | None = None
 
     def close(self) -> None:
         self._http.close()
@@ -187,7 +190,15 @@ class ApiClient:
     # --- tree --------------------------------------------------------------------
 
     def snapshot(self) -> RemoteSnapshot:
-        body = self._send("GET", "/api/sync/snapshot").json()
+        """The server's current tree. Unchanged since last time = a cheap 304, which
+        matters for polling every few seconds (and on a phone's mobile data)."""
+        conditional = self._snapshot_cache is not None and self._snapshot_etag is not None
+        headers = {"If-None-Match": self._snapshot_etag} if conditional else {}
+        response = self._send("GET", "/api/sync/snapshot", lambda: {"headers": headers})
+        if response.status_code == 304 and self._snapshot_cache is not None:
+            return self._snapshot_cache
+
+        body = response.json()
         folders = {f["path"]: f["id"] for f in body["folders"]}
         files = {
             f["path"]: RemoteFile(
@@ -199,7 +210,10 @@ class ApiClient:
             )
             for f in body["files"]
         }
-        return RemoteSnapshot(folders=folders, files=files)
+        snapshot = RemoteSnapshot(folders=folders, files=files)
+        self._snapshot_cache = snapshot
+        self._snapshot_etag = response.headers.get("ETag")
+        return snapshot
 
     def ensure_folder(self, path: str) -> str | None:
         """Id of the server folder at `path` (created if missing); None for the root."""

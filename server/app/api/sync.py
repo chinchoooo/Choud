@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -23,6 +23,8 @@ router = APIRouter(prefix="/api/sync", tags=["sync"])
 
 @router.get("/snapshot", response_model=SnapshotResponse)
 def snapshot(
+    request: Request,
+    response: Response,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -31,8 +33,16 @@ def snapshot(
     Trashed files are absent (to a sync client they are deleted). A file and a
     folder can share a name in the same parent on the server; clients must
     handle that collision, because a local filesystem can't hold both.
+
+    The response carries an `ETag` that changes exactly when the tree does. Send
+    it back as `If-None-Match` and an unchanged tree costs a bodyless `304` -
+    which is what makes polling cheap enough for a phone on mobile data.
     """
     result = sync_service.build_snapshot(db, current_user)
+    etag = sync_service.snapshot_etag(result)
+    if sync_service.etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers={"ETag": etag})
+    response.headers["ETag"] = etag
     return SnapshotResponse(
         generated_at=datetime.now(UTC),
         folders=[SnapshotFolderResponse.model_validate(f) for f in result.folders],

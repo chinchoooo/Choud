@@ -196,3 +196,46 @@ def test_unicode_and_spaces_in_names_round_trip(server, device) -> None:
 
     assert b.read("Résumé 2026 — final (v2).txt") == "naïve café".encode()
     assert b.read("日本語/ファイル.txt") == "こんにちは".encode()
+
+
+def test_an_unchanged_server_is_polled_with_a_cheap_304(server, device) -> None:
+    laptop = device()
+    laptop.write("a.txt", "x")
+    laptop.sync()
+    laptop.net.requests.clear()
+    laptop.net.statuses.clear()
+    laptop.net.sent_headers.clear()
+
+    report = laptop.sync_once()  # nothing changed anywhere
+
+    assert not report.did_work
+    snapshot_calls = [i for i, (m, u) in enumerate(laptop.net.requests) if u.endswith("/snapshot")]
+    assert len(snapshot_calls) == 1
+    i = snapshot_calls[0]
+    assert "If-None-Match" in laptop.net.sent_headers[i]  # asked conditionally...
+    assert laptop.net.statuses[i] == 304  # ...and the server sent no body
+
+
+def test_a_server_change_after_a_304_is_still_noticed(server, device) -> None:
+    a, b = device("a"), device("b")
+    a.write("shared.txt", "v1")
+    a.sync()
+    b.sync()
+    b.sync()  # B now holds a cached snapshot (a 304 on the second call)
+
+    a.write("shared.txt", "v2, edited on A")
+    a.sync()
+    report = b.sync()
+
+    assert report.downloaded == 1 and b.read("shared.txt") == b"v2, edited on A"
+
+
+def test_the_clients_own_uploads_refresh_its_snapshot(server, device) -> None:
+    laptop = device()
+    laptop.write("one.txt", "1")
+    laptop.sync()
+    laptop.write("two.txt", "2")
+
+    report = laptop.sync()  # the cached snapshot from before is stale; must not be reused
+
+    assert report.uploaded == 1 and set(server_files(server)) == {"one.txt", "two.txt"}

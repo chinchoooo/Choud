@@ -292,6 +292,14 @@ sync and sends back as `base_version_id`. A file and a folder may share a name
 in the same parent on the server; a local filesystem cannot hold both, so
 clients must detect that collision and skip the entry.
 
+**Cheap polling (`ETag`).** The snapshot response carries an `ETag` derived from
+its content (ids, paths, versions, hashes - not timestamps), so it changes
+exactly when the tree does: an upload, edit, rename, move, delete, restore or new
+folder. Send it back as `If-None-Match` and an unchanged tree is answered with a
+bodyless `304 Not Modified` (weak validators, comma lists and `*` are accepted).
+Polling every 30 s therefore costs almost nothing, which is what makes it
+practical on a phone's mobile data. The ETag is per user.
+
 `POST /api/sync/folders` with `{"path": "Research/2026"}` creates any missing
 folders and returns `{id, path}` of the leaf (`{id: null, path: ""}` for the
 root). Idempotent; reuses existing folders; leading/trailing slashes are

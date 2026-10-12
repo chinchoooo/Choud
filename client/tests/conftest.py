@@ -72,9 +72,12 @@ class Network:
         self.requests: list[tuple[str, str]] = []
         self.rules: list[Rule] = []
         self.before_request: Callable[[str, str], None] | None = None
+        self.sent_headers: list[dict] = []
+        self.statuses: list[int] = []
 
-    def _gate(self, method: str, url: str) -> httpx.Response | None:
+    def _gate(self, method: str, url: str, headers: dict | None = None) -> httpx.Response | None:
         self.requests.append((method, url))
+        self.sent_headers.append(dict(headers or {}))
         if not self.online:
             raise httpx.ConnectError("network is down")
         if self.before_request:
@@ -95,11 +98,13 @@ class Network:
         return None
 
     def request(self, method: str, url: str, **kwargs):
-        injected = self._gate(method, url)
-        return injected if injected is not None else self.inner.request(method, url, **kwargs)
+        injected = self._gate(method, url, kwargs.get("headers"))
+        response = injected if injected is not None else self.inner.request(method, url, **kwargs)
+        self.statuses.append(response.status_code)
+        return response
 
     def stream(self, method: str, url: str, **kwargs):
-        injected = self._gate(method, url)
+        injected = self._gate(method, url, kwargs.get("headers"))
         if injected is not None:
             from contextlib import contextmanager
 

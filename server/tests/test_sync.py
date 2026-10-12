@@ -181,3 +181,98 @@ def test_ensure_never_touches_another_users_folders(
     ).json()
 
     assert alices["id"] != bobs["id"]
+
+
+# --- ETag / conditional snapshot -------------------------------------------------------
+
+
+def _etag(client: TestClient, headers: dict) -> str:
+    response = client.get("/api/sync/snapshot", headers=headers)
+    assert response.status_code == 200
+    return response.headers["ETag"]
+
+
+def test_snapshot_has_a_stable_etag_and_answers_304_when_nothing_changed(
+    client: TestClient, make_user, auth_headers
+) -> None:
+    headers = auth_headers(make_user())
+    _upload(client, headers, name="a.txt")
+    etag = _etag(client, headers)
+    assert etag.startswith('"') and etag.endswith('"')
+    assert _etag(client, headers) == etag  # deterministic
+
+    again = client.get("/api/sync/snapshot", headers={**headers, "If-None-Match": etag})
+
+    assert again.status_code == 304
+    assert again.content == b""  # no body: that is the whole point
+    assert again.headers["ETag"] == etag
+
+
+def test_a_stale_etag_gets_the_full_snapshot(client: TestClient, make_user, auth_headers) -> None:
+    headers = auth_headers(make_user())
+    stale = _etag(client, headers)
+    _upload(client, headers, name="new.txt")
+
+    response = client.get("/api/sync/snapshot", headers={**headers, "If-None-Match": stale})
+
+    assert response.status_code == 200
+    assert response.headers["ETag"] != stale
+    assert [f["path"] for f in response.json()["files"]] == ["new.txt"]
+
+
+def test_every_kind_of_change_alters_the_etag(client: TestClient, make_user, auth_headers) -> None:
+    headers = auth_headers(make_user())
+    history = [_etag(client, headers)]
+
+    def changed(label: str) -> None:
+        # Each change must differ from the state right before it.
+        history.append(_etag(client, headers))
+        assert history[-1] != history[-2], f"{label} did not change the ETag"
+
+    first = _upload(client, headers, name="a.txt", content=b"one")
+    changed("a new file")
+    _upload(client, headers, name="a.txt", content=b"two")
+    changed("a new version")
+    client.patch(f"/api/files/{first['id']}", json={"name": "b.txt"}, headers=headers)
+    changed("a rename")
+    folder = client.post("/api/folders", json={"name": "F"}, headers=headers).json()
+    changed("a new folder")
+    client.patch(f"/api/files/{first['id']}", json={"folder_id": folder["id"]}, headers=headers)
+    changed("a move")
+    before_trash = history[-1]
+    client.delete(f"/api/files/{first['id']}", headers=headers)
+    changed("moving a file to the trash")
+    client.post(f"/api/trash/{first['id']}/restore", headers=headers)
+    changed("restoring from the trash")
+    # Restoring puts the tree back exactly as it was, so the fingerprint - which is
+    # derived from content, not from a counter - returns to its earlier value too.
+    assert history[-1] == before_trash
+    client.delete(f"/api/folders/{folder['id']}", headers=headers)  # non-empty: 409, no change
+    assert _etag(client, headers) == history[-1]
+
+
+def test_etag_is_per_user(client: TestClient, make_user, auth_headers) -> None:
+    alice = make_user()
+    bob = make_user(username="bob", email="bob@example.com")
+    _upload(client, auth_headers(alice), name="alice.txt")
+
+    # Bob's empty tree is unaffected by Alice's uploads, and Alice's ETag does
+    # not match Bob's tree, so it cannot be used to learn anything about it.
+    bob_etag = _etag(client, auth_headers(bob))
+    alice_etag = _etag(client, auth_headers(alice))
+    assert bob_etag != alice_etag
+    response = client.get(
+        "/api/sync/snapshot", headers={**auth_headers(bob), "If-None-Match": alice_etag}
+    )
+    assert response.status_code == 200
+
+
+def test_if_none_match_accepts_weak_validators_lists_and_star(
+    client: TestClient, make_user, auth_headers
+) -> None:
+    headers = auth_headers(make_user())
+    etag = _etag(client, headers)
+
+    for value in (f"W/{etag}", f'"nope", {etag}', "*"):
+        response = client.get("/api/sync/snapshot", headers={**headers, "If-None-Match": value})
+        assert response.status_code == 304, value

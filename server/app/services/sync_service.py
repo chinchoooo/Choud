@@ -14,6 +14,8 @@ Trashed files are not in the snapshot: to a sync client a file in the trash is
 a deleted file. (They stay recoverable on the server.)
 """
 
+import hashlib
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -119,6 +121,44 @@ def build_snapshot(db: Session, owner: User) -> Snapshot:
         )
     snapshot_files.sort(key=lambda f: f.path)
     return Snapshot(folders=snapshot_folders, files=snapshot_files)
+
+
+def snapshot_etag(snapshot: Snapshot) -> str:
+    """A fingerprint of everything a sync client can observe in `snapshot`.
+
+    Derived from the content itself (ids, paths, versions, hashes), not from
+    timestamps, so it changes exactly when the snapshot would: an upload, edit,
+    rename, move, delete, restore or new folder all change it, and nothing else
+    does. A client that sends it back as `If-None-Match` gets a bodyless `304`
+    instead of re-downloading an unchanged tree.
+
+    The records are JSON-encoded before hashing so a file name containing a
+    separator character can never make two different trees hash alike.
+    """
+    records = [["d", str(f.id), str(f.parent_id), f.path] for f in snapshot.folders] + [
+        [
+            "f",
+            str(f.id),
+            str(f.folder_id),
+            f.path,
+            f.size,
+            f.content_hash,
+            str(f.version_id),
+        ]
+        for f in snapshot.files
+    ]
+    encoded = json.dumps(records, separators=(",", ":"), ensure_ascii=True)
+    return '"' + hashlib.sha256(encoded.encode("ascii")).hexdigest() + '"'
+
+
+def etag_matches(header: str | None, etag: str) -> bool:
+    """Whether an `If-None-Match` header value matches `etag` (weak validators and `*` included)."""
+    if not header:
+        return False
+    if header.strip() == "*":
+        return True
+    candidates = [part.strip() for part in header.split(",")]
+    return any(c.removeprefix("W/") == etag for c in candidates)
 
 
 def split_path(path: str) -> list[str]:
