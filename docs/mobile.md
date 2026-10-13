@@ -7,7 +7,7 @@ the app being open — the same thing the desktop client does, on a phone.
 **Status:** the *server* side is ready. **Platform decided: Android (Kotlin).**
 Build-order steps 1-5 (login, status screen, camera-roll backup, WorkManager
 scheduling, resumable chunked uploads) exist in [`android/`](../android/README.md)
-— unit-tested and building, but **not yet run on a real phone/emulator**. Steps
+— unit-tested, and verified on an emulator against the real stack (incl. a 30 MB chunked upload), but **not yet on a physical phone**. Steps
 6-7 (two-way folder sync, browse/download) are not built. This page remains the
 spec.
 

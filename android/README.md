@@ -48,13 +48,15 @@ address), and grant the media/notification permissions.
 
 ## Not done yet
 
-- **Never run on a real phone or emulator** — only unit tests (11) and a debug build
-  have been verified. Do a real run before trusting it.
+- **Verified on an Android 15 emulator** against the real Docker stack: login, 3 photos
+  plus a 30 MB video (chunked) backed up, SHA-256 matches the originals, a second run
+  uploads nothing. **Not yet run on a physical phone**, and background scheduling
+  (WorkManager with Wi-Fi + charging) was only exercised via "Back up now".
 - Backed-up files are not re-uploaded if edited afterwards (a photo edited in place
   keeps its MediaStore id and is treated as done).
 - Only `DCIM/`; no other folders (needs Storage Access Framework), no two-way sync
   (port `client/cloudsync/reconciler.py` and its test table), no browse/download (18b).
 - Plain `http://` is allowed (`usesCleartextTraffic`) because the server is typically
   on a LAN/Tailscale; use `https://` if you can.
-- No battery-optimisation exemption prompt; without it Android may delay the job.
+- A button asks for the battery-optimisation exemption; without it Android may delay the job.
 - Original capture time is not sent (see `docs/mobile.md`, problem 5).

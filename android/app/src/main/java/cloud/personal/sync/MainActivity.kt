@@ -3,7 +3,11 @@ package cloud.personal.sync
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings as AndroidSettings
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -146,6 +150,17 @@ class MainActivity : Activity() {
                 SyncWorker.runNow(this@MainActivity)
             }
         }
+        val battery = Button(this).apply {
+            text = "Allow background running (battery)"
+            setOnClickListener {
+                startActivity(
+                    Intent(
+                        AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:$packageName"),
+                    )
+                )
+            }
+        }
         val logout = Button(this).apply {
             text = "Log out"
             setOnClickListener {
@@ -161,8 +176,11 @@ class MainActivity : Activity() {
             appendLine("Last run: ${settings.lastRun}")
             if (settings.lastError.isNotEmpty()) appendLine("Problem: ${settings.lastError}")
         }
-        listOf(label("Personal Cloud"), label(statusLines), wifi, charging, syncNow, logout)
-            .forEach { root.addView(it) }
+        val views = mutableListOf(label("Personal Cloud"), label(statusLines), wifi, charging, syncNow)
+        val power = getSystemService(POWER_SERVICE) as PowerManager
+        if (!power.isIgnoringBatteryOptimizations(packageName)) views += battery
+        views += logout
+        views.forEach { root.addView(it) }
     }
 
     private fun requestPermissions() {
