@@ -4,10 +4,12 @@
 Documents, …), and have them sync with the server **in the background**, without
 the app being open — the same thing the desktop client does, on a phone.
 
-**Status:** the *server* side is ready; the *app* is not built. This page is the
-spec for it, so whoever builds it (or the next session) does not have to
-re-derive any of this. One decision is needed first — see
-[Decision needed](#decision-needed-which-phone).
+**Status:** the *server* side is ready. **Platform decided: Android (Kotlin).**
+Build-order steps 1-5 (login, status screen, camera-roll backup, WorkManager
+scheduling, resumable chunked uploads) exist in [`android/`](../android/README.md)
+— unit-tested and building, but **not yet run on a real phone/emulator**. Steps
+6-7 (two-way folder sync, browse/download) are not built. This page remains the
+spec.
 
 ## What the server already provides
 
