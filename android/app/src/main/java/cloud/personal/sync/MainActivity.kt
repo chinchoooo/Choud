@@ -120,6 +120,11 @@ class MainActivity : Activity() {
 
     private fun renderStatus() {
         val db = BackupDb(this)
+        val visible = try {
+            CameraBackup(this, settings, db, ApiClient(settings.serverUrl, settings)).visibleCount().toString()
+        } catch (e: SecurityException) {
+            "0 (permission missing - tap Back up now and allow)"
+        }
         val done = db.count("done")
         val failed = db.count("failed")
         val uploading = db.count("uploading")
@@ -174,6 +179,7 @@ class MainActivity : Activity() {
             appendLine("Server: ${settings.serverUrl}")
             appendLine("Backing up to: Phone Backups/${settings.deviceName}/")
             appendLine("Backed up: $done   Failed: $failed   In progress: $uploading")
+            appendLine("Photos the app can see: $visible")
             appendLine("Last run: ${settings.lastRun}")
             if (settings.lastError.isNotEmpty()) appendLine("Problem: ${settings.lastError}")
         }

@@ -26,6 +26,7 @@ class SyncWorker(private val context: Context, params: WorkerParameters) :
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val settings = Settings(context)
+        settings.lastRun = "started " + LocalDateTime.now().withNano(0).toString().replace('T', ' ')
         if (!settings.loggedIn) return@withContext Result.success()
         val db = BackupDb(context)
         try {
@@ -47,6 +48,12 @@ class SyncWorker(private val context: Context, params: WorkerParameters) :
         } catch (e: ApiError) {
             settings.lastError = e.message ?: "server error"
             if (e.transient) Result.retry() else Result.failure()
+        } catch (e: SecurityException) {
+            settings.lastError = "No permission to read photos: allow Photos and videos (All) in the app's permissions"
+            Result.failure()
+        } catch (e: Exception) {
+            settings.lastError = "${e.javaClass.simpleName}: ${e.message}"
+            Result.failure()
         } finally {
             db.close()
         }

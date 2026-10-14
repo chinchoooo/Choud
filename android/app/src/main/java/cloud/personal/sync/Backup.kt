@@ -59,6 +59,17 @@ class CameraBackup(
         return items
     }
 
+    /** How many camera-roll files the app can see (0 with a permission problem). */
+    fun visibleCount(): Int = listOf(
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+    ).sumOf { uri ->
+        context.contentResolver.query(
+            uri, arrayOf(MediaStore.MediaColumns._ID),
+            "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?", arrayOf("DCIM/%"), null,
+        )?.use { it.count } ?: 0
+    }
+
     fun pending(): List<MediaItem> =
         (query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "i") +
             query(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "v"))
