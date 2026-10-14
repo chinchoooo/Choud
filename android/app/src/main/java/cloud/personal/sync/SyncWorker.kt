@@ -100,12 +100,12 @@ class SyncWorker(private val context: Context, params: WorkerParameters) :
                 .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, request)
         }
 
-        /** "Sync now": ignores the charging/Wi-Fi constraints, needs only a connection. */
+        /** "Sync now" replaces any stuck/backing-off earlier attempt. Ignores the charging/Wi-Fi constraints, needs only a connection. */
         fun runNow(context: Context) {
             val request = OneTimeWorkRequestBuilder<SyncWorker>()
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(ONCE, ExistingWorkPolicy.KEEP, request)
+            WorkManager.getInstance(context).enqueueUniqueWork(ONCE, ExistingWorkPolicy.REPLACE, request)
         }
 
         fun cancel(context: Context) {
