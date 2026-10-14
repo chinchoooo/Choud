@@ -166,6 +166,7 @@ class MainActivity : Activity() {
             setOnClickListener {
                 SyncWorker.cancel(this@MainActivity)
                 settings.logout()
+                BackupDb(this@MainActivity).use { it.clear() }
                 render()
             }
         }

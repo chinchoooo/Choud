@@ -89,6 +89,11 @@ class BackupDb(context: Context) : SQLiteOpenHelper(context, "backup.db", null, 
         writableDatabase.insertWithOnConflict("media", null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
+    /** Forget everything: a different server/account must get a full backup of its own. */
+    fun clear() {
+        writableDatabase.delete("media", null, null)
+    }
+
     fun count(status: String): Int =
         readableDatabase.rawQuery("SELECT COUNT(*) FROM media WHERE status=?", arrayOf(status)).use {
             it.moveToFirst()
