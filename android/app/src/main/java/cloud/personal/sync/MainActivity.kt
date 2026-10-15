@@ -2,195 +2,268 @@ package cloud.personal.sync
 
 import android.Manifest
 import android.app.Activity
-import android.content.pm.PackageManager
+import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.BatteryManager
 import android.os.Build
-import android.os.PowerManager
-import android.provider.Settings as AndroidSettings
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.text.InputType
-import android.widget.Button
-import android.widget.CheckBox
+import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.concurrent.thread
 
-/** Deliberately plain: login, a few switches, and a status readout. */
-class MainActivity : Activity() {
-    private lateinit var settings: Settings
-    private val ui = Handler(Looper.getMainLooper())
-    private val refreshStatus = object : Runnable {
+/** Holds the four tabs (Backup queue, Files, Photos, More) or the login screen. */
+class MainActivity : Activity(), Host {
+    private val handler = Handler(Looper.getMainLooper())
+
+    override lateinit var settings: Settings
+    override lateinit var ui: Ui
+
+    @Volatile
+    override var facts: Facts = Facts()
+
+    private var apiCache: ApiClient? = null
+    private var apiUrl: String = ""
+
+    override val api: ApiClient
+        @Synchronized get() {
+            val url = settings.serverUrl
+            val existing = apiCache
+            if (existing != null && apiUrl == url) return existing
+            return ApiClient(url, settings, log = EventLog::log).also {
+                apiCache = it
+                apiUrl = url
+            }
+        }
+
+    private lateinit var content: FrameLayout
+    private lateinit var tabBar: LinearLayout
+    private val tabs = ArrayList<Pair<String, Tab>>()
+    private val tabLabels = ArrayList<TextView>()
+    private var selected = 0
+    private var refreshingFacts = false
+    private var lastFactsAt = 0L
+
+    private val tick = object : Runnable {
         override fun run() {
-            render()
-            ui.postDelayed(this, 3000)
+            if (settings.loggedIn) {
+                refreshFactsIfDue()
+                tabs.getOrNull(selected)?.second?.onTick()
+            }
+            handler.postDelayed(this, 500)
         }
     }
-    private lateinit var root: LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        EventLog.init(this)
         settings = Settings(this)
-        if (settings.deviceName.isEmpty()) settings.deviceName = Build.MODEL ?: "Phone"
-        root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val pad = (16 * resources.displayMetrics.density).toInt()
-            setPadding(pad, pad, pad, pad)
-        }
-        setContentView(ScrollView(this).apply { addView(root) })
+        if (settings.deviceName.isEmpty()) settings.deviceName = safeDeviceName(Build.MODEL ?: "Phone")
+        val palette = Themes.palette(AppTheme.fromId(settings.theme))
+        ui = Ui(this, palette)
+        applySystemBars(palette)
+        if (settings.loggedIn) showMain() else showLogin()
     }
 
-    override fun onResume() {
-        super.onResume()
-        ui.post(refreshStatus)
-    }
-
-    override fun onPause() {
-        super.onPause()
-        ui.removeCallbacks(refreshStatus)
-    }
-
-    private fun label(text: String) = TextView(this).apply { this.text = text; textSize = 16f }
-
-    private fun render() {
-        // Don't rebuild the form while the user types into it.
-        if (!settings.loggedIn) {
-            if (root.childCount == 0 || root.tag != "login") renderLogin()
+    private fun applySystemBars(palette: Palette) {
+        window.statusBarColor = palette.bg
+        window.navigationBarColor = palette.bg
+        var flags = window.decorView.systemUiVisibility
+        flags = if (palette.darkSystemBars) {
+            flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
         } else {
-            renderStatus()
+            flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
         }
+        window.decorView.systemUiVisibility = flags
     }
 
-    private fun renderLogin() {
-        root.tag = "login"
-        root.removeAllViews()
-        val url = EditText(this).apply {
-            hint = "Server URL, e.g. http://100.x.y.z:8000"
-            setText(settings.serverUrl)
-            inputType = InputType.TYPE_TEXT_VARIATION_URI
+    // ---------------------------------------------------------------- login
+
+    private fun showLogin() {
+        val p = ui.palette
+        val column = ui.vertical().apply { setPadding(ui.dp(20), ui.dp(40), ui.dp(20), ui.dp(24)) }
+
+        fun field(hint: String, value: String = "", type: Int = InputType.TYPE_CLASS_TEXT) = EditText(this).apply {
+            this.hint = hint
+            setText(value)
+            inputType = type
+            typeface = ui.typeface
+            setTextColor(p.ink)
+            setHintTextColor(p.mute)
+            textSize = 15f
+            setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12))
+            background = ui.box(p.surface, p.line)
         }
-        val email = EditText(this).apply {
-            hint = "Email"
-            inputType = InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-        }
-        val password = EditText(this).apply {
-            hint = "Password"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        val device = EditText(this).apply {
-            hint = "This phone's name"
-            setText(settings.deviceName)
-        }
-        val message = label("")
-        val button = Button(this).apply {
-            text = "Log in"
-            setOnClickListener {
-                isEnabled = false
-                message.text = "Logging in…"
-                val serverUrl = url.text.toString().trim()
-                thread {
-                    val error = try {
-                        settings.serverUrl = serverUrl
-                        settings.deviceName = safeDeviceName(device.text.toString())
-                        ApiClient(serverUrl, settings).login(email.text.toString().trim(), password.text.toString())
-                        null
-                    } catch (e: Exception) {
-                        e.message ?: e.javaClass.simpleName
-                    }
-                    runOnUiThread {
-                        isEnabled = true
-                        if (error == null) {
-                            root.tag = null
-                            requestPermissions()
-                            SyncWorker.schedule(this@MainActivity, settings)
-                            render()
-                        } else {
-                            message.text = "Login failed: $error"
-                        }
+
+        val url = field("Server URL, e.g. http://100.x.y.z", settings.serverUrl, InputType.TYPE_TEXT_VARIATION_URI)
+        val email = field("Email", type = InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
+        val password = field("Password", type = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        val device = field("This phone's name", settings.deviceName)
+        val message = ui.text("", 13f, p.danger)
+
+        column.addView(ui.heading("Personal Cloud"))
+        column.addView(ui.muted("Back up your photos to your own server.", 13f), ui.matchWidth(2))
+        column.addView(url, ui.matchWidth(24))
+        column.addView(email, ui.matchWidth(10))
+        column.addView(password, ui.matchWidth(10))
+        column.addView(device, ui.matchWidth(10))
+        lateinit var loginButton: android.widget.Button
+        loginButton = ui.button("Log in", primary = true) {
+            loginButton.isEnabled = false
+            message.setTextColor(p.mute)
+            message.text = "Logging in..."
+            val serverUrl = url.text.toString().trim()
+            thread {
+                val error = try {
+                    settings.serverUrl = serverUrl
+                    settings.deviceName = safeDeviceName(device.text.toString())
+                    EventLog.log("login: $serverUrl as ${email.text.toString().trim()}, device '${settings.deviceName}'")
+                    ApiClient(serverUrl, settings, log = EventLog::log)
+                        .login(email.text.toString().trim(), password.text.toString())
+                    null
+                } catch (e: Exception) {
+                    EventLog.log("login failed: ${e.javaClass.simpleName}: ${e.message}")
+                    e.message ?: e.javaClass.simpleName
+                }
+                runOnUiThread {
+                    loginButton.isEnabled = true
+                    if (error == null) {
+                        requestMediaPermissions()
+                        SyncWorker.schedule(this, settings)
+                        showMain()
+                    } else {
+                        message.setTextColor(p.danger)
+                        message.text = "Login failed: $error"
                     }
                 }
             }
         }
-        listOf(label("Personal Cloud"), url, email, password, device, button, message).forEach { root.addView(it) }
+        column.addView(loginButton, ui.matchWidth(18))
+        column.addView(message, ui.matchWidth(10))
+        setContentView(ScrollView(this).apply {
+            setBackgroundColor(p.bg)
+            addView(column)
+        })
     }
 
-    private fun renderStatus() {
-        val db = BackupDb(this)
-        val visible = try {
-            CameraBackup(this, settings, db, ApiClient(settings.serverUrl, settings)).visibleCount().toString()
-        } catch (e: SecurityException) {
-            "0 (permission missing - tap Back up now and allow)"
-        }
-        val done = db.count("done")
-        val failed = db.count("failed")
-        val uploading = db.count("uploading")
-        db.close()
-        root.tag = "status"
-        root.removeAllViews()
+    // ---------------------------------------------------------------- main
 
-        val wifi = CheckBox(this).apply {
-            text = "Wi-Fi only"
-            isChecked = settings.wifiOnly
-            setOnCheckedChangeListener { _, on ->
-                settings.wifiOnly = on
-                SyncWorker.schedule(this@MainActivity, settings)
+    private fun showMain() {
+        val p = ui.palette
+        tabs.clear()
+        tabLabels.clear()
+        tabs += "Backup" to BackupTab(this)
+        tabs += "Files" to FilesTab(this)
+        tabs += "Photos" to PhotosTab(this)
+        tabs += "More" to MoreTab(this) { logout() }
+
+        tabBar = ui.horizontal().apply { setBackgroundColor(p.surface) }
+        tabs.forEachIndexed { index, (label, _) ->
+            val view = ui.text(if (p.retro) label.uppercase() else label, 14f, p.mute, bold = true).apply {
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, ui.dp(14), 0, ui.dp(12))
+                setOnClickListener { select(index) }
             }
+            tabLabels += view
+            tabBar.addView(view, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
-        val charging = CheckBox(this).apply {
-            text = "Only while charging"
-            isChecked = settings.chargingOnly
-            setOnCheckedChangeListener { _, on ->
-                settings.chargingOnly = on
-                SyncWorker.schedule(this@MainActivity, settings)
-            }
+        content = FrameLayout(this)
+        val root = ui.vertical().apply {
+            setBackgroundColor(p.bg)
+            addView(tabBar, ui.matchWidth())
+            addView(ui.divider())
+            addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         }
-        val syncNow = Button(this).apply {
-            text = "Back up now"
-            setOnClickListener {
-                requestPermissions()
-                SyncWorker.runNow(this@MainActivity)
-            }
-        }
-        val battery = Button(this).apply {
-            text = "Allow background running (battery)"
-            setOnClickListener {
-                startActivity(
-                    Intent(
-                        AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        Uri.parse("package:$packageName"),
-                    )
+        setContentView(root)
+        select(selected.coerceIn(0, tabs.lastIndex))
+        lastFactsAt = 0
+    }
+
+    private fun select(index: Int) {
+        selected = index
+        val p = ui.palette
+        tabLabels.forEachIndexed { i, label ->
+            val active = i == index
+            label.setTextColor(if (active) p.ink else p.mute)
+            label.background = if (active) {
+                android.graphics.drawable.LayerDrawable(
+                    arrayOf(
+                        android.graphics.drawable.ColorDrawable(p.surface),
+                        android.graphics.drawable.ColorDrawable(p.accent).let {
+                            android.graphics.drawable.InsetDrawable(it, 0, ui.dp(40), 0, 0)
+                        },
+                    ),
                 )
-            }
+            } else null
         }
-        val logout = Button(this).apply {
-            text = "Log out"
-            setOnClickListener {
-                SyncWorker.cancel(this@MainActivity)
-                settings.logout()
-                BackupDb(this@MainActivity).use { it.clear() }
-                render()
-            }
-        }
-        val statusLines = buildString {
-            appendLine("Server: ${settings.serverUrl}")
-            appendLine("Backing up to: Phone Backups/${settings.deviceName}/")
-            appendLine("Backed up: $done   Failed: $failed   In progress: $uploading")
-            appendLine("Photos the app can see: $visible")
-            appendLine("Last run: ${settings.lastRun}")
-            if (settings.lastError.isNotEmpty()) appendLine("Problem: ${settings.lastError}")
-        }
-        val views = mutableListOf(label("Personal Cloud"), label(statusLines), wifi, charging, syncNow)
-        val power = getSystemService(POWER_SERVICE) as PowerManager
-        if (!power.isIgnoringBatteryOptimizations(packageName)) views += battery
-        views += logout
-        views.forEach { root.addView(it) }
+        content.removeAllViews()
+        val tab = tabs[index].second
+        content.addView(tab.view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        tab.onShow()
     }
 
-    private fun requestPermissions() {
+    private fun logout() {
+        SyncWorker.cancel(this)
+        LiveStatus.cancelRequested = true
+        settings.logout()
+        BackupDb(this).use { it.clear() }
+        ThumbLoader.clear()
+        EventLog.log("user: logged out, backup state cleared")
+        facts = Facts()
+        apiCache = null
+        showLogin()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        handler.post(tick)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        handler.removeCallbacks(tick)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (settings.loggedIn && tabs.getOrNull(selected)?.second?.onBack() == true) return
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
+    }
+
+    // ---------------------------------------------------------------- Host
+
+    override fun openViewer(items: List<RemoteItem>, index: Int) {
+        ViewerSession.items = items
+        startActivity(Intent(this, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_INDEX, index))
+    }
+
+    override fun onThemeChanged() {
+        recreate()
+    }
+
+    override fun runOnUi(block: () -> Unit) {
+        runOnUiThread(block)
+    }
+
+    override fun requestMediaPermissions() {
         val wanted = if (Build.VERSION.SDK_INT >= 33) {
             arrayOf(
                 Manifest.permission.READ_MEDIA_IMAGES,
@@ -203,4 +276,110 @@ class MainActivity : Activity() {
         val missing = wanted.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), 1)
     }
+
+    // ---------------------------------------------------------------- facts
+
+    private fun refreshFactsIfDue() {
+        val now = System.currentTimeMillis()
+        if (refreshingFacts || now - lastFactsAt < 3000) return
+        refreshingFacts = true
+        lastFactsAt = now
+        thread {
+            try {
+                facts = collectFacts()
+            } catch (e: Exception) {
+                facts = facts.copy(lastError = "Could not read status: ${e.javaClass.simpleName}: ${e.message}")
+            } finally {
+                refreshingFacts = false
+            }
+        }
+    }
+
+    private fun collectFacts(): Facts {
+        val db = BackupDb(this)
+        val done = db.count("done")
+        val failed = db.count("failed")
+        val uploading = db.count("uploading")
+        val failures = db.failures(5)
+        val visible = try {
+            CameraBackup(this, settings, db, api).visibleCount()
+        } catch (e: SecurityException) {
+            0
+        }
+        db.close()
+
+        fun perm(p: String) = if (checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED) "yes" else "NO"
+        val permissions = if (Build.VERSION.SDK_INT >= 33) {
+            "photos ${perm(Manifest.permission.READ_MEDIA_IMAGES)}, videos ${perm(Manifest.permission.READ_MEDIA_VIDEO)}, " +
+                "notifications ${perm(Manifest.permission.POST_NOTIFICATIONS)}"
+        } else {
+            "storage ${perm(Manifest.permission.READ_EXTERNAL_STORAGE)}"
+        }
+        val power = getSystemService(POWER_SERVICE) as PowerManager
+        return Facts(
+            visible = visible,
+            done = done,
+            failed = failed,
+            uploading = uploading,
+            failures = failures,
+            network = networkText(),
+            power = powerText(),
+            permissions = permissions,
+            batteryExempt = power.isIgnoringBatteryOptimizations(packageName),
+            jobNow = workText(SyncWorker.ONCE),
+            jobHourly = workText(SyncWorker.PERIODIC),
+            lastRun = settings.lastRun,
+            lastError = settings.lastError,
+        )
+    }
+
+    private fun networkText(): String {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.activeNetwork ?: return "OFFLINE"
+        val caps = cm.getNetworkCapabilities(network) ?: return "unknown"
+        val kinds = buildList {
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) add("Wi-Fi")
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) add("mobile data")
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) add("ethernet")
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) add("VPN (Tailscale?)")
+        }.joinToString(" + ").ifEmpty { "other" }
+        val metered = if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)) "unmetered" else "metered"
+        val internet = if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) "internet ok" else "no internet check"
+        return "$kinds, $metered, $internet"
+    }
+
+    private fun powerText(): String {
+        val intent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return "unknown"
+        val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
+        val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
+        return "${level * 100 / scale}% ${if (plugged) "charging" else "on battery"}"
+    }
+
+    private fun workText(name: String): String {
+        val infos = try {
+            WorkManager.getInstance(this).getWorkInfosForUniqueWork(name).get()
+        } catch (e: Exception) {
+            return "unknown (${e.javaClass.simpleName})"
+        }
+        val info = infos.firstOrNull() ?: return "not scheduled"
+        val state = when (info.state) {
+            WorkInfo.State.ENQUEUED -> "waiting for its conditions / next slot"
+            WorkInfo.State.RUNNING -> "RUNNING"
+            WorkInfo.State.SUCCEEDED -> "finished OK"
+            WorkInfo.State.FAILED -> "FAILED (see log)"
+            WorkInfo.State.BLOCKED -> "blocked"
+            WorkInfo.State.CANCELLED -> "cancelled"
+        }
+        val next = info.nextScheduleTimeMillis.takeIf { it != Long.MAX_VALUE && info.state == WorkInfo.State.ENQUEUED }
+            ?.let { " (next " + DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it)) + ")" }
+            .orEmpty()
+        return "$state, attempt ${info.runAttemptCount + 1}$next"
+    }
+}
+
+/** The list the viewer is browsing; set right before it opens (a list of file entries is not Parcelable-cheap). */
+object ViewerSession {
+    @Volatile
+    var items: List<RemoteItem> = emptyList()
 }

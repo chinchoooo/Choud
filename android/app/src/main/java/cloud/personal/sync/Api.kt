@@ -35,12 +35,52 @@ interface TokenStore {
 data class RemoteFile(val id: String, val path: String, val contentHash: String)
 data class UploadResult(val fileId: String, val contentHash: String)
 
+data class FolderItem(val id: String, val name: String)
+
+data class RemoteItem(
+    val id: String,
+    val name: String,
+    val size: Long,
+    val mime: String,
+    val favorite: Boolean,
+    val folderPath: String,
+    val takenAtMillis: Long?,
+    val createdAtMillis: Long?,
+) {
+    /** When the photo was taken, else when it was uploaded. */
+    val sortMillis: Long get() = takenAtMillis ?: createdAtMillis ?: 0L
+}
+
+data class Listing(val folders: List<FolderItem>, val files: List<RemoteItem>)
+data class PhotoPage(val items: List<RemoteItem>, val total: Int)
+data class Usage(val usedBytes: Long, val quotaBytes: Long, val fileCount: Int)
+
+private fun parseMillis(raw: String?): Long? =
+    if (raw.isNullOrEmpty() || raw == "null") null
+    else try {
+        java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli()
+    } catch (_: Exception) {
+        null
+    }
+
+private fun JSONObject.toItem() = RemoteItem(
+    id = getString("id"),
+    name = getString("name"),
+    size = optLong("size", 0),
+    mime = optString("mime_type", "").let { if (it == "null") "" else it },
+    favorite = optBoolean("is_favorite", false),
+    folderPath = optString("folder_path", "").let { if (it == "null") "" else it },
+    takenAtMillis = parseMillis(if (isNull("taken_at")) null else optString("taken_at")),
+    createdAtMillis = parseMillis(optString("created_at")),
+)
+
 /** A request body that re-opens its source each time, so a retry after a token refresh works. */
 private class StreamBody(
     private val open: () -> InputStream,
     private val offset: Long,
     private val length: Long,
     private val type: String,
+    private val onBytes: (Long) -> Unit = {},
 ) : RequestBody() {
     override fun contentType() = type.toMediaType()
     override fun contentLength() = length
@@ -59,19 +99,23 @@ private class StreamBody(
                 if (read < 0) throw IOException("file shrank while uploading")
                 sink.write(buffer, 0, read)
                 remaining -= read
+                onBytes(length - remaining)
             }
         }
     }
 }
 
-fun sha256Hex(open: () -> InputStream): String {
+fun sha256Hex(open: () -> InputStream, onBytes: (Long) -> Unit = {}): String {
     val digest = MessageDigest.getInstance("SHA-256")
     open().use { stream ->
         val buffer = ByteArray(64 * 1024)
+        var total = 0L
         while (true) {
             val read = stream.read(buffer)
             if (read < 0) break
             digest.update(buffer, 0, read)
+            total += read
+            onBytes(total)
         }
     }
     return digest.digest().joinToString("") { "%02x".format(it) }
@@ -86,6 +130,7 @@ class ApiClient(
         .readTimeout(300, TimeUnit.SECONDS)
         .writeTimeout(300, TimeUnit.SECONDS)
         .build(),
+    private val log: (String) -> Unit = {},
 ) {
     private val base = baseUrl.trim().trimEnd('/')
     private var snapshotEtag: String? = null
@@ -100,10 +145,13 @@ class ApiClient(
             raw.ifEmpty { fallback }
         }
 
-    private fun raiseForError(response: Response) {
+    private fun ms(startedNanos: Long) = (System.nanoTime() - startedNanos) / 1_000_000
+
+    private fun raiseForError(response: Response, path: String = "") {
         if (response.code < 400) return
         val raw = response.body?.string().orEmpty()
         val text = detailText(raw, response.message)
+        log("   server said (${response.code} $path): ${text.take(300)}")
         if (response.code == 409) {
             val code = try {
                 JSONObject(raw).optJSONObject("detail")?.optString("code")
@@ -122,20 +170,27 @@ class ApiClient(
         retryAuth: Boolean = true,
         build: (Request.Builder) -> Request.Builder = { it },
     ): Response {
+        val usedAccess = tokens.access
         val builder = Request.Builder().url(base + path)
-        if (tokens.access.isNotEmpty()) builder.header("Authorization", "Bearer ${tokens.access}")
+        if (usedAccess.isNotEmpty()) builder.header("Authorization", "Bearer $usedAccess")
+        val request = build(builder).build()
+        val started = System.nanoTime()
+        log("-> ${request.method} $path")
         val response = try {
-            http.newCall(build(builder).build()).execute()
+            http.newCall(request).execute()
         } catch (e: IOException) {
+            log("!! ${request.method} $path network error after ${ms(started)} ms: ${e.javaClass.simpleName}: ${e.message}")
             throw ApiUnavailable(e.message ?: e.javaClass.simpleName)
         }
+        log("<- ${response.code} ${request.method} $path (${ms(started)} ms)")
         if (response.code == 401 && retryAuth && tokens.refresh.isNotEmpty() && !path.startsWith("/api/auth/")) {
             response.close()
-            refresh()
+            log("   access token expired, refreshing")
+            refreshIfStale(usedAccess)
             return send(path, false, build)
         }
         try {
-            raiseForError(response)
+            raiseForError(response, path)
         } finally {
             if (response.code >= 400) response.close()
         }
@@ -147,12 +202,27 @@ class ApiClient(
 
     private fun Response.jsonBody(): JSONObject = use { JSONObject(it.body!!.string()) }
 
+    /** Unauthenticated reachability check; returns the health JSON. */
+    fun health(): String =
+        send("/api/health", false).use { it.body!!.string() }
+
     fun login(email: String, password: String) {
         val body = send("/api/auth/login", false) {
             it.post(json(JSONObject().put("email", email).put("password", password)))
         }.jsonBody()
         tokens.access = body.getString("access_token")
         tokens.refresh = body.getString("refresh_token")
+        log("   logged in")
+    }
+
+    /**
+     * Several uploads can hit a 401 at once, and refresh tokens are single-use: only the
+     * first caller refreshes; the others see the new token and just retry.
+     */
+    @Synchronized
+    fun refreshIfStale(usedAccess: String) {
+        if (tokens.access != usedAccess && tokens.access.isNotEmpty()) return
+        refresh()
     }
 
     fun refresh() {
@@ -166,9 +236,11 @@ class ApiClient(
         }
         tokens.access = body.getString("access_token")
         tokens.refresh = body.getString("refresh_token")
+        log("   token refreshed")
     }
 
     /** Remote files by path. An unchanged tree is a bodyless 304 (cheap on mobile data). */
+    @Synchronized
     fun snapshot(): Map<String, RemoteFile> {
         val etag = snapshotEtag
         val cached = snapshotCache
@@ -209,15 +281,19 @@ class ApiClient(
         contentHash: String,
         resumeId: String? = null,
         onSession: (String?) -> Unit = {},
+        onBytes: (Long) -> Unit = {},
+        takenAt: String? = null,
     ): UploadResult =
-        if (size <= CHUNKED_THRESHOLD) uploadSmall(open, name, folderId, size, mime)
-        else uploadChunked(open, name, folderId, size, contentHash, resumeId, onSession)
+        if (size <= CHUNKED_THRESHOLD) uploadSmall(open, name, folderId, size, mime, onBytes, takenAt)
+        else uploadChunked(open, name, folderId, size, contentHash, resumeId, onSession, onBytes, takenAt)
 
     private fun result(body: JSONObject) =
         UploadResult(body.getString("id"), body.optString("content_hash", ""))
 
     private fun uploadSmall(
         open: () -> InputStream, name: String, folderId: String, size: Long, mime: String,
+        onBytes: (Long) -> Unit,
+        takenAt: String?,
     ): UploadResult =
         result(
             send("/api/files/upload") {
@@ -225,7 +301,8 @@ class ApiClient(
                     .addFormDataPart("name", name)
                     .addFormDataPart("folder_id", folderId)
                     .addFormDataPart("base_version_id", "none")
-                    .addFormDataPart("file", name, StreamBody(open, 0, size, mime))
+                    .apply { if (takenAt != null) addFormDataPart("taken_at", takenAt) }
+                    .addFormDataPart("file", name, StreamBody(open, 0, size, mime, onBytes))
                     .build()
                 it.post(form)
             }.jsonBody()
@@ -239,6 +316,8 @@ class ApiClient(
         contentHash: String,
         resumeId: String?,
         onSession: (String?) -> Unit,
+        onBytes: (Long) -> Unit,
+        takenAt: String?,
     ): UploadResult {
         var session: JSONObject? = null
         if (resumeId != null) {
@@ -254,22 +333,27 @@ class ApiClient(
                 .put("file_name", name).put("file_size", size).put("chunk_size", CHUNK_SIZE)
                 .put("expected_hash", contentHash).put("folder_id", folderId)
                 .put("base_version_id", "none")
+            if (takenAt != null) payload.put("taken_at", takenAt)
             val created = send("/api/uploads") { it.post(json(payload)) }.jsonBody()
             session = send("/api/uploads/${created.getString("id")}").jsonBody()
             onSession(session.getString("id"))
         }
         val uploadId = session.getString("id")
+        log("   chunked upload $uploadId: ${session.getJSONArray("missing_chunk_indices").length()} chunk(s) to send")
         val chunkBytes = session.getLong("chunk_size")
         val missing = session.getJSONArray("missing_chunk_indices")
         for (i in 0 until missing.length()) {
             val index = missing.getInt(i)
             val offset = index * chunkBytes
             val length = minOf(chunkBytes, size - offset)
+            log("   chunk ${i + 1}/${missing.length()} (index $index, $length bytes) of upload $uploadId")
             send("/api/uploads/$uploadId/chunks/$index") {
                 val form = MultipartBody.Builder().setType(MultipartBody.FORM)
                     .addFormDataPart(
                         "chunk", "chunk",
-                        StreamBody(open, offset, length, "application/octet-stream"),
+                        StreamBody(open, offset, length, "application/octet-stream") { sent ->
+                            onBytes(offset + sent)
+                        },
                     )
                     .build()
                 it.post(form)
@@ -285,6 +369,101 @@ class ApiClient(
         } catch (e: VersionConflict) {
             onSession(null) // the server consumed the session; nothing left to resume
             throw e
+        }
+    }
+
+    // ---------------------------------------------------------------- browsing
+
+    fun listDirectory(folderId: String?): Listing {
+        val query = if (folderId == null) "" else "?folder_id=$folderId"
+        val body = send("/api/files$query").jsonBody()
+        val folders = body.getJSONArray("subfolders")
+        val files = body.getJSONArray("files")
+        return Listing(
+            (0 until folders.length()).map { folders.getJSONObject(it).let { f -> FolderItem(f.getString("id"), f.getString("name")) } },
+            (0 until files.length()).map { files.getJSONObject(it).toItem() },
+        )
+    }
+
+    fun listPhotos(kind: String, offset: Int, limit: Int): PhotoPage {
+        val body = send("/api/library/photos?kind=$kind&offset=$offset&limit=$limit").jsonBody()
+        val items = body.getJSONArray("items")
+        return PhotoPage((0 until items.length()).map { items.getJSONObject(it).toItem() }, body.getInt("total"))
+    }
+
+    fun usage(): Usage {
+        val body = send("/api/library/usage").jsonBody()
+        return Usage(body.getLong("used_bytes"), body.getLong("quota_bytes"), body.getInt("file_count"))
+    }
+
+    fun setFavorite(fileId: String, on: Boolean) {
+        val path = "/api/library/favorites/$fileId"
+        send(path) { if (on) it.put(ByteArray(0).toRequestBody(null)) else it.delete() }.close()
+    }
+
+    // ------------------------------------------------------------------- media
+
+    private var mediaToken: String? = null
+    private var mediaTokenExpiresAt = 0L
+
+    /** A short-lived, read-only token for thumbnail and content URLs (renewed before it expires). */
+    @Synchronized
+    fun mediaToken(): String {
+        val now = System.currentTimeMillis()
+        val cached = mediaToken
+        if (cached != null && now < mediaTokenExpiresAt) return cached
+        val body = send("/api/media/token") { it.post(ByteArray(0).toRequestBody(null)) }.jsonBody()
+        val token = body.getString("token")
+        mediaToken = token
+        mediaTokenExpiresAt = now + body.optLong("expires_in", 3600) * 700 // renew at 70%
+        return token
+    }
+
+    fun thumbnailUrl(fileId: String, size: Int = 256): String =
+        "$base/api/media/${mediaToken()}/$fileId/thumbnail?size=$size"
+
+    fun contentUrl(fileId: String): String = "$base/api/media/${mediaToken()}/$fileId/content"
+
+    /**
+     * Downloads a file's bytes to `dest` (at most `maxBytes`), reporting progress. The bytes
+     * come through the media route, so no token is ever sent as a header.
+     */
+    fun downloadContent(
+        fileId: String,
+        dest: java.io.File,
+        maxBytes: Long = Long.MAX_VALUE,
+        onProgress: (done: Long, total: Long) -> Unit = { _, _ -> },
+    ): Long {
+        val url = contentUrl(fileId)
+        val request = Request.Builder().url(url).apply {
+            if (maxBytes != Long.MAX_VALUE) header("Range", "bytes=0-${maxBytes - 1}")
+        }.build()
+        log("-> GET /api/media/<token>/$fileId/content")
+        val response = try {
+            http.newCall(request).execute()
+        } catch (e: IOException) {
+            log("!! download network error: ${e.message}")
+            throw ApiUnavailable(e.message ?: e.javaClass.simpleName)
+        }
+        response.use {
+            log("<- ${it.code} GET content for $fileId")
+            if (it.code >= 400) throw ApiError(it.code, "could not download the file (${it.code})")
+            val total = it.body!!.contentLength()
+            var done = 0L
+            dest.parentFile?.mkdirs()
+            it.body!!.byteStream().use { input ->
+                dest.outputStream().use { out ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        out.write(buffer, 0, read)
+                        done += read
+                        onProgress(done, total)
+                    }
+                }
+            }
+            return done
         }
     }
 }

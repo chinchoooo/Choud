@@ -36,6 +36,9 @@ class Settings(context: Context) : TokenStore {
     var chargingOnly: Boolean
         get() = prefs.getBoolean("charging_only", true)
         set(v) = prefs.edit().putBoolean("charging_only", v).apply()
+    var theme: String
+        get() = prefs.getString("theme", "light") ?: "light"
+        set(v) = prefs.edit().putString("theme", v).apply()
     var lastRun: String
         get() = prefs.getString("last_run", "never") ?: "never"
         set(v) = prefs.edit().putString("last_run", v).apply()
@@ -88,6 +91,21 @@ class BackupDb(context: Context) : SQLiteOpenHelper(context, "backup.db", null, 
         }
         writableDatabase.insertWithOnConflict("media", null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
+
+    /** The most recent failures, newest first, as "key: error". */
+    fun failures(limit: Int = 5): List<String> =
+        readableDatabase.rawQuery(
+            "SELECT key, error FROM media WHERE status='failed' ORDER BY rowid DESC LIMIT ?",
+            arrayOf(limit.toString()),
+        ).use { c ->
+            val out = ArrayList<String>()
+            while (c.moveToNext()) out += "${c.getString(0)}: ${c.getString(1)}"
+            out
+        }
+
+    /** Puts failed files back in the queue so the next run tries them again. */
+    fun resetFailed(): Int =
+        writableDatabase.delete("media", "status = ?", arrayOf("failed"))
 
     /** Forget everything: a different server/account must get a full backup of its own. */
     fun clear() {

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Only the viewer's own download folder is ever shared with other apps. -->
+    <cache-path name="viewer" path="viewer/" />
+</paths>
