@@ -1,3 +1,328 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Themes. Each one defines the same variables; tailwind.config.js maps the colour
+ * scales (gray, red, amber, green, blue, white) onto them, so every component adapts
+ * without knowing which theme is active. Set with <html data-theme="...">.
+ *
+ *   light        the default
+ *   dark         inverted greys
+ *   retro        white-on-black, monospace, square corners, no colour
+ *   retro-paper  black-on-white, monospace, square corners, no colour
+ */
+
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --c-white: 255 255 255;
+  --c-black: 0 0 0;
+  --g-50: 249 250 251;
+  --g-100: 243 244 246;
+  --g-200: 229 231 235;
+  --g-300: 209 213 219;
+  --g-400: 156 163 175;
+  --g-500: 107 114 128;
+  --g-600: 75 85 99;
+  --g-700: 55 65 81;
+  --g-800: 31 41 55;
+  --g-900: 17 24 39;
+  --r-50: 254 242 242;
+  --r-100: 254 226 226;
+  --r-200: 254 202 202;
+  --r-300: 252 165 165;
+  --r-400: 248 113 113;
+  --r-500: 239 68 68;
+  --r-600: 220 38 38;
+  --r-700: 185 28 28;
+  --r-800: 153 27 27;
+  --r-900: 127 29 29;
+  --a-50: 255 251 235;
+  --a-100: 254 243 199;
+  --a-200: 253 230 138;
+  --a-300: 252 211 77;
+  --a-400: 251 191 36;
+  --a-500: 245 158 11;
+  --a-600: 217 119 6;
+  --a-700: 180 83 9;
+  --a-800: 146 64 14;
+  --a-900: 120 53 15;
+  --n-50: 240 253 244;
+  --n-100: 220 252 231;
+  --n-200: 187 247 208;
+  --n-300: 134 239 172;
+  --n-400: 74 222 128;
+  --n-500: 34 197 94;
+  --n-600: 22 163 74;
+  --n-700: 21 128 61;
+  --n-800: 22 101 52;
+  --n-900: 20 83 45;
+  --b-50: 239 246 255;
+  --b-100: 219 234 254;
+  --b-200: 191 219 254;
+  --b-300: 147 197 253;
+  --b-400: 96 165 250;
+  --b-500: 59 130 246;
+  --b-600: 37 99 235;
+  --b-700: 29 78 216;
+  --b-800: 30 64 175;
+  --b-900: 30 58 138;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius-sm: 0.25rem;
+  --radius: 0.5rem;
+  --radius-lg: 0.75rem;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --c-white: 24 28 38;
+  --c-black: 255 255 255;
+  --g-50: 15 18 25;
+  --g-100: 24 28 38;
+  --g-200: 42 48 62;
+  --g-300: 64 72 90;
+  --g-400: 110 119 138;
+  --g-500: 148 157 175;
+  --g-600: 180 188 203;
+  --g-700: 207 213 224;
+  --g-800: 229 233 240;
+  --g-900: 245 247 250;
+  --r-50: 60 20 24;
+  --r-100: 80 26 30;
+  --r-200: 110 34 40;
+  --r-300: 160 50 58;
+  --r-400: 220 80 88;
+  --r-500: 239 100 100;
+  --r-600: 248 113 113;
+  --r-700: 252 140 140;
+  --r-800: 254 170 170;
+  --r-900: 254 200 200;
+  --a-50: 60 42 12;
+  --a-100: 80 56 14;
+  --a-200: 110 76 18;
+  --a-300: 160 110 24;
+  --a-400: 217 150 30;
+  --a-500: 245 170 40;
+  --a-600: 251 191 36;
+  --a-700: 252 211 77;
+  --a-800: 253 230 138;
+  --a-900: 254 243 199;
+  --n-50: 16 48 30;
+  --n-100: 20 62 38;
+  --n-200: 26 84 50;
+  --n-300: 34 120 70;
+  --n-400: 52 160 92;
+  --n-500: 74 190 112;
+  --n-600: 74 222 128;
+  --n-700: 110 231 155;
+  --n-800: 150 240 185;
+  --n-900: 190 247 210;
+  --b-50: 20 33 66;
+  --b-100: 26 44 86;
+  --b-200: 34 60 120;
+  --b-300: 48 86 170;
+  --b-400: 80 130 230;
+  --b-500: 96 165 250;
+  --b-600: 96 165 250;
+  --b-700: 147 197 253;
+  --b-800: 191 219 254;
+  --b-900: 219 234 254;
+}
+
+/* Retro: pure black and white, a coding font, square corners. Colour is dropped on
+   purpose: red/amber/green/blue all become greys so nothing is "only" colour-coded. */
+:root[data-theme="retro"] {
+  color-scheme: dark;
+  --c-white: 0 0 0;
+  --c-black: 255 255 255;
+  --g-50: 0 0 0;
+  --g-100: 14 14 14;
+  --g-200: 40 40 40;
+  --g-300: 88 88 88;
+  --g-400: 140 140 140;
+  --g-500: 176 176 176;
+  --g-600: 204 204 204;
+  --g-700: 224 224 224;
+  --g-800: 240 240 240;
+  --g-900: 255 255 255;
+  --r-50: 14 14 14;
+  --r-100: 28 28 28;
+  --r-200: 60 60 60;
+  --r-300: 110 110 110;
+  --r-400: 170 170 170;
+  --r-500: 220 220 220;
+  --r-600: 255 255 255;
+  --r-700: 255 255 255;
+  --r-800: 255 255 255;
+  --r-900: 255 255 255;
+  --a-50: 14 14 14;
+  --a-100: 28 28 28;
+  --a-200: 60 60 60;
+  --a-300: 110 110 110;
+  --a-400: 170 170 170;
+  --a-500: 220 220 220;
+  --a-600: 255 255 255;
+  --a-700: 255 255 255;
+  --a-800: 255 255 255;
+  --a-900: 255 255 255;
+  --n-50: 14 14 14;
+  --n-100: 28 28 28;
+  --n-200: 60 60 60;
+  --n-300: 110 110 110;
+  --n-400: 170 170 170;
+  --n-500: 220 220 220;
+  --n-600: 255 255 255;
+  --n-700: 255 255 255;
+  --n-800: 255 255 255;
+  --n-900: 255 255 255;
+  --b-50: 14 14 14;
+  --b-100: 28 28 28;
+  --b-200: 60 60 60;
+  --b-300: 110 110 110;
+  --b-400: 170 170 170;
+  --b-500: 220 220 220;
+  --b-600: 255 255 255;
+  --b-700: 255 255 255;
+  --b-800: 255 255 255;
+  --b-900: 255 255 255;
+  --font: "JetBrains Mono", "Cascadia Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-mono: var(--font);
+  --radius-sm: 0;
+  --radius: 0;
+  --radius-lg: 0;
+}
+
+:root[data-theme="retro-paper"] {
+  color-scheme: light;
+  --c-white: 255 255 255;
+  --c-black: 0 0 0;
+  --g-50: 255 255 255;
+  --g-100: 240 240 240;
+  --g-200: 214 214 214;
+  --g-300: 160 160 160;
+  --g-400: 120 120 120;
+  --g-500: 90 90 90;
+  --g-600: 60 60 60;
+  --g-700: 40 40 40;
+  --g-800: 20 20 20;
+  --g-900: 0 0 0;
+  --r-50: 240 240 240;
+  --r-100: 225 225 225;
+  --r-200: 200 200 200;
+  --r-300: 150 150 150;
+  --r-400: 100 100 100;
+  --r-500: 50 50 50;
+  --r-600: 0 0 0;
+  --r-700: 0 0 0;
+  --r-800: 0 0 0;
+  --r-900: 0 0 0;
+  --a-50: 240 240 240;
+  --a-100: 225 225 225;
+  --a-200: 200 200 200;
+  --a-300: 150 150 150;
+  --a-400: 100 100 100;
+  --a-500: 50 50 50;
+  --a-600: 0 0 0;
+  --a-700: 0 0 0;
+  --a-800: 0 0 0;
+  --a-900: 0 0 0;
+  --n-50: 240 240 240;
+  --n-100: 225 225 225;
+  --n-200: 200 200 200;
+  --n-300: 150 150 150;
+  --n-400: 100 100 100;
+  --n-500: 50 50 50;
+  --n-600: 0 0 0;
+  --n-700: 0 0 0;
+  --n-800: 0 0 0;
+  --n-900: 0 0 0;
+  --b-50: 240 240 240;
+  --b-100: 225 225 225;
+  --b-200: 200 200 200;
+  --b-300: 150 150 150;
+  --b-400: 100 100 100;
+  --b-500: 50 50 50;
+  --b-600: 0 0 0;
+  --b-700: 0 0 0;
+  --b-800: 0 0 0;
+  --b-900: 0 0 0;
+  --font: "JetBrains Mono", "Cascadia Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-mono: var(--font);
+  --radius-sm: 0;
+  --radius: 0;
+  --radius-lg: 0;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: rgb(var(--g-50));
+  color: rgb(var(--g-900));
+  font-family: var(--font);
+}
+
+/* Retro details: crisp 1px frames, no shadows, uppercase headings, a block cursor on
+   focus, and (retro dark only) a very faint scanline texture. */
+:root[data-theme^="retro"] body {
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+:root[data-theme^="retro"] h1,
+:root[data-theme^="retro"] h2 {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+:root[data-theme^="retro"] * {
+  box-shadow: none !important;
+}
+
+:root[data-theme^="retro"] button,
+:root[data-theme^="retro"] input,
+:root[data-theme^="retro"] select {
+  font-family: var(--font);
+}
+
+:root[data-theme^="retro"] button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+:root[data-theme^="retro"] :focus-visible {
+  outline: 2px dashed rgb(var(--g-900));
+  outline-offset: 2px;
+}
+
+:root[data-theme="retro"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.025) 0,
+    rgba(255, 255, 255, 0.025) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  z-index: 9999;
+}
+
+::selection {
+  background: rgb(var(--g-900));
+  color: rgb(var(--g-50));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

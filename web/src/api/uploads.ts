@@ -24,17 +24,36 @@ export const CHUNKED_UPLOAD_THRESHOLD = 20 * 1024 * 1024; // 20 MiB
 
 const MAX_CHUNK_ATTEMPTS = 3;
 
+// Options shared by the upload helpers: `signal` cancels between requests, `takenAt`
+// (ISO string) is stored as the photo's "taken" date so the timeline sorts correctly.
+export interface UploadOptions {
+  signal?: AbortSignal;
+  takenAt?: string;
+}
+
+export class UploadCancelled extends Error {
+  constructor() {
+    super("upload cancelled");
+  }
+}
+
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new UploadCancelled();
+}
+
 function createSession(
   fileName: string,
   fileSize: number,
   folderId: string | null,
   chunkSize: number,
+  takenAt?: string,
 ): Promise<UploadSessionResponse> {
   return apiPost<UploadSessionResponse>("/api/uploads", {
     file_name: fileName,
     file_size: fileSize,
     chunk_size: chunkSize,
     folder_id: folderId,
+    ...(takenAt ? { taken_at: takenAt } : {}),
   });
 }
 
@@ -92,6 +111,7 @@ export async function resumeUpload(
   uploadId: string,
   file: File,
   onProgress?: (fraction: number) => void,
+  options: UploadOptions = {},
 ): Promise<FileResponse> {
   const status = await getUploadStatus(uploadId);
   let doneCount = status.total_chunks - status.missing_chunk_indices.length;
@@ -99,6 +119,7 @@ export async function resumeUpload(
 
   try {
     for (const index of status.missing_chunk_indices) {
+      throwIfCancelled(options.signal);
       const start = index * status.chunk_size;
       const blob = file.slice(start, start + status.chunk_size);
       await uploadChunkWithRetry(uploadId, index, blob);
@@ -106,6 +127,10 @@ export async function resumeUpload(
       onProgress?.(doneCount / status.total_chunks);
     }
   } catch (err) {
+    if (err instanceof UploadCancelled) {
+      void abandonUpload(uploadId).catch(() => undefined); // free the half-uploaded chunks
+      throw err;
+    }
     throw new ResumableUploadError(uploadId, err);
   }
 
@@ -117,7 +142,9 @@ export async function uploadFileChunked(
   folderId: string | null,
   onProgress?: (fraction: number) => void,
   chunkSize: number = DEFAULT_CHUNK_SIZE,
+  options: UploadOptions = {},
 ): Promise<FileResponse> {
-  const session = await createSession(file.name, file.size, folderId, chunkSize);
-  return resumeUpload(session.id, file, onProgress);
+  throwIfCancelled(options.signal);
+  const session = await createSession(file.name, file.size, folderId, chunkSize, options.takenAt);
+  return resumeUpload(session.id, file, onProgress, options);
 }

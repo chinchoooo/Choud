@@ -1,422 +1,316 @@
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { ApiError } from "../api/client";
-import {
-  deleteFile,
-  downloadFile,
-  listDirectory,
-  moveFile,
-  renameFile,
-  search as searchFiles,
-  uploadFile,
-} from "../api/files";
-import { createFolder, deleteFolder, moveFolder, renameFolder } from "../api/folders";
-import { ResumableUploadError, resumeUpload } from "../api/uploads";
-import { useAuth } from "../auth/AuthContext";
+import { listDirectory, search as searchFiles } from "../api/files";
+import { createFolder, deleteFolder, getFolder, moveFolder, renameFolder } from "../api/folders";
+import { ConfirmDialog, FolderPicker, PromptDialog, plainButton, primaryButton } from "../components/Dialogs";
+import { FileCollection, ViewToggle, loadViewMode, saveViewMode, type ViewMode } from "../components/FileCollection";
+import { FileViewer } from "../components/FileViewer";
 import { VersionHistory } from "../components/VersionHistory";
-import { formatBytes } from "../lib/format";
-import type { FileResponse, FolderResponse } from "../types/files";
+import { useFileActions } from "../hooks/useFileActions";
+import { useUploads } from "../uploads/UploadContext";
+import type { FolderResponse } from "../types/files";
 
-function reportError(err: unknown, fallback: string): void {
-  window.alert(err instanceof ApiError ? err.message : fallback);
-}
-
-interface Crumb {
-  id: string;
-  name: string;
-}
+type FolderDialog =
+  | { kind: "new" }
+  | { kind: "rename"; folder: FolderResponse }
+  | { kind: "move"; folder: FolderResponse }
+  | { kind: "delete"; folder: FolderResponse }
+  | { kind: "error"; message: string };
 
 export function Files() {
-  const { user, logout } = useAuth();
   const queryClient = useQueryClient();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { enqueue } = useUploads();
+  const fileInput = useRef<HTMLInputElement>(null);
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  const folderId = searchParams.get("folder");
-  const [trail, setTrail] = useState<Crumb[]>([]);
-  const [searchInput, setSearchInput] = useState("");
-  const [activeQuery, setActiveQuery] = useState("");
-  // A large upload that failed partway through (network drop, etc.) —
-  // kept around so "Resume upload" can pick up only the missing chunks
-  // instead of starting over (docs/architecture.md#10-chunked-uploads).
-  const [pausedUpload, setPausedUpload] = useState<{ uploadId: string; file: File } | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  // Which file's version list is expanded (one at a time keeps the table readable).
-  const [versionsOpenFor, setVersionsOpenFor] = useState<string | null>(null);
+  const [params, setParams] = useSearchParams();
+  const folderId = params.get("folder");
+  const searchText = (params.get("q") ?? "").trim();
+  const isSearching = searchText.length > 0;
 
-  const directoryQuery = useQuery({
-    queryKey: ["directory", folderId],
-    queryFn: () => listDirectory(folderId),
-  });
+  const [mode, setMode] = useState<ViewMode>(loadViewMode);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [versionsFor, setVersionsFor] = useState<string | null>(null);
+  const [folderDialog, setFolderDialog] = useState<FolderDialog | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
 
+  const actions = useFileActions((file) => [
+    {
+      label: versionsFor === file.id ? "Hide versions" : "Versions",
+      onSelect: () => setVersionsFor((open) => (open === file.id ? null : file.id)),
+    },
+  ]);
+
+  const directory = useQuery({ queryKey: ["directory", folderId], queryFn: () => listDirectory(folderId) });
   const searchQuery = useQuery({
-    queryKey: ["search", activeQuery],
-    queryFn: () => searchFiles(activeQuery),
-    enabled: activeQuery.length > 0,
+    queryKey: ["search", searchText],
+    queryFn: () => searchFiles(searchText),
+    enabled: isSearching,
   });
 
-  const isSearching = activeQuery.length > 0;
+  // Breadcrumbs: walk up from the current folder to the root.
+  const crumbs = useQuery({
+    queryKey: ["crumbs", folderId],
+    enabled: !!folderId,
+    queryFn: async () => {
+      const chain: FolderResponse[] = [];
+      let id: string | null = folderId;
+      while (id && chain.length < 32) {
+        const folder = await getFolder(id);
+        chain.unshift(folder);
+        id = folder.parent_id;
+      }
+      return chain;
+    },
+  });
 
-  function invalidate() {
-    void queryClient.invalidateQueries({ queryKey: ["directory"] });
-    void queryClient.invalidateQueries({ queryKey: ["search"] });
-    // A same-name upload adds a version and a deleted file moves to the trash.
-    void queryClient.invalidateQueries({ queryKey: ["versions"] });
-    void queryClient.invalidateQueries({ queryKey: ["trash"] });
+  const folders = useMemo(
+    () => (isSearching ? (searchQuery.data?.folders ?? []) : (directory.data?.subfolders ?? [])),
+    [isSearching, searchQuery.data, directory.data],
+  );
+  const files = useMemo(
+    () => (isSearching ? (searchQuery.data?.files ?? []) : (directory.data?.files ?? [])),
+    [isSearching, searchQuery.data, directory.data],
+  );
+  const loading = isSearching ? searchQuery.isLoading : directory.isLoading;
+  const failed = isSearching ? searchQuery.isError : directory.isError;
+  const destination = crumbs.data?.length ? `My files / ${crumbs.data.map((c) => c.name).join(" / ")}` : "My files";
+
+  // A folder that was deleted or moved away while open should not strand the user.
+  useEffect(() => {
+    if (directory.error instanceof ApiError && directory.error.status === 404 && folderId) {
+      setParams({});
+    }
+  }, [directory.error, folderId, setParams]);
+
+  function refresh() {
+    for (const key of ["directory", "search", "crumbs", "picker", "trash"]) {
+      void queryClient.invalidateQueries({ queryKey: [key] });
+    }
+  }
+  function folderError(err: unknown, fallback: string) {
+    setFolderDialog({ kind: "error", message: err instanceof ApiError ? err.message : fallback });
   }
 
-  const createFolderMutation = useMutation({
+  const createMutation = useMutation({
     mutationFn: (name: string) => createFolder(name, folderId),
-    onSuccess: invalidate,
-    onError: (err) => reportError(err, "Could not create folder."),
-  });
-
-  const uploadMutation = useMutation({
-    mutationFn: (file: File) =>
-      uploadFile(file, folderId, (fraction) => setUploadProgress(fraction)),
     onSuccess: () => {
-      setUploadProgress(null);
-      setPausedUpload(null);
-      invalidate();
+      setFolderDialog(null);
+      refresh();
     },
-    onError: (err, file) => {
-      setUploadProgress(null);
-      if (err instanceof ResumableUploadError) {
-        // Large-file chunked upload: the session is still alive
-        // server-side with whatever chunks did arrive — offer to resume
-        // instead of forcing a full restart.
-        setPausedUpload({ uploadId: err.uploadId, file });
-        reportError(err, "Upload interrupted — you can resume it below.");
-        return;
-      }
-      reportError(err, "Could not upload file.");
-    },
+    onError: (err) => folderError(err, "Could not create the folder."),
   });
-
-  const resumeUploadMutation = useMutation({
-    mutationFn: ({ uploadId, file }: { uploadId: string; file: File }) =>
-      resumeUpload(uploadId, file, (fraction) => setUploadProgress(fraction)),
-    onSuccess: () => {
-      setUploadProgress(null);
-      setPausedUpload(null);
-      invalidate();
-    },
-    onError: (err) => {
-      setUploadProgress(null);
-      // The session id in `pausedUpload` is still valid — keep it so the
-      // person can just try "Resume" again.
-      reportError(err, "Still couldn't finish the upload — try Resume again.");
-    },
-  });
-
-  const renameFolderMutation = useMutation({
+  const renameMutation = useMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) => renameFolder(id, name),
-    onSuccess: invalidate,
-    onError: (err) => reportError(err, "Could not rename folder."),
+    onSuccess: () => {
+      setFolderDialog(null);
+      refresh();
+    },
+    onError: (err) => folderError(err, "Could not rename the folder."),
   });
-
-  const moveFolderMutation = useMutation({
-    mutationFn: ({ id, parentId }: { id: string; parentId: string | null }) =>
-      moveFolder(id, parentId),
-    onSuccess: invalidate,
-    onError: (err) => reportError(err, "Could not move folder."),
+  const moveMutation = useMutation({
+    mutationFn: ({ id, parentId }: { id: string; parentId: string | null }) => moveFolder(id, parentId),
+    onSuccess: () => {
+      setFolderDialog(null);
+      refresh();
+    },
+    onError: (err) => folderError(err, "Could not move the folder."),
   });
-
-  const deleteFolderMutation = useMutation({
+  const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteFolder(id),
-    onSuccess: invalidate,
-    onError: (err) => reportError(err, "Could not delete folder — is it empty?"),
-  });
-
-  const renameFileMutation = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => renameFile(id, name),
-    onSuccess: invalidate,
-    onError: (err) => reportError(err, "Could not rename file."),
-  });
-
-  const moveFileMutation = useMutation({
-    mutationFn: ({ id, folderId: target }: { id: string; folderId: string | null }) =>
-      moveFile(id, target),
-    onSuccess: invalidate,
-    onError: (err) => reportError(err, "Could not move file."),
-  });
-
-  const deleteFileMutation = useMutation({
-    mutationFn: (id: string) => deleteFile(id),
-    onSuccess: invalidate,
-    onError: (err) => reportError(err, "Could not delete file."),
+    onSuccess: () => {
+      setFolderDialog(null);
+      refresh();
+    },
+    onError: (err) => folderError(err, "Could not delete the folder. Is it empty?"),
   });
 
   function openFolder(folder: FolderResponse) {
-    setActiveQuery("");
-    setSearchInput("");
-    setTrail((prev) => {
-      const idx = prev.findIndex((c) => c.id === folder.id);
-      if (idx >= 0) return prev.slice(0, idx + 1);
-      return [...prev, { id: folder.id, name: folder.name }];
-    });
-    setSearchParams({ folder: folder.id });
+    setVersionsFor(null);
+    setParams({ folder: folder.id });
   }
 
-  function goHome() {
-    setTrail([]);
-    setSearchParams({});
+  function changeMode(next: ViewMode) {
+    setMode(next);
+    saveViewMode(next);
   }
 
-  function goToCrumb(index: number) {
-    setTrail((prev) => prev.slice(0, index + 1));
-    setSearchParams({ folder: breadcrumbs[index].id });
-  }
-
-  const currentFolderName = directoryQuery.data?.folder?.name ?? null;
-  const breadcrumbs: Crumb[] =
-    trail.length > 0
-      ? trail
-      : folderId && currentFolderName
-        ? [{ id: folderId, name: currentFolderName }]
-        : [];
-
-  function handleSearchSubmit(event: FormEvent) {
-    event.preventDefault();
-    setActiveQuery(searchInput.trim());
-  }
-
-  function clearSearch() {
-    setSearchInput("");
-    setActiveQuery("");
-  }
-
-  function handleCreateFolder() {
-    const name = window.prompt("Folder name:");
-    if (!name) return;
-    createFolderMutation.mutate(name);
-  }
-
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+  function pickFiles(event: ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(event.target.files ?? []);
     event.target.value = "";
-    if (!file) return;
-    uploadMutation.mutate(file);
+    enqueue(picked, folderId, destination);
   }
 
-  function handleRenameFolder(folder: FolderResponse) {
-    const name = window.prompt("New folder name:", folder.name);
-    if (!name || name === folder.name) return;
-    renameFolderMutation.mutate({ id: folder.id, name });
+  // Drag & drop anywhere on the page. Folders dropped are skipped (they have no size/type).
+  function onDragEnter(event: DragEvent) {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    dragDepth.current += 1;
+    setDragging(true);
   }
-
-  function handleMoveFolder(folder: FolderResponse) {
-    const target = window.prompt("Destination folder ID (leave blank for Home):", "");
-    if (target === null) return;
-    moveFolderMutation.mutate({ id: folder.id, parentId: target.trim() || null });
+  function onDragLeave() {
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
   }
-
-  function handleDeleteFolder(folder: FolderResponse) {
-    if (!window.confirm(`Delete folder "${folder.name}"? It must be empty.`)) return;
-    deleteFolderMutation.mutate(folder.id);
+  function onDrop(event: DragEvent) {
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    const dropped = Array.from(event.dataTransfer.files).filter((file) => file.type !== "" || file.size > 0);
+    enqueue(dropped, folderId, destination);
   }
-
-  function handleRenameFile(file: FileResponse) {
-    const name = window.prompt("New file name:", file.name);
-    if (!name || name === file.name) return;
-    renameFileMutation.mutate({ id: file.id, name });
-  }
-
-  function handleMoveFile(file: FileResponse) {
-    const target = window.prompt("Destination folder ID (leave blank for Home):", "");
-    if (target === null) return;
-    moveFileMutation.mutate({ id: file.id, folderId: target.trim() || null });
-  }
-
-  function handleDeleteFile(file: FileResponse) {
-    if (!window.confirm(`Move "${file.name}" to the trash?`)) return;
-    deleteFileMutation.mutate(file.id);
-  }
-
-  async function handleDownload(file: FileResponse) {
-    try {
-      await downloadFile(file.id, file.name);
-    } catch (err) {
-      reportError(err, "Could not download file.");
-    }
-  }
-
-  const subfolders = isSearching ? (searchQuery.data?.folders ?? []) : (directoryQuery.data?.subfolders ?? []);
-  const files = isSearching ? (searchQuery.data?.files ?? []) : (directoryQuery.data?.files ?? []);
-  const isLoading = isSearching ? searchQuery.isLoading : directoryQuery.isLoading;
-  const isError = isSearching ? searchQuery.isError : directoryQuery.isError;
 
   return (
-    <div className="mx-auto max-w-4xl p-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">My Cloud</h1>
-          <p className="mt-1 text-sm text-gray-500">Signed in as {user?.email}</p>
-        </div>
-        <div className="flex gap-2">
-          <Link
-            to="/trash"
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Trash
-          </Link>
-          <button
-            onClick={() => void logout()}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Log out
-          </button>
-        </div>
-      </div>
-
-      <form onSubmit={handleSearchSubmit} className="mt-6 flex gap-2">
-        <input
-          type="search"
-          value={searchInput}
-          onChange={(event) => setSearchInput(event.target.value)}
-          placeholder="Search your files and folders…"
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-        />
-        <button
-          type="submit"
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-        >
-          Search
-        </button>
-        {isSearching && (
-          <button
-            type="button"
-            onClick={clearSearch}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Clear
-          </button>
-        )}
-      </form>
-
-      {!isSearching && (
-        <nav className="mt-6 flex flex-wrap items-center gap-1 text-sm text-gray-500">
-          <button onClick={goHome} className="hover:text-gray-900 hover:underline">
-            Home
-          </button>
-          {breadcrumbs.map((crumb, index) => (
-            <span key={crumb.id} className="flex items-center gap-1">
-              <span>/</span>
-              <button onClick={() => goToCrumb(index)} className="hover:text-gray-900 hover:underline">
-                {crumb.name}
-              </button>
-            </span>
-          ))}
-        </nav>
-      )}
-
-      {!isSearching && (
-        <div className="mt-4 flex gap-2">
-          <button
-            onClick={handleCreateFolder}
-            className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
-          >
-            New folder
-          </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadMutation.isPending}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            {uploadMutation.isPending ? "Uploading…" : "Upload file"}
-          </button>
-          <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
-          {uploadProgress !== null && (
-            <span className="self-center text-xs text-gray-500">
-              {Math.round(uploadProgress * 100)}%
-            </span>
-          )}
-          {pausedUpload && (
-            <button
-              onClick={() => resumeUploadMutation.mutate(pausedUpload)}
-              disabled={resumeUploadMutation.isPending}
-              className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm text-amber-800 hover:bg-amber-100 disabled:opacity-50"
-            >
-              {resumeUploadMutation.isPending
-                ? "Resuming…"
-                : `Resume upload of "${pausedUpload.file.name}"`}
-            </button>
-          )}
+    <div
+      className="relative mx-auto max-w-5xl p-4 sm:p-6"
+      onDragEnter={onDragEnter}
+      onDragOver={(event) => event.preventDefault()}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {dragging && (
+        <div className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center border-2 border-dashed border-gray-900 bg-white/80 text-lg text-gray-900">
+          Drop to upload to {destination}
         </div>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-gray-200">
-        {isLoading && <p className="p-4 text-sm text-gray-500">Loading…</p>}
-        {isError && <p className="p-4 text-sm text-red-600">Could not load this listing.</p>}
-        {!isLoading && !isError && subfolders.length === 0 && files.length === 0 && (
-          <p className="p-4 text-sm text-gray-500">
-            {isSearching ? "No matches." : "This folder is empty."}
-          </p>
-        )}
-
-        {subfolders.map((folder) => (
-          <div
-            key={folder.id}
-            className="flex items-center justify-between border-b border-gray-100 px-4 py-3 last:border-b-0"
-          >
-            <button
-              onClick={() => openFolder(folder)}
-              className="flex-1 truncate text-left text-sm font-medium text-gray-900 hover:underline"
-            >
-              📁 {folder.name}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {isSearching ? (
+          <h1 className="text-lg font-semibold text-gray-900">Results for “{searchText}”</h1>
+        ) : (
+          <nav aria-label="Folder path" className="flex flex-wrap items-center gap-1 text-sm text-gray-500">
+            <button onClick={() => setParams({})} className="text-gray-900 hover:underline">
+              My files
             </button>
-            <span className="mr-3 hidden font-mono text-xs text-gray-400 sm:inline">
-              {folder.id.slice(0, 8)}
-            </span>
-            <div className="flex shrink-0 gap-2 text-xs">
-              <button onClick={() => handleRenameFolder(folder)} className="text-gray-600 hover:underline">
-                Rename
-              </button>
-              <button onClick={() => handleMoveFolder(folder)} className="text-gray-600 hover:underline">
-                Move
-              </button>
-              <button onClick={() => handleDeleteFolder(folder)} className="text-red-600 hover:underline">
-                Delete
-              </button>
-            </div>
-          </div>
-        ))}
-
-        {files.map((file) => (
-          <div key={file.id} className="border-b border-gray-100 last:border-b-0">
-            <div className="flex items-center justify-between px-4 py-3">
-              <span className="flex-1 truncate text-sm text-gray-900">📄 {file.name}</span>
-              <span className="mr-3 hidden text-xs text-gray-400 sm:inline">
-                {formatBytes(file.size)}
+            {(crumbs.data ?? []).map((crumb, index, all) => (
+              <span key={crumb.id} className="flex items-center gap-1">
+                <span>/</span>
+                {index === all.length - 1 ? (
+                  <span className="font-medium text-gray-900">{crumb.name}</span>
+                ) : (
+                  <button onClick={() => setParams({ folder: crumb.id })} className="hover:underline">
+                    {crumb.name}
+                  </button>
+                )}
               </span>
-              <div className="flex shrink-0 gap-2 text-xs">
-                <button onClick={() => void handleDownload(file)} className="text-gray-600 hover:underline">
-                  Download
-                </button>
-                <button
-                  onClick={() => setVersionsOpenFor((open) => (open === file.id ? null : file.id))}
-                  aria-expanded={versionsOpenFor === file.id}
-                  className="text-gray-600 hover:underline"
-                >
-                  Versions
-                </button>
-                <button onClick={() => handleRenameFile(file)} className="text-gray-600 hover:underline">
-                  Rename
-                </button>
-                <button onClick={() => handleMoveFile(file)} className="text-gray-600 hover:underline">
-                  Move
-                </button>
-                <button onClick={() => handleDeleteFile(file)} className="text-red-600 hover:underline">
-                  Delete
-                </button>
-              </div>
-            </div>
-            {versionsOpenFor === file.id && <VersionHistory file={file} />}
-          </div>
-        ))}
+            ))}
+          </nav>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <ViewToggle mode={mode} onChange={changeMode} />
+          {!isSearching && (
+            <>
+              <button onClick={() => setFolderDialog({ kind: "new" })} className={plainButton}>
+                New folder
+              </button>
+              <button onClick={() => fileInput.current?.click()} className={primaryButton}>
+                Upload files
+              </button>
+              <input ref={fileInput} type="file" multiple className="hidden" onChange={pickFiles} />
+            </>
+          )}
+          {isSearching && (
+            <button onClick={() => setParams({})} className={plainButton}>
+              Clear search
+            </button>
+          )}
+        </div>
       </div>
+
+      <div className="mt-4">
+        {loading && <p className="p-4 text-sm text-gray-500">Loading…</p>}
+        {failed && <p className="p-4 text-sm text-red-600">Could not load this listing.</p>}
+        {!loading && !failed && (
+          <FileCollection
+            folders={folders}
+            files={files}
+            mode={mode}
+            showPath={isSearching}
+            empty={
+              isSearching
+                ? "No matches."
+                : "This folder is empty. Drop files here or use “Upload files”."
+            }
+            onOpenFolder={openFolder}
+            onOpenFile={(index) => setViewerIndex(index)}
+            onToggleFavorite={actions.toggleFavorite}
+            onDownload={(file) => void actions.download(file)}
+            fileMenu={actions.menuFor}
+            folderMenu={(folder) => [
+              { label: "Open", onSelect: () => openFolder(folder) },
+              { label: "Rename", onSelect: () => setFolderDialog({ kind: "rename", folder }) },
+              { label: "Move to…", onSelect: () => setFolderDialog({ kind: "move", folder }) },
+              { label: "Delete (must be empty)", danger: true, onSelect: () => setFolderDialog({ kind: "delete", folder }) },
+            ]}
+            expandedFor={versionsFor}
+            renderExpanded={(file) => <VersionHistory file={file} />}
+          />
+        )}
+      </div>
+
+      {viewerIndex !== null && (
+        <FileViewer
+          files={files}
+          index={Math.min(viewerIndex, Math.max(files.length - 1, 0))}
+          onIndexChange={setViewerIndex}
+          onClose={() => setViewerIndex(null)}
+          onToggleFavorite={actions.toggleFavorite}
+          onDelete={(file) => {
+            setViewerIndex(null);
+            actions.deleteWithConfirm(file);
+          }}
+        />
+      )}
+
+      {folderDialog?.kind === "new" && (
+        <PromptDialog
+          title="New folder"
+          label="Folder name"
+          confirmLabel="Create"
+          onClose={() => setFolderDialog(null)}
+          onSubmit={(name) => createMutation.mutate(name)}
+        />
+      )}
+      {folderDialog?.kind === "rename" && (
+        <PromptDialog
+          title="Rename folder"
+          label="New name"
+          initial={folderDialog.folder.name}
+          confirmLabel="Rename"
+          onClose={() => setFolderDialog(null)}
+          onSubmit={(name) => renameMutation.mutate({ id: folderDialog.folder.id, name })}
+        />
+      )}
+      {folderDialog?.kind === "move" && (
+        <FolderPicker
+          title={`Move folder "${folderDialog.folder.name}"`}
+          excludeFolderId={folderDialog.folder.id}
+          onClose={() => setFolderDialog(null)}
+          onPick={(parentId) => moveMutation.mutate({ id: folderDialog.folder.id, parentId })}
+        />
+      )}
+      {folderDialog?.kind === "delete" && (
+        <ConfirmDialog
+          title="Delete folder?"
+          message={`Delete the folder "${folderDialog.folder.name}"? It must be empty.`}
+          confirmLabel="Delete"
+          danger
+          onClose={() => setFolderDialog(null)}
+          onConfirm={() => deleteMutation.mutate(folderDialog.folder.id)}
+        />
+      )}
+      {folderDialog?.kind === "error" && (
+        <ConfirmDialog
+          title="Something went wrong"
+          message={folderDialog.message}
+          confirmLabel="OK"
+          onClose={() => setFolderDialog(null)}
+          onConfirm={() => setFolderDialog(null)}
+        />
+      )}
+      {actions.dialogs}
     </div>
   );
 }

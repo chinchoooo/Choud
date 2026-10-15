@@ -293,3 +293,22 @@ def test_chunked_upload_carries_taken_at(client: TestClient, make_user, auth_hea
     done = client.post(f"/api/uploads/{session['id']}/complete", headers=headers)
     assert done.status_code in (200, 201)
     assert done.json()["taken_at"].startswith("2020-05-17")
+
+
+def test_directory_listing_and_search_report_favorites_and_paths(
+    client: TestClient, make_user, auth_headers
+):
+    user = make_user()
+    headers = auth_headers(user)
+    folder = client.post("/api/sync/folders", json={"path": "Trips/Italy"}, headers=headers).json()
+    uploaded = _upload(client, headers, "rome.png", _png(), "image/png", folder_id=folder["id"])
+    file_id = uploaded.json()["id"]
+    client.put(f"/api/library/favorites/{file_id}", headers=headers)
+
+    listing = client.get(f"/api/files?folder_id={folder['id']}", headers=headers).json()
+    assert listing["files"][0]["is_favorite"] is True
+    assert listing["files"][0]["folder_path"] == "Trips/Italy"
+
+    found = client.get("/api/search?q=rome", headers=headers).json()
+    assert found["files"][0]["is_favorite"] is True
+    assert found["files"][0]["folder_path"] == "Trips/Italy"

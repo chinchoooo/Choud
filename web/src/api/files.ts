@@ -1,5 +1,11 @@
 import { API_BASE_URL, apiDelete, apiGet, apiPatch, apiUpload, getAccessToken } from "./client";
-import { CHUNKED_UPLOAD_THRESHOLD, uploadFileChunked } from "./uploads";
+import {
+  CHUNKED_UPLOAD_THRESHOLD,
+  DEFAULT_CHUNK_SIZE,
+  UploadCancelled,
+  uploadFileChunked,
+  type UploadOptions,
+} from "./uploads";
 import type { DirectoryListing, FileResponse, SearchResponse } from "../types/files";
 
 export function listDirectory(folderId: string | null): Promise<DirectoryListing> {
@@ -16,16 +22,18 @@ export function uploadFile(
   file: File,
   folderId: string | null,
   onProgress?: (fraction: number) => void,
+  options: UploadOptions = {},
 ): Promise<FileResponse> {
   if (file.size > CHUNKED_UPLOAD_THRESHOLD) {
-    return uploadFileChunked(file, folderId, onProgress);
+    return uploadFileChunked(file, folderId, onProgress, DEFAULT_CHUNK_SIZE, options);
   }
 
   const formData = new FormData();
   formData.append("file", file);
   if (folderId) formData.append("folder_id", folderId);
+  if (options.takenAt) formData.append("taken_at", options.takenAt);
 
-  if (!onProgress) {
+  if (!onProgress && !options.signal) {
     return apiUpload<FileResponse>("/api/files/upload", formData);
   }
 
@@ -38,16 +46,32 @@ export function uploadFile(
     const token = getAccessToken();
     if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) onProgress(event.loaded / event.total);
+      if (event.lengthComputable) onProgress?.(event.loaded / event.total);
     };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(JSON.parse(xhr.responseText) as FileResponse);
       } else {
-        reject(new Error(`upload failed with status ${xhr.status}`));
+        // Keep the server's own explanation (e.g. "storage quota exceeded") and the status.
+        let detail = "";
+        try {
+          const body = JSON.parse(xhr.responseText) as { detail?: unknown };
+          if (typeof body.detail === "string") detail = body.detail;
+        } catch {
+          // not JSON
+        }
+        const error = new Error(detail || `upload failed with status ${xhr.status}`);
+        (error as Error & { status?: number }).status = xhr.status;
+        reject(error);
       }
     };
-    xhr.onerror = () => reject(new Error("upload failed"));
+    xhr.onerror = () => reject(new Error("upload failed: network error"));
+    xhr.onabort = () => reject(new UploadCancelled());
+    options.signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+    if (options.signal?.aborted) {
+      reject(new UploadCancelled());
+      return;
+    }
     xhr.send(formData);
   });
 }

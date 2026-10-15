@@ -1,4 +1,4 @@
-import { apiDelete, apiPatch, apiPost } from "./client";
+import { apiDelete, apiGet, apiPatch, apiPost } from "./client";
 import type { FolderResponse } from "../types/files";
 
 export function createFolder(name: string, parentId: string | null): Promise<FolderResponse> {
@@ -15,4 +15,8 @@ export function moveFolder(id: string, parentId: string | null): Promise<FolderR
 
 export function deleteFolder(id: string): Promise<void> {
   return apiDelete<void>(`/api/folders/${id}`);
+}
+
+export function getFolder(id: string): Promise<FolderResponse> {
+  return apiGet<FolderResponse>(`/api/folders/${id}`);
 }

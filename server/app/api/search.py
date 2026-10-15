@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.api.library import decorate
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
@@ -19,4 +20,4 @@ def search(
     db: Session = Depends(get_db),
 ):
     folders, files = file_service.search(db, current_user, q)
-    return SearchResponse(folders=folders, files=files)
+    return SearchResponse(folders=folders, files=decorate(db, current_user, files))

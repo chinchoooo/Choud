@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse as FastAPIFileResponse
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
+from app.api.library import decorate
 from app.api.preconditions import conflict_http, parse_base_version
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
@@ -41,7 +42,9 @@ def list_directory(
 
     subfolders = file_service.list_subfolders(db, current_user, folder_id)
     files = file_service.list_files(db, current_user, folder_id)
-    return DirectoryListing(folder=folder, subfolders=subfolders, files=files)
+    return DirectoryListing(
+        folder=folder, subfolders=subfolders, files=decorate(db, current_user, files)
+    )
 
 
 @router.post("/upload", response_model=FileResponse, status_code=status.HTTP_201_CREATED)
