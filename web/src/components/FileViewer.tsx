@@ -60,7 +60,7 @@ function ImageView({ src, name }: { src: string; name: string }) {
   if (failed) return <p className="text-sm text-gray-500">This image could not be displayed.</p>;
   return (
     <div
-      className="relative flex h-full w-full items-center justify-center overflow-hidden"
+      className="absolute inset-0 flex items-center justify-center overflow-hidden"
       onWheel={(event) => {
         setScale((value) => Math.min(8, Math.max(1, value * (event.deltaY < 0 ? 1.15 : 1 / 1.15))));
       }}
@@ -270,7 +270,7 @@ export function FileViewer({ files, index, onIndexChange, onClose, onToggleFavor
       </header>
 
       <div className="relative flex min-h-0 flex-1">
-        <main className="relative flex min-w-0 flex-1 items-center justify-center bg-gray-100">
+        <main className="relative min-h-0 min-w-0 flex-1 bg-gray-100">
           {hasPrev && (
             <button
               onClick={() => go(-1)}
@@ -280,7 +280,7 @@ export function FileViewer({ files, index, onIndexChange, onClose, onToggleFavor
               ‹
             </button>
           )}
-          {body}
+          <div className="absolute inset-0 flex items-center justify-center">{body}</div>
           {hasNext && (
             <button
               onClick={() => go(1)}

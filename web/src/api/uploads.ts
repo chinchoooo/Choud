@@ -7,7 +7,7 @@
 // have — that's the whole "resumable" story, both for a call that failed
 // partway and for a deliberate retry later.
 
-import { apiDelete, apiGet, apiPost, apiUpload } from "./client";
+import { RequestAborted, apiDelete, apiGet, apiPost, apiUpload, apiUploadWithProgress } from "./client";
 import type { ChunkAckResponse, UploadSessionResponse, UploadStatusResponse } from "../types/uploads";
 import type { FileResponse } from "../types/files";
 
@@ -29,13 +29,15 @@ const MAX_CHUNK_ATTEMPTS = 3;
 export interface UploadOptions {
   signal?: AbortSignal;
   takenAt?: string;
+  /**
+   * Bytes of the whole file sent so far, reported many times per chunk (not just when a
+   * chunk finishes). Giving this switches chunks to XHR so progress is smooth.
+   */
+  onBytes?: (loaded: number) => void;
 }
 
-export class UploadCancelled extends Error {
-  constructor() {
-    super("upload cancelled");
-  }
-}
+export { RequestAborted as UploadCancelled };
+const UploadCancelled = RequestAborted;
 
 function throwIfCancelled(signal?: AbortSignal): void {
   if (signal?.aborted) throw new UploadCancelled();
@@ -61,19 +63,36 @@ export function getUploadStatus(uploadId: string): Promise<UploadStatusResponse>
   return apiGet<UploadStatusResponse>(`/api/uploads/${uploadId}`);
 }
 
-function uploadChunk(uploadId: string, index: number, blob: Blob): Promise<ChunkAckResponse> {
+function uploadChunk(
+  uploadId: string,
+  index: number,
+  blob: Blob,
+  onChunkBytes?: (loaded: number) => void,
+  signal?: AbortSignal,
+): Promise<ChunkAckResponse> {
   const formData = new FormData();
   formData.append("chunk", blob);
-  return apiUpload<ChunkAckResponse>(`/api/uploads/${uploadId}/chunks/${index}`, formData);
+  const path = `/api/uploads/${uploadId}/chunks/${index}`;
+  if (onChunkBytes) {
+    return apiUploadWithProgress<ChunkAckResponse>(path, formData, (loaded) => onChunkBytes(loaded), signal);
+  }
+  return apiUpload<ChunkAckResponse>(path, formData);
 }
 
-async function uploadChunkWithRetry(uploadId: string, index: number, blob: Blob): Promise<void> {
+async function uploadChunkWithRetry(
+  uploadId: string,
+  index: number,
+  blob: Blob,
+  onChunkBytes?: (loaded: number) => void,
+  signal?: AbortSignal,
+): Promise<void> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_CHUNK_ATTEMPTS; attempt++) {
     try {
-      await uploadChunk(uploadId, index, blob);
+      await uploadChunk(uploadId, index, blob, onChunkBytes, signal);
       return;
     } catch (err) {
+      if (err instanceof RequestAborted) throw err;
       lastError = err;
       if (attempt < MAX_CHUNK_ATTEMPTS) {
         await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
@@ -116,13 +135,25 @@ export async function resumeUpload(
   const status = await getUploadStatus(uploadId);
   let doneCount = status.total_chunks - status.missing_chunk_indices.length;
   onProgress?.(status.total_chunks === 0 ? 1 : doneCount / status.total_chunks);
+  // Bytes already on the server (earlier attempts), so a resumed upload starts where it left off.
+  let sentBytes = Math.min(file.size, doneCount * status.chunk_size);
+  options.onBytes?.(sentBytes);
 
   try {
     for (const index of status.missing_chunk_indices) {
       throwIfCancelled(options.signal);
       const start = index * status.chunk_size;
       const blob = file.slice(start, start + status.chunk_size);
-      await uploadChunkWithRetry(uploadId, index, blob);
+      const base = sentBytes;
+      await uploadChunkWithRetry(
+        uploadId,
+        index,
+        blob,
+        options.onBytes ? (loaded) => options.onBytes?.(Math.min(file.size, base + loaded)) : undefined,
+        options.signal,
+      );
+      sentBytes = Math.min(file.size, base + blob.size);
+      options.onBytes?.(sentBytes);
       doneCount += 1;
       onProgress?.(doneCount / status.total_chunks);
     }

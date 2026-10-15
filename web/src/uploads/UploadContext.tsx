@@ -98,8 +98,8 @@ export function UploadProvider({ children }: { children: ReactNode }) {
         speed: 0,
       });
 
-      const onProgress = (fraction: number) => {
-        const loaded = Math.min(file.size, fraction * file.size);
+      const onBytes = (bytes: number) => {
+        const loaded = Math.min(file.size, bytes);
         const sample = samples.current.get(id);
         const now = performance.now();
         let speedUpdate: number | undefined;
@@ -116,9 +116,9 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       try {
         const sessionId = sessions.current.get(id);
         if (sessionId) {
-          await resumeUpload(sessionId, file, onProgress, { signal: controller.signal, takenAt });
+          await resumeUpload(sessionId, file, undefined, { signal: controller.signal, takenAt, onBytes });
         } else {
-          await uploadFile(file, item.folderId, onProgress, { signal: controller.signal, takenAt });
+          await uploadFile(file, item.folderId, undefined, { signal: controller.signal, takenAt, onBytes });
         }
         sessions.current.delete(id);
         files.current.delete(id);

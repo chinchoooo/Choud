@@ -128,6 +128,66 @@ export function apiUpload<T>(path: string, formData: FormData): Promise<T> {
   return request<T>(path, { method: "POST", body: formData });
 }
 
+/** Thrown when an upload is cancelled through its AbortSignal. */
+export class RequestAborted extends Error {
+  constructor() {
+    super("upload cancelled");
+  }
+}
+
+/**
+ * POST a multipart body with upload-progress events (fetch cannot report them). Handles the
+ * same one-time token refresh as the other helpers, and can be cancelled with `signal`.
+ */
+export function apiUploadWithProgress<T>(
+  path: string,
+  formData: FormData,
+  onProgress?: (loaded: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<T> {
+  function attempt(retry: boolean): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new RequestAborted());
+        return;
+      }
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_BASE_URL}${path}`);
+      const token = getAccessToken();
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) onProgress?.(event.loaded, event.total);
+      };
+      xhr.onload = () => {
+        if (xhr.status === 401 && retry && getRefreshToken()) {
+          void refreshAccessToken().then((fresh) => {
+            if (fresh) resolve(attempt(false));
+            else reject(new ApiError(401, "your session expired - log in again"));
+          });
+          return;
+        }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve((xhr.status === 204 ? undefined : JSON.parse(xhr.responseText)) as T);
+          return;
+        }
+        let detail = "";
+        try {
+          const body = JSON.parse(xhr.responseText) as { detail?: unknown };
+          if (typeof body.detail === "string") detail = body.detail;
+        } catch {
+          // not JSON
+        }
+        reject(new ApiError(xhr.status, detail || `upload failed with status ${xhr.status}`));
+      };
+      xhr.onerror = () => reject(new Error("upload failed: network error"));
+      xhr.onabort = () => reject(new RequestAborted());
+      signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+      xhr.send(formData);
+    });
+  }
+  return attempt(true);
+}
+
 export function apiDownloadUrl(fileId: string): string {
   return `${API_BASE_URL}/api/files/${fileId}/download`;
 }

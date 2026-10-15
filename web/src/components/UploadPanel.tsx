@@ -111,7 +111,7 @@ export function UploadPanel() {
 
   const overall = summary.bytesTotal === 0 ? 0 : Math.floor((summary.bytesLoaded / summary.bytesTotal) * 100);
   const title = summary.busy
-    ? `Uploading ${summary.done + 1} of ${summary.total}`
+    ? `${summary.done} of ${summary.total} uploaded${summary.uploading > 1 ? ` (${summary.uploading} at once)` : ""}`
     : summary.failed > 0
       ? `${summary.done} uploaded, ${summary.failed} failed`
       : `${summary.done} uploaded`;

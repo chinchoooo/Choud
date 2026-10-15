@@ -52,7 +52,7 @@ describe("UploadPanel", () => {
     ];
     render(<UploadPanel />);
 
-    expect(screen.getByText("Uploading 2 of 4")).toBeInTheDocument();
+    expect(screen.getByText("1 of 4 uploaded")).toBeInTheDocument();
     const rows = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(rows.map((row) => within(row).getByTitle(/\.(jpg|mp4|png)$/).textContent)).toEqual([
       "active.mp4",
