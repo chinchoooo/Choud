@@ -16,7 +16,7 @@ from collections.abc import Callable
 from sqlalchemy.orm import Session
 
 from app.core import database
-from app.services import upload_service
+from app.services import media_cache, upload_service
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,10 @@ def run_maintenance_once(session_factory: Callable[[], Session] | None = None) -
         swept = upload_service.sweep_expired_uploads(db)
         if swept:
             logger.info("maintenance: removed %d expired upload session(s)", swept)
-        return {"uploads_swept": swept}
+        evicted = media_cache.evict_old()
+        if evicted:
+            logger.info("maintenance: removed %d stale preview cache file(s)", evicted)
+        return {"uploads_swept": swept, "preview_cache_evicted": evicted}
     except Exception:
         db.rollback()
         logger.exception("maintenance run failed; will retry at the next interval")

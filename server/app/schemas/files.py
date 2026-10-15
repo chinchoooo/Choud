@@ -40,8 +40,13 @@ class FileResponse(BaseModel):
     # The version this file is currently on. A sync client remembers it after an
     # upload and sends it back as `base_version_id` to detect concurrent edits.
     current_version_id: uuid.UUID | None = None
+    # When a photo/video was taken, if the uploading client knew.
+    taken_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    # Filled in by the routes that know the viewer's favorites / the folder tree.
+    is_favorite: bool = False
+    folder_path: str | None = None
 
 
 class DirectoryListing(BaseModel):

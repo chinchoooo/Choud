@@ -43,6 +43,12 @@ class File(Base):
     # exist until then; Phase 6 adds it via its own migration.
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
 
+    # When the photo/video was taken (EXIF / MediaStore), if the client knows. The
+    # photo timeline sorts by this and falls back to `created_at` (upload time).
+    taken_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
     # Soft delete / trash (see docs/architecture.md#13-trash). NULL means
     # not deleted.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

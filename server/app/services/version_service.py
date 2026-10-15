@@ -21,6 +21,7 @@ atomically.
 """
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -28,6 +29,7 @@ from sqlalchemy.orm import Session
 from app.models.file import File
 from app.models.file_version import FileVersion
 from app.models.user import User
+from app.services import activity_service
 from app.services.errors import (
     ConflictError,
     NotFoundError,
@@ -129,6 +131,7 @@ def save_content(
     content_hash: str,
     base_version_id: uuid.UUID | None = None,
     expect_new: bool = False,
+    taken_at: datetime | None = None,
 ) -> File:
     """Records `content_hash` as the content of `name` in `folder_id`.
 
@@ -165,10 +168,12 @@ def save_content(
             size=size,
             content_hash=content_hash,
             storage_key=content_hash,
+            taken_at=taken_at,
         )
         db.add(file)
         db.flush()  # the version row's FK needs the file row to exist
         _append_version(db, file, content_hash=content_hash, size=size, created_by=owner.id)
+        activity_service.record(db, owner.id, "uploaded", file_id=file.id, file_name=file.name)
         return file
 
     if existing.content_hash == content_hash:
@@ -190,6 +195,9 @@ def save_content(
     if mime_type:
         existing.mime_type = mime_type
     _append_version(db, existing, content_hash=content_hash, size=size, created_by=owner.id)
+    activity_service.record(
+        db, owner.id, "new_version", file_id=existing.id, file_name=existing.name
+    )
     return existing
 
 

@@ -40,14 +40,17 @@ def test_run_once_removes_expired_pending_sessions_only(db_session: Session, mak
 
     result = maintenance.run_maintenance_once(_session_factory(db_session))
 
-    assert result == {"uploads_swept": 1}
+    assert result == {"uploads_swept": 1, "preview_cache_evicted": 0}
     db_session.expire_all()
     assert db_session.get(Upload, expired_id) is None
     assert db_session.get(Upload, live_id) is not None
 
 
 def test_run_once_with_nothing_to_do_is_a_quiet_no_op(db_session: Session) -> None:
-    assert maintenance.run_maintenance_once(_session_factory(db_session)) == {"uploads_swept": 0}
+    assert maintenance.run_maintenance_once(_session_factory(db_session)) == {
+        "uploads_swept": 0,
+        "preview_cache_evicted": 0,
+    }
 
 
 def test_run_once_swallows_and_logs_failures(

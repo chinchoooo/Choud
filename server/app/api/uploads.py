@@ -52,6 +52,7 @@ def create_upload(
             body.folder_id,
             body.expected_hash,
             body.base_version_id,
+            body.taken_at,
         )
     except upload_service.NotFoundError as exc:
         raise _not_found(exc) from exc

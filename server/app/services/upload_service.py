@@ -22,7 +22,7 @@ from app.core.config import get_settings
 from app.models.file import File
 from app.models.upload import Upload
 from app.models.user import User
-from app.services import version_service
+from app.services import quota_service, version_service
 from app.services.engine_client import EngineError, ObjectCorruptedError
 from app.services.errors import VersionConflictError
 from app.services.file_service import (
@@ -70,6 +70,7 @@ def create_session(
     folder_id: uuid.UUID | None,
     expected_hash: str | None,
     base_version_id: str | None = None,
+    taken_at: datetime | None = None,
 ) -> Upload:
     resolved_name = _validate_filename(file_name)
 
@@ -83,6 +84,8 @@ def create_session(
     # Reject a malformed precondition now, not after the whole file is uploaded.
     version_service.parse_base_version(base_version_id)
 
+    quota_service.ensure_room(db, owner, file_size)
+
     total_chunks = math.ceil(file_size / chunk_size)
 
     upload = Upload(
@@ -95,6 +98,7 @@ def create_session(
         total_chunks=total_chunks,
         expected_hash=expected_hash,
         base_version_id=base_version_id,
+        taken_at=taken_at,
         status="pending",
         expires_at=datetime.now(UTC) + timedelta(hours=settings.upload_session_expire_hours),
     )
@@ -174,6 +178,7 @@ def complete_upload(db: Session, owner: User, upload_id: uuid.UUID) -> File:
             content_hash=content_hash,
             base_version_id=base_version_id,
             expect_new=expect_new,
+            taken_at=upload.taken_at,
         )
         db.commit()
     except VersionConflictError:

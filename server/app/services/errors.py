@@ -47,3 +47,7 @@ class ValidationError(Exception):
 
 class StorageError(Exception):
     """The storage engine couldn't complete the request (unreachable, object missing/corrupted)."""
+
+
+class QuotaError(Exception):
+    """The upload would push the user past their storage quota."""

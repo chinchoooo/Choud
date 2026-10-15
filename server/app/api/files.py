@@ -3,6 +3,7 @@ delete, metadata.
 """
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from fastapi import File as FastAPIFile
@@ -49,6 +50,7 @@ async def upload(
     folder_id: uuid.UUID | None = Form(default=None),
     name: str | None = Form(default=None),
     base_version_id: str | None = Form(default=None),
+    taken_at: datetime | None = Form(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -68,6 +70,7 @@ async def upload(
             name,
             base_version_id=base,
             expect_new=expect_new,
+            taken_at=taken_at,
         )
     except file_service.NotFoundError as exc:
         raise _not_found(exc) from exc

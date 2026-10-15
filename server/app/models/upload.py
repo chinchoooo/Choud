@@ -43,6 +43,8 @@ class Upload(Base):
     )
 
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Carried to the file when the upload completes (see File.taken_at).
+    taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # The size the client *claims* the finished file will be. Not trusted
     # for anything beyond computing `total_chunks` up front — the file
     # row created on completion uses the actual reconstructed size, which

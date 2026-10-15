@@ -36,7 +36,7 @@ from app.models.file import File
 from app.models.file_version import FileVersion
 from app.models.folder import Folder
 from app.models.user import User
-from app.services import version_service
+from app.services import activity_service, version_service
 from app.services.engine_client import EngineError
 from app.services.errors import NotFoundError
 from app.services.storage_service import get_storage_service
@@ -95,6 +95,7 @@ def restore_file(db: Session, owner: User, file_id: uuid.UUID) -> File:
     file.folder_id = folder_id
     file.name = name
     file.deleted_at = None
+    activity_service.record(db, owner.id, "restored", file_id=file.id, file_name=file.name)
     db.commit()
     db.refresh(file)
     return file
@@ -140,6 +141,7 @@ def purge_file(db: Session, owner: User, file_id: uuid.UUID) -> int:
     if file.content_hash:
         hashes.add(file.content_hash)
 
+    activity_service.record(db, owner.id, "purged", file_id=file.id, file_name=file.name)
     for version in versions:
         db.delete(version)
     # File and FileVersion have no ORM relationship(), so SQLAlchemy can't

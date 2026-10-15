@@ -24,7 +24,7 @@ from app.core.config import get_settings
 from app.models.file import File
 from app.models.folder import Folder
 from app.models.user import User
-from app.services import version_service
+from app.services import activity_service, quota_service, version_service
 from app.services.errors import (
     ConflictError,
     NotFoundError,
@@ -240,6 +240,7 @@ async def upload_file(
     name: str | None = None,
     base_version_id: uuid.UUID | None = None,
     expect_new: bool = False,
+    taken_at: datetime | None = None,
 ) -> File:
     resolved_name = _validate_filename(name or upload.filename)
 
@@ -247,6 +248,7 @@ async def upload_file(
         _get_folder_or_404(db, owner, folder_id)
 
     content = await upload.read()
+    quota_service.ensure_room(db, owner, len(content))
     mime_type = upload.content_type or mimetypes.guess_type(resolved_name)[0]
 
     # Stage the bytes on the shared storage volume so the engine (a
@@ -280,6 +282,7 @@ async def upload_file(
             content_hash=content_hash,
             base_version_id=base_version_id,
             expect_new=expect_new,
+            taken_at=taken_at,
         )
         db.commit()
     except Exception:
@@ -342,8 +345,15 @@ def update_file(db: Session, owner: User, file_id: uuid.UUID, data: dict) -> Fil
         if clash is not None and clash.id != file.id:
             raise ConflictError("a file with that name already exists in that folder")
 
+    old_name, old_folder = file.name, file.folder_id
     file.name = new_name
     file.folder_id = new_folder_id
+    if new_name != old_name:
+        activity_service.record(
+            db, owner.id, "renamed", file_id=file.id, file_name=new_name, detail=f"was {old_name}"
+        )
+    if new_folder_id != old_folder:
+        activity_service.record(db, owner.id, "moved", file_id=file.id, file_name=new_name)
 
     db.commit()
     db.refresh(file)
@@ -370,6 +380,7 @@ def delete_file(
             current_version_id=file.current_version_id,
         )
     file.deleted_at = datetime.now(UTC)
+    activity_service.record(db, owner.id, "trashed", file_id=file.id, file_name=file.name)
     db.commit()
 
 

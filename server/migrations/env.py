@@ -7,7 +7,15 @@ from app.core.config import get_settings
 from app.core.database import Base
 
 # Import models so they register on Base.metadata as they're added.
-from app.models import file, file_version, folder, upload, user  # noqa: F401
+from app.models import (  # noqa: F401
+    activity,
+    favorite,
+    file,
+    file_version,
+    folder,
+    upload,
+    user,
+)
 
 # from app.models import share  # noqa: E501
 

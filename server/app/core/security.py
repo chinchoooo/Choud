@@ -60,6 +60,21 @@ def create_access_token(user_id: UUID) -> str:
     )
 
 
+MEDIA_TOKEN_TYPE = "media"
+MEDIA_TOKEN_MINUTES = 60
+
+
+def create_media_token(user_id: UUID) -> str:
+    """A short-lived, read-only token that goes in a URL path, for `<img>`/`<video>` tags.
+
+    Browsers and media players can't attach an Authorization header to those, so
+    the content/thumbnail routes under /api/media/ accept this instead. It is a
+    different token type from the access token: it cannot call any other API, and
+    it expires after an hour.
+    """
+    return _create_token(user_id, MEDIA_TOKEN_TYPE, timedelta(minutes=MEDIA_TOKEN_MINUTES))
+
+
 def create_refresh_token(user_id: UUID) -> str:
     return _create_token(
         user_id,
