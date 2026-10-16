@@ -1,6 +1,18 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+// Release signing. The key lives OUTSIDE the repository (default: ~/.personal-cloud-signing/,
+// or the folder in $PC_SIGNING_DIR) and is never committed. Without it, a release build is
+// simply left unsigned. KEEP A BACKUP of that folder: a phone only accepts an update that is
+// signed with the same key as the installed app.
+val signingProps = Properties().apply {
+    val dir = System.getenv("PC_SIGNING_DIR") ?: "${System.getProperty("user.home")}/.personal-cloud-signing"
+    val file = File(dir, "keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
 }
 
 android {
@@ -11,13 +23,25 @@ android {
         applicationId = "cloud.personal.sync"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+    }
+
+    signingConfigs {
+        if (signingProps.getProperty("storeFile") != null) {
+            create("release") {
+                storeFile = File(signingProps.getProperty("storeFile"))
+                storePassword = signingProps.getProperty("storePassword")
+                keyAlias = signingProps.getProperty("keyAlias")
+                keyPassword = signingProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
     compileOptions {
