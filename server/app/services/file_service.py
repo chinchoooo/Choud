@@ -265,6 +265,7 @@ async def upload_file(
     base_version_id: uuid.UUID | None = None,
     expect_new: bool = False,
     taken_at: datetime | None = None,
+    modified_at: datetime | None = None,
 ) -> File:
     resolved_name = _validate_filename(name or upload.filename)
 
@@ -307,6 +308,7 @@ async def upload_file(
             base_version_id=base_version_id,
             expect_new=expect_new,
             taken_at=taken_at,
+            modified_at=modified_at,
         )
         db.commit()
     except Exception:
@@ -368,6 +370,12 @@ def update_file(db: Session, owner: User, file_id: uuid.UUID, data: dict) -> Fil
         clash = version_service.find_live_file(db, owner, new_folder_id, new_name)
         if clash is not None and clash.id != file.id:
             raise ConflictError("a file with that name already exists in that folder")
+
+    # Device-reported dates can be set (or cleared with null) independently of renames.
+    if "taken_at" in data:
+        file.taken_at = data["taken_at"]
+    if "modified_at" in data:
+        file.modified_at = data["modified_at"]
 
     old_name, old_folder = file.name, file.folder_id
     file.name = new_name

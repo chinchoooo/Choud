@@ -36,6 +36,13 @@ class Settings(context: Context) : TokenStore {
     var chargingOnly: Boolean
         get() = prefs.getBoolean("charging_only", true)
         set(v) = prefs.edit().putBoolean("charging_only", v).apply()
+    /** Folders (MediaStore relative paths, normalised with a trailing slash) to back up. */
+    var backupFolders: Set<String>
+        get() {
+            val raw = prefs.getString("backup_folders", null) ?: return DEFAULT_BACKUP_PREFIXES
+            return raw.split('\n').map { normalizePrefix(it) }.filter { it.isNotEmpty() }.toSet()
+        }
+        set(v) = prefs.edit().putString("backup_folders", v.sorted().joinToString("\n")).apply()
     var theme: String
         get() = prefs.getString("theme", "light") ?: "light"
         set(v) = prefs.edit().putString("theme", v).apply()
@@ -55,15 +62,58 @@ class Settings(context: Context) : TokenStore {
 }
 
 /** Which media items are already backed up, plus resumable upload sessions. */
-class BackupDb(context: Context) : SQLiteOpenHelper(context, "backup.db", null, 1) {
+class BackupDb(context: Context) : SQLiteOpenHelper(context, "backup.db", null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE media (key TEXT PRIMARY KEY, status TEXT NOT NULL, upload_id TEXT, " +
-                "remote_path TEXT, error TEXT)"
+                "remote_path TEXT, error TEXT, fp TEXT, dates INTEGER)"
         )
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) db.execSQL("ALTER TABLE media ADD COLUMN fp TEXT")
+        // dates: 1 once the phone's own dates are on the server; NULL = still to do
+        if (oldVersion < 3) db.execSQL("ALTER TABLE media ADD COLUMN dates INTEGER")
+    }
+
+    /** Records a fingerprint for a file uploaded before fingerprints existed, so later edits show. */
+    fun adoptFingerprint(key: String, fp: String) {
+        writableDatabase.execSQL(
+            "UPDATE media SET fp = ? WHERE key = ? AND status = 'done' AND fp IS NULL",
+            arrayOf(fp, key),
+        )
+    }
+
+    /** Everything the app remembers about one file. */
+    data class Row(val status: String, val fp: String?, val datesDone: Boolean, val remotePath: String?)
+
+    fun allRows(): Map<String, Row> =
+        readableDatabase.rawQuery("SELECT key, status, fp, dates, remote_path FROM media", null).use { c ->
+            val map = HashMap<String, Row>()
+            while (c.moveToNext()) {
+                map[c.getString(0)] = Row(c.getString(1), c.getString(2), !c.isNull(3), c.getString(4))
+            }
+            map
+        }
+
+    fun markDates(key: String) {
+        writableDatabase.execSQL("UPDATE media SET dates = 1 WHERE key = ?", arrayOf(key))
+    }
+
+    /** Backed-up files whose phone dates have not been sent to the server yet. */
+    fun countDatesPending(): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM media WHERE status='done' AND dates IS NULL AND remote_path IS NOT NULL", null).use {
+            it.moveToFirst()
+            it.getInt(0)
+        }
+
+    /** status and stored fingerprint of every known file, read once per scan. */
+    fun allStatuses(): Map<String, Pair<String, String?>> =
+        readableDatabase.rawQuery("SELECT key, status, fp FROM media", null).use { c ->
+            val map = HashMap<String, Pair<String, String?>>()
+            while (c.moveToNext()) map[c.getString(0)] = c.getString(1) to c.getString(2)
+            map
+        }
 
     fun status(key: String): String? =
         readableDatabase.rawQuery("SELECT status FROM media WHERE key=?", arrayOf(key)).use {
@@ -81,8 +131,12 @@ class BackupDb(context: Context) : SQLiteOpenHelper(context, "backup.db", null, 
         uploadId: String? = null,
         remotePath: String? = null,
         error: String? = null,
+        fp: String? = null,
+        dates: Boolean = false,
     ) {
         val values = ContentValues().apply {
+            put("fp", fp)
+            if (dates) put("dates", 1) else putNull("dates")
             put("key", key)
             put("status", status)
             put("upload_id", uploadId)

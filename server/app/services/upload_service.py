@@ -77,6 +77,7 @@ def create_session(
     expected_hash: str | None,
     base_version_id: str | None = None,
     taken_at: datetime | None = None,
+    modified_at: datetime | None = None,
 ) -> Upload:
     resolved_name = _validate_filename(file_name)
 
@@ -112,6 +113,7 @@ def create_session(
         expected_hash=expected_hash,
         base_version_id=base_version_id,
         taken_at=taken_at,
+        modified_at=modified_at,
         status="pending",
         expires_at=datetime.now(UTC) + timedelta(hours=settings.upload_session_expire_hours),
     )
@@ -199,6 +201,7 @@ def complete_upload(db: Session, owner: User, upload_id: uuid.UUID) -> File:
             base_version_id=base_version_id,
             expect_new=expect_new,
             taken_at=upload.taken_at,
+            modified_at=upload.modified_at,
         )
         db.commit()
     except VersionConflictError:

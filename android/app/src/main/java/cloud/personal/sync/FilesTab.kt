@@ -175,7 +175,7 @@ class FilesTab(private val host: Host) : Tab {
             val index = position - folders.size
             val file = files[index]
             holder.name.text = file.name
-            holder.sub.text = "${fmtBytes(file.size)}  |  ${fmtDate(file.sortMillis)}"
+            holder.sub.text = "${fmtBytes(file.size)}  |  ${fmtDate(file.displayMillis)}"
             holder.badge.text = typeBadge(file.name)
             holder.badge.visibility = View.VISIBLE
             val kind = viewerKind(file.name, file.mime)

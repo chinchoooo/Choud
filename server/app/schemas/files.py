@@ -18,6 +18,10 @@ class FileUpdate(BaseModel):
 
     name: str | None = Field(default=None)
     folder_id: uuid.UUID | None = Field(default=None)
+    # Dates reported by the device that holds the original (used to fix up files that were
+    # backed up before the server recorded them).
+    taken_at: datetime | None = Field(default=None)
+    modified_at: datetime | None = Field(default=None)
 
     @field_validator("name")
     @classmethod
@@ -42,6 +46,8 @@ class FileResponse(BaseModel):
     current_version_id: uuid.UUID | None = None
     # When a photo/video was taken, if the uploading client knew.
     taken_at: datetime | None = None
+    # The uploading device's own last-modified time; clients show this as the file's date.
+    modified_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     # Filled in by the routes that know the viewer's favorites / the folder tree.

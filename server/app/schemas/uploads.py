@@ -25,6 +25,7 @@ class UploadCreateRequest(BaseModel):
     base_version_id: str | None = Field(default=None, max_length=36)
     # When the photo/video was taken, if known; becomes the file's `taken_at`.
     taken_at: datetime | None = Field(default=None)
+    modified_at: datetime | None = Field(default=None)
 
     @field_validator("file_name")
     @classmethod

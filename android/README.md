@@ -28,6 +28,22 @@ Spec and rationale: [`../docs/mobile.md`](../docs/mobile.md).
   progress while it runs.
 - It **never deletes anything on the phone** and never downloads into the camera roll.
 
+## Dates
+
+Backed-up files keep the phone's real dates, not the upload day. For each file the app uses,
+in order: the date written into the file name (`IMG_20250206_160717396.jpg`,
+`PXL_...`, `VID_...`, `Screenshot_2025-02-06-16-07-17.png`, WhatsApp `IMG-20250206-WA0001.jpg`),
+then the photo's taken date, then the file's modified time. It is sent with every upload, and
+after an update a catch-up pass puts the dates on everything that was already backed up
+("Fixing file dates"; nothing is uploaded again). It refuses to run against a server too old to
+store dates, rather than pretend it worked.
+
+## Folders
+
+More → Folders to back up lists every folder on the phone that holds photos or videos. The
+camera roll is on by default; tick Screenshots, Pictures, a messenger's media folder, and so on.
+A photo edited in place is uploaded again (as a conflict copy next to the original).
+
 ## Build and test
 
 Needs the Android SDK (platform 34) and a JDK 17+ (Android Studio's bundled JBR works).

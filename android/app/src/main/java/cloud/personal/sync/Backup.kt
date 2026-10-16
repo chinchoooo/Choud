@@ -24,6 +24,10 @@ data class MediaItem(
     val relativePath: String?,
     /** When the photo/video was taken (or last modified), in epoch millis; 0 if unknown. */
     val takenAtMillis: Long = 0,
+    /** Changes when the file is edited in place, so an edited photo is uploaded again. */
+    val fp: String = "",
+    /** The phone's own last-modified time, in epoch millis (0 if unknown). */
+    val modifiedMillis: Long = 0,
 )
 
 /** Files uploaded at the same time. Small photos are latency-bound, so several at once is much faster. */
@@ -43,7 +47,7 @@ class CameraBackup(
 ) {
     private val folderIds = HashMap<String, String>()
 
-    private fun query(collection: Uri, prefix: String): List<MediaItem> {
+    private fun query(collection: Uri, prefix: String, selected: Set<String>): List<MediaItem> {
         val projection = arrayOf(
             MediaStore.MediaColumns._ID,
             MediaStore.MediaColumns.DISPLAY_NAME,
@@ -55,42 +59,78 @@ class CameraBackup(
         )
         val items = ArrayList<MediaItem>()
         context.contentResolver.query(
-            collection, projection,
-            "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?", arrayOf("DCIM/%"),
+            collection, projection, null, null,
             "${MediaStore.MediaColumns.DATE_ADDED} ASC",
         )?.use { c ->
             while (c.moveToNext()) {
+                if (!isSelected(c.getString(4), selected)) continue
                 val id = c.getLong(0)
-                val taken = c.getLong(5).takeIf { it > 0 } ?: (c.getLong(6) * 1000)
+                val name = safeFileName(c.getString(1) ?: "$prefix$id")
+                // The date in the file name (IMG_20250206_160717396.jpg) beats the file's own
+                // timestamps, which turn into "the day it was copied" whenever a file is moved.
+                val fromName = dateFromFileName(name)
+                val taken = fromName ?: c.getLong(5).takeIf { it > 0 } ?: (c.getLong(6) * 1000)
                 items += MediaItem(
                     key = "$prefix:$id",
                     uri = ContentUris.withAppendedId(collection, id),
-                    name = safeFileName(c.getString(1) ?: "$prefix$id"),
+                    name = name,
                     size = c.getLong(2),
                     mime = c.getString(3) ?: "application/octet-stream",
                     relativePath = c.getString(4),
                     takenAtMillis = taken,
+                    fp = fingerprint(c.getLong(2), c.getLong(6)),
+                    modifiedMillis = fromName ?: (c.getLong(6) * 1000),
                 )
             }
         }
         return items
     }
 
-    /** How many camera-roll files the app can see (0 with a permission problem). */
-    fun visibleCount(): Int = listOf(
-        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-    ).sumOf { uri ->
-        context.contentResolver.query(
-            uri, arrayOf(MediaStore.MediaColumns._ID),
-            "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?", arrayOf("DCIM/%"), null,
-        )?.use { it.count } ?: 0
+    /** Every folder on the phone that holds photos or videos, with how many files each has. */
+    fun discoverFolders(): List<Pair<String, Int>> {
+        val counts = HashMap<String, Int>()
+        for (uri in listOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)) {
+            context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.RELATIVE_PATH), null, null, null)
+                ?.use { c ->
+                    while (c.moveToNext()) {
+                        val folder = normalizePrefix(c.getString(0).orEmpty())
+                        if (folder.isNotEmpty()) counts[folder] = (counts[folder] ?: 0) + 1
+                    }
+                }
+        }
+        return counts.entries.sortedBy { it.key.lowercase() }.map { it.key to it.value }
     }
 
-    fun pending(): List<MediaItem> =
-        (query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "i") +
-            query(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "v"))
-            .filter { db.status(it.key) != "done" }
+    /** How many files in the chosen folders the app can see (0 with a permission problem). */
+    fun visibleCount(): Int {
+        val selected = settings.backupFolders
+        return listOf(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+        ).sumOf { uri ->
+            var n = 0
+            context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.RELATIVE_PATH), null, null, null)
+                ?.use { c -> while (c.moveToNext()) if (isSelected(c.getString(0), selected)) n++ }
+            n
+        }
+    }
+
+    /** Every file in the chosen folders, whether or not it has been backed up. */
+    fun scanAll(): List<MediaItem> {
+        val selected = settings.backupFolders
+        return query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "i", selected) +
+            query(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "v", selected)
+    }
+
+    /** The files that still need uploading, given what the app remembers about each. */
+    fun pending(all: List<MediaItem>, known: Map<String, BackupDb.Row>): List<MediaItem> =
+        all.filter { item ->
+            val row = known[item.key]
+            // First time we see an already-uploaded file with no fingerprint: remember it as
+            // the baseline, so an edit made from now on is noticed.
+            if (row != null && row.status == "done" && row.fp == null) db.adoptFingerprint(item.key, item.fp)
+            needsBackup(row?.status, row?.fp, item.fp)
+        }
 
     private fun stopRequested() = LiveStatus.cancelRequested || shouldStop()
 
@@ -101,9 +141,12 @@ class CameraBackup(
      */
     fun run(onProgress: (done: Int, total: Int, name: String) -> Unit = { _, _, _ -> }): BackupSummary {
         LiveStatus.start()
-        log("scan: querying MediaStore for DCIM images and videos")
+        log("scan: querying MediaStore for images and videos in ${settings.backupFolders.sorted()}")
+        val known = db.allRows()
+        val all: List<MediaItem>
         val items = try {
-            pending()
+            all = scanAll()
+            pending(all, known)
         } catch (e: Exception) {
             LiveStatus.finish()
             throw e
@@ -134,9 +177,10 @@ class CameraBackup(
         } finally {
             pool.shutdown()
             if (!pool.awaitTermination(24, TimeUnit.HOURS)) pool.shutdownNow()
-            LiveStatus.finish()
         }
         fatal.get()?.let { throw it }
+        if (!stopRequested()) syncDates(all, known)
+        LiveStatus.finish()
         return BackupSummary(LiveStatus.done.get(), 0, LiveStatus.failed.get())
     }
 
@@ -175,6 +219,62 @@ class CameraBackup(
         }
     }
 
+    /**
+     * Puts the phone's own dates on files that were backed up before the server recorded them
+     * (they all show the upload day otherwise). Runs after the uploads, a few at a time; a file
+     * that fails is simply retried on the next run.
+     */
+    private fun syncDates(all: List<MediaItem>, known: Map<String, BackupDb.Row>) {
+        val todo = all.filter { item ->
+            val row = known[item.key]
+            row != null && row.status == "done" && !row.datesDone && !row.remotePath.isNullOrEmpty()
+        }
+        if (todo.isEmpty()) return
+        LiveStatus.phase = "dates"
+        LiveStatus.datesTotal = todo.size
+        log("dates: ${todo.size} backed-up file(s) need the phone's dates")
+        val remote = try {
+            api.snapshot()
+        } catch (e: Exception) {
+            log("dates: could not read the server's file list: ${e.javaClass.simpleName}: ${e.message}")
+            return
+        }
+        val queue = ConcurrentLinkedQueue(todo)
+        val stop = AtomicReference<String?>(null)
+        val pool = Executors.newFixedThreadPool(PARALLEL_UPLOADS)
+        repeat(PARALLEL_UPLOADS) {
+            pool.execute {
+                while (stop.get() == null && !stopRequested()) {
+                    val item = queue.poll() ?: break
+                    val row = known.getValue(item.key)
+                    val id = remote[row.remotePath]?.id
+                    try {
+                        if (id == null) {
+                            // The file is gone from the server (deleted or moved): nothing to fix.
+                            db.markDates(item.key)
+                        } else if (api.patchDates(id, isoFromMillis(item.takenAtMillis), isoFromMillis(item.modifiedMillis))) {
+                            db.markDates(item.key)
+                        } else {
+                            stop.compareAndSet(null, "the server is too old to store dates: update it, then run again")
+                        }
+                        LiveStatus.datesDone.incrementAndGet()
+                    } catch (e: ApiUnavailable) {
+                        stop.compareAndSet(null, "server unreachable (${e.message})")
+                    } catch (e: AuthError) {
+                        stop.compareAndSet(null, "signed out")
+                    } catch (e: Exception) {
+                        log("dates: ${item.name} failed: ${e.javaClass.simpleName}: ${e.message}")
+                        LiveStatus.datesDone.incrementAndGet()
+                    }
+                }
+            }
+        }
+        pool.shutdown()
+        if (!pool.awaitTermination(6, TimeUnit.HOURS)) pool.shutdownNow()
+        val reason = stop.get()
+        if (reason != null) log("dates: stopped, $reason") else log("dates: done, ${LiveStatus.datesDone.get()} file(s) updated")
+    }
+
     private fun failFile(item: MediaItem, reason: String, logLine: String) {
         log("  FAILED ${item.name}: $logLine")
         db.set(item.key, "failed", error = reason)
@@ -202,7 +302,9 @@ class CameraBackup(
         active.phase = "preparing"
         val folderId = folderIdFor(folder)
         val size = item.size.takeIf { it > 0 } ?: (resolver.openAssetFileDescriptor(item.uri, "r")?.use { it.length } ?: 0)
-        val takenAt = item.takenAtMillis.takeIf { it > 0 }?.let { Instant.ofEpochMilli(it).toString() }
+        val takenAt = isoFromMillis(item.takenAtMillis)
+        val modifiedAt = isoFromMillis(item.modifiedMillis)
+        var datesSent = modifiedAt != null
         val small = size <= CHUNKED_THRESHOLD
 
         // Small files are not hashed up front: the server hashes them anyway, and we only need
@@ -233,6 +335,7 @@ class CameraBackup(
                 },
                 onBytes = { active.bytes = it },
                 takenAt = takenAt,
+                modifiedAt = modifiedAt,
             )
             "$folder/$name"
         } catch (e: VersionConflict) {
@@ -252,6 +355,7 @@ class CameraBackup(
                 log("  server already has identical bytes: counting as backed up")
                 remote = "$folder/${item.name}"
                 note = "already on the server"
+                datesSent = false // the copy there may carry the upload day: the dates pass fixes it
             } else {
                 val copy = conflictName(item.name, LocalDate.now().toString())
                 log("  different bytes on the server: saving as conflict copy '$copy'")
@@ -261,7 +365,7 @@ class CameraBackup(
                     else throw ApiError(409, "name clash for ${item.name}")
             }
         }
-        db.set(item.key, "done", remotePath = remote)
+        db.set(item.key, "done", remotePath = remote, fp = item.fp, dates = datesSent)
         return note
     }
 }

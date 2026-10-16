@@ -50,6 +50,10 @@ fun fmtDate(millis: Long?, zone: ZoneId = ZoneId.systemDefault()): String =
     if (millis == null || millis <= 0) "-"
     else DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.getDefault()).withZone(zone).format(Instant.ofEpochMilli(millis))
 
+/** An ISO-8601 instant for an epoch-millis time, or null when the time is unknown. */
+fun isoFromMillis(millis: Long): String? =
+    if (millis <= 0) null else Instant.ofEpochMilli(millis).toString()
+
 /** One row of the photo grid: a month heading, or a photo. */
 sealed interface PhotoRow {
     data class Header(val label: String) : PhotoRow

@@ -109,7 +109,7 @@ def photos(
         db.scalars(
             select(File)
             .where(*where)
-            .order_by(func.coalesce(File.taken_at, File.created_at).desc(), File.id)
+            .order_by(func.coalesce(File.taken_at, File.modified_at, File.created_at).desc(), File.id)
             .offset(offset)
             .limit(limit)
         )

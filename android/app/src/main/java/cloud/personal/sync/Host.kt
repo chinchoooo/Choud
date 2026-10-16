@@ -39,6 +39,9 @@ data class Facts(
     val failed: Int = 0,
     val uploading: Int = 0,
     val failures: List<String> = emptyList(),
+
+    /** Backed-up files still waiting for the phone's own dates to be put on the server. */
+    val datesPending: Int = 0,
     val network: String = "checking...",
     val power: String = "",
     val permissions: String = "",

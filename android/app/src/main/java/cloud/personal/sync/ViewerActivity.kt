@@ -596,7 +596,8 @@ class ViewerActivity : Activity() {
             appendLine("Type: ${file.mime.ifEmpty { "unknown" }}")
             appendLine("Size: ${fmtBytes(file.size)}")
             file.takenAtMillis?.let { appendLine("Taken: ${fmtDate(it)}") }
-            appendLine("Added: ${fmtDate(file.createdAtMillis)}")
+            file.modifiedAtMillis?.let { appendLine("Modified: ${fmtDate(it)}") }
+            appendLine("Uploaded: ${fmtDate(file.createdAtMillis)}")
             append("Folder: ${file.folderPath.ifEmpty { "My files" }}")
         }
         AlertDialog.Builder(this).setTitle("Details").setMessage(text).setPositiveButton("OK", null).show()

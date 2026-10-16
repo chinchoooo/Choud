@@ -91,6 +91,10 @@ object LiveStatus {
 
     val done = AtomicInteger(0)
     val failed = AtomicInteger(0)
+
+    /** The catch-up pass that puts the phone's dates on files that were backed up earlier. */
+    val datesDone = AtomicInteger(0)
+    @Volatile var datesTotal: Int = 0
     val bytesDoneAll = AtomicLong(0)
 
     /** Files being processed right now, by media key. */
@@ -103,7 +107,7 @@ object LiveStatus {
 
     @Volatile var cancelRequested: Boolean = false
 
-    val running: Boolean get() = phase == "scanning" || phase == "running" || phase == "stopping"
+    val running: Boolean get() = phase == "scanning" || phase == "running" || phase == "dates" || phase == "stopping"
 
     @Synchronized
     fun addRecent(entry: DoneEntry) {
@@ -117,6 +121,8 @@ object LiveStatus {
     fun start() {
         done.set(0)
         failed.set(0)
+        datesDone.set(0)
+        datesTotal = 0
         bytesDoneAll.set(0)
         total = 0
         bytesTotalAll = 0

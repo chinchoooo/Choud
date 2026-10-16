@@ -60,6 +60,7 @@ class MainActivity : Activity(), Host {
     private val tabIndicators = ArrayList<View>()
     private var selected = 0
     private var refreshingFacts = false
+    private var datesRunRequested = false
     private var lastFactsAt = 0L
 
     private val tick = object : Runnable {
@@ -67,6 +68,12 @@ class MainActivity : Activity(), Host {
             if (settings.loggedIn) {
                 refreshFactsIfDue()
                 tabs.getOrNull(selected)?.second?.onTick()
+                // After an update, fix the dates of everything already backed up, once per launch.
+                if (!datesRunRequested && facts.datesPending > 0 && !LiveStatus.running) {
+                    datesRunRequested = true
+                    EventLog.log("auto: ${facts.datesPending} file(s) need their dates; starting a run")
+                    SyncWorker.runNow(this@MainActivity)
+                }
             }
             handler.postDelayed(this, 500)
         }
@@ -290,6 +297,7 @@ class MainActivity : Activity(), Host {
         val failed = db.count("failed")
         val uploading = db.count("uploading")
         val failures = db.failures(5)
+        val datesPending = db.countDatesPending()
         val visible = try {
             CameraBackup(this, settings, db, api).visibleCount()
         } catch (e: SecurityException) {
@@ -311,6 +319,7 @@ class MainActivity : Activity(), Host {
             failed = failed,
             uploading = uploading,
             failures = failures,
+            datesPending = datesPending,
             network = networkText(),
             power = powerText(),
             permissions = permissions,

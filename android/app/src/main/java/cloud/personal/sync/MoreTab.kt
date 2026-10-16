@@ -29,6 +29,8 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
         typeface = android.graphics.Typeface.MONOSPACE
         setTextIsSelectable(true)
     }
+    private val foldersCard = ui.card().apply { addView(ui.muted("Looking for folders...", 12f)) }
+    private var foldersLoadedAt = 0L
     private var shownLogVersion = -1
     private var usageLoadedAt = 0L
 
@@ -69,6 +71,10 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
             )
         }
         column.addView(ui.card().apply { addView(group) }, ui.matchWidth(6))
+
+        // Which folders are backed up
+        column.addView(section("Folders to back up"), ui.matchWidth(18))
+        column.addView(foldersCard, ui.matchWidth(6))
 
         // Background backup settings
         column.addView(section("Background backup"), ui.matchWidth(18))
@@ -157,7 +163,66 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
 
     override fun onShow() {
         loadUsage()
+        loadFolders()
         onTick()
+    }
+
+    /** Lists every folder holding photos or videos, as checkboxes. The camera roll is on by default. */
+    private fun loadFolders() {
+        val now = System.currentTimeMillis()
+        if (now - foldersLoadedAt < 30_000) return
+        foldersLoadedAt = now
+        thread {
+            val found = try {
+                val db = BackupDb(host.ui.context)
+                try {
+                    CameraBackup(host.ui.context, settings, db, host.api).discoverFolders()
+                } finally {
+                    db.close()
+                }
+            } catch (e: SecurityException) {
+                null
+            } catch (e: Exception) {
+                EventLog.log("folder scan failed: ${e.javaClass.simpleName}: ${e.message}")
+                null
+            }
+            host.runOnUi {
+                foldersCard.removeAllViews()
+                if (found == null) {
+                    foldersCard.addView(ui.muted("Allow access to photos and videos to see your folders.", 12f))
+                    return@runOnUi
+                }
+                if (found.isEmpty()) {
+                    foldersCard.addView(ui.muted("No photos or videos found on this phone.", 12f))
+                    return@runOnUi
+                }
+                foldersCard.addView(ui.muted("Tick the folders to back up. Changes apply to the next run.", 11f))
+                for ((folder, count) in found) {
+                    foldersCard.addView(
+                        check("${folder.trimEnd('/')}  ($count)", isSelected(folder, settings.backupFolders)) { on ->
+                            val chosen = settings.backupFolders.toMutableSet()
+                            // A folder inside an already-chosen parent (e.g. DCIM/Camera under DCIM/)
+                            // is covered by the parent, so unticking it means narrowing the parent.
+                            chosen.removeAll { it.startsWith(folder) && it != folder }
+                            if (on) chosen.add(folder) else {
+                                chosen.remove(folder)
+                                val parents = chosen.filter { folder.startsWith(it) }
+                                if (parents.isNotEmpty()) {
+                                    chosen.removeAll(parents.toSet())
+                                    for ((other, _) in found) {
+                                        if (other != folder && parents.any { other.startsWith(it) }) chosen.add(other)
+                                    }
+                                }
+                            }
+                            settings.backupFolders = chosen
+                            EventLog.log("setting: backup folders = ${chosen.sorted()}")
+                            foldersLoadedAt = 0 // redraw so overlapping folders tick/untick together
+                            loadFolders()
+                        },
+                    )
+                }
+            }
+        }
     }
 
     private fun loadUsage() {

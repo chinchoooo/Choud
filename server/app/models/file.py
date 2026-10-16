@@ -49,6 +49,10 @@ class File(Base):
         DateTime(timezone=True), nullable=True, index=True
     )
 
+    # The last-modified time the uploading device reports (a phone photo's own date). Lists show
+    # this; created_at/updated_at remain the server's bookkeeping times.
+    modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Soft delete / trash (see docs/architecture.md#13-trash). NULL means
     # not deleted.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

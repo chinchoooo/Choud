@@ -46,9 +46,14 @@ data class RemoteItem(
     val folderPath: String,
     val takenAtMillis: Long?,
     val createdAtMillis: Long?,
+    /** The phone's own last-modified time for the file, if the server has it. */
+    val modifiedAtMillis: Long? = null,
 ) {
-    /** When the photo was taken, else when it was uploaded. */
-    val sortMillis: Long get() = takenAtMillis ?: createdAtMillis ?: 0L
+    /** For the photo timeline: when it was taken, else the file's own date, else the upload time. */
+    val sortMillis: Long get() = takenAtMillis ?: modifiedAtMillis ?: createdAtMillis ?: 0L
+
+    /** The date shown next to a file: its own modified date, else when it was uploaded. */
+    val displayMillis: Long get() = modifiedAtMillis ?: createdAtMillis ?: 0L
 }
 
 data class Listing(val folders: List<FolderItem>, val files: List<RemoteItem>)
@@ -72,6 +77,7 @@ private fun JSONObject.toItem() = RemoteItem(
     folderPath = optString("folder_path", "").let { if (it == "null") "" else it },
     takenAtMillis = parseMillis(if (isNull("taken_at")) null else optString("taken_at")),
     createdAtMillis = parseMillis(optString("created_at")),
+    modifiedAtMillis = parseMillis(if (isNull("modified_at")) null else optString("modified_at")),
 )
 
 /** A request body that re-opens its source each time, so a retry after a token refresh works. */
@@ -283,9 +289,10 @@ class ApiClient(
         onSession: (String?) -> Unit = {},
         onBytes: (Long) -> Unit = {},
         takenAt: String? = null,
+        modifiedAt: String? = null,
     ): UploadResult =
-        if (size <= CHUNKED_THRESHOLD) uploadSmall(open, name, folderId, size, mime, onBytes, takenAt)
-        else uploadChunked(open, name, folderId, size, contentHash, resumeId, onSession, onBytes, takenAt)
+        if (size <= CHUNKED_THRESHOLD) uploadSmall(open, name, folderId, size, mime, onBytes, takenAt, modifiedAt)
+        else uploadChunked(open, name, folderId, size, contentHash, resumeId, onSession, onBytes, takenAt, modifiedAt)
 
     private fun result(body: JSONObject) =
         UploadResult(body.getString("id"), body.optString("content_hash", ""))
@@ -294,6 +301,7 @@ class ApiClient(
         open: () -> InputStream, name: String, folderId: String, size: Long, mime: String,
         onBytes: (Long) -> Unit,
         takenAt: String?,
+        modifiedAt: String?,
     ): UploadResult =
         result(
             send("/api/files/upload") {
@@ -302,6 +310,7 @@ class ApiClient(
                     .addFormDataPart("folder_id", folderId)
                     .addFormDataPart("base_version_id", "none")
                     .apply { if (takenAt != null) addFormDataPart("taken_at", takenAt) }
+                    .apply { if (modifiedAt != null) addFormDataPart("modified_at", modifiedAt) }
                     .addFormDataPart("file", name, StreamBody(open, 0, size, mime, onBytes))
                     .build()
                 it.post(form)
@@ -318,6 +327,7 @@ class ApiClient(
         onSession: (String?) -> Unit,
         onBytes: (Long) -> Unit,
         takenAt: String?,
+        modifiedAt: String?,
     ): UploadResult {
         var session: JSONObject? = null
         if (resumeId != null) {
@@ -334,6 +344,7 @@ class ApiClient(
                 .put("expected_hash", contentHash).put("folder_id", folderId)
                 .put("base_version_id", "none")
             if (takenAt != null) payload.put("taken_at", takenAt)
+            if (modifiedAt != null) payload.put("modified_at", modifiedAt)
             val created = send("/api/uploads") { it.post(json(payload)) }.jsonBody()
             session = send("/api/uploads/${created.getString("id")}").jsonBody()
             onSession(session.getString("id"))
@@ -394,6 +405,19 @@ class ApiClient(
     fun usage(): Usage {
         val body = send("/api/library/usage").jsonBody()
         return Usage(body.getLong("used_bytes"), body.getLong("quota_bytes"), body.getInt("file_count"))
+    }
+
+    /**
+     * Sets the phone's own dates on a file that is already on the server. Returns false when the
+     * server did not echo `modified_at` back: an older server silently ignores fields it does not
+     * know, and a date fix that did nothing must not be recorded as done.
+     */
+    fun patchDates(fileId: String, takenAt: String?, modifiedAt: String?): Boolean {
+        val body = JSONObject()
+        if (modifiedAt != null) body.put("modified_at", modifiedAt)
+        if (takenAt != null) body.put("taken_at", takenAt)
+        val reply = send("/api/files/$fileId") { it.patch(json(body)) }.jsonBody()
+        return reply.has("modified_at")
     }
 
     fun setFavorite(fileId: String, on: Boolean) {

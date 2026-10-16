@@ -54,6 +54,7 @@ async def upload(
     name: str | None = Form(default=None),
     base_version_id: str | None = Form(default=None),
     taken_at: datetime | None = Form(default=None),
+    modified_at: datetime | None = Form(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -74,6 +75,7 @@ async def upload(
             base_version_id=base,
             expect_new=expect_new,
             taken_at=taken_at,
+            modified_at=modified_at,
         )
     except file_service.NotFoundError as exc:
         raise _not_found(exc) from exc

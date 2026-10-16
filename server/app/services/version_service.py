@@ -132,6 +132,7 @@ def save_content(
     base_version_id: uuid.UUID | None = None,
     expect_new: bool = False,
     taken_at: datetime | None = None,
+    modified_at: datetime | None = None,
 ) -> File:
     """Records `content_hash` as the content of `name` in `folder_id`.
 
@@ -169,6 +170,7 @@ def save_content(
             content_hash=content_hash,
             storage_key=content_hash,
             taken_at=taken_at,
+            modified_at=modified_at,
         )
         db.add(file)
         db.flush()  # the version row's FK needs the file row to exist
@@ -177,6 +179,11 @@ def save_content(
         return file
 
     if existing.content_hash == content_hash:
+        # Same bytes: no new version, but the device's dates are still worth recording.
+        if modified_at is not None:
+            existing.modified_at = modified_at
+        if taken_at is not None and existing.taken_at is None:
+            existing.taken_at = taken_at
         return existing
 
     if expect_new:
@@ -194,6 +201,8 @@ def save_content(
 
     if mime_type:
         existing.mime_type = mime_type
+    if modified_at is not None:
+        existing.modified_at = modified_at
     _append_version(db, existing, content_hash=content_hash, size=size, created_by=owner.id)
     activity_service.record(
         db, owner.id, "new_version", file_id=existing.id, file_name=existing.name

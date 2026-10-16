@@ -312,3 +312,87 @@ def test_directory_listing_and_search_report_favorites_and_paths(
     found = client.get("/api/search?q=rome", headers=headers).json()
     assert found["files"][0]["is_favorite"] is True
     assert found["files"][0]["folder_path"] == "Trips/Italy"
+
+
+def test_new_accounts_get_a_400_gib_quota(client: TestClient):
+    response = client.post(
+        "/api/auth/register",
+        json={"username": "bigdisk", "email": "big@example.com", "password": "password12345"},
+    )
+    assert response.status_code == 201
+    assert response.json()["storage_quota"] == 400 * 1024**3
+
+
+# --- the device's own dates ------------------------------------------------------
+
+
+def test_upload_records_the_devices_modified_date(client: TestClient, make_user, auth_headers):
+    headers = auth_headers(make_user())
+    phone_time = "2024-03-09T18:22:11+00:00"
+    uploaded = _upload(client, headers, "a.txt", b"v1", "text/plain", modified_at=phone_time).json()
+    assert uploaded["modified_at"].startswith("2024-03-09T18:22:11")
+    # the server's own bookkeeping times are unchanged and different
+    assert not uploaded["created_at"].startswith("2024-03-09")
+
+
+def test_a_new_version_updates_the_modified_date(client: TestClient, make_user, auth_headers):
+    headers = auth_headers(make_user())
+    _upload(client, headers, "a.txt", b"v1", "text/plain", modified_at="2024-01-01T00:00:00+00:00")
+    edited = _upload(
+        client, headers, "a.txt", b"v2", "text/plain", modified_at="2025-06-06T06:06:06+00:00"
+    ).json()
+    assert edited["modified_at"].startswith("2025-06-06T06:06:06")
+
+
+def test_same_bytes_again_still_records_the_date(client: TestClient, make_user, auth_headers):
+    headers = auth_headers(make_user())
+    first = _upload(client, headers, "a.txt", b"same", "text/plain").json()
+    assert first["modified_at"] is None
+    again = _upload(
+        client, headers, "a.txt", b"same", "text/plain", modified_at="2023-02-02T02:02:02+00:00"
+    ).json()
+    assert again["id"] == first["id"]
+    assert again["modified_at"].startswith("2023-02-02T02:02:02")
+    versions = client.get(f"/api/files/{first['id']}/versions", headers=headers).json()
+    assert len(versions["versions"]) == 1  # no empty version was created
+
+
+def test_dates_can_be_fixed_up_on_an_existing_file(client: TestClient, make_user, auth_headers):
+    headers = auth_headers(make_user())
+    file_id = _upload(client, headers, "p.png", _png(), "image/png").json()["id"]
+    response = client.patch(
+        f"/api/files/{file_id}",
+        json={"modified_at": "2022-12-25T08:00:00+00:00", "taken_at": "2022-12-24T20:00:00+00:00"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["modified_at"].startswith("2022-12-25T08:00:00")
+    assert body["taken_at"].startswith("2022-12-24T20:00:00")
+    assert body["name"] == "p.png"  # nothing else changed
+
+
+def test_cannot_set_dates_on_someone_elses_file(client: TestClient, make_user, auth_headers):
+    alice = make_user()
+    bob = make_user("bob", "bob@example.com")
+    file_id = _upload(client, auth_headers(alice), "a.txt", b"a", "text/plain").json()["id"]
+    response = client.patch(
+        f"/api/files/{file_id}",
+        json={"modified_at": "2020-01-01T00:00:00+00:00"},
+        headers=auth_headers(bob),
+    )
+    assert response.status_code == 404
+
+
+def test_timeline_prefers_taken_then_modified_then_upload_time(
+    client: TestClient, make_user, auth_headers
+):
+    headers = auth_headers(make_user())
+    _upload(client, headers, "taken.png", _png((1, 1, 1)), "image/png",
+            taken_at="2020-01-01T00:00:00+00:00", modified_at="2026-01-01T00:00:00+00:00")
+    _upload(client, headers, "modified.png", _png((2, 2, 2)), "image/png",
+            modified_at="2021-01-01T00:00:00+00:00")
+    _upload(client, headers, "plain.png", _png((3, 3, 3)), "image/png")
+    names = [f["name"] for f in client.get("/api/library/photos", headers=headers).json()["items"]]
+    # plain = now (newest), modified = 2021, taken = 2020 (taken wins over its newer mtime)
+    assert names == ["plain.png", "modified.png", "taken.png"]

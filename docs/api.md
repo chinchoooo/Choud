@@ -322,8 +322,11 @@ All owner-scoped, all under the normal bearer token unless noted.
 | `GET /api/media/{token}/{file_id}/content` | The bytes, inline, with `Range` support so video seeks. Only an allowlist of media types is served inline (see `docs/security.md`) |
 | `GET /api/media/{token}/{file_id}/thumbnail?size=128\|256\|512\|1024` | JPEG thumbnail of an image or video, generated once and cached by content hash |
 
-File responses (`GET /api/files`, search, library routes) also carry `taken_at`, `is_favorite`
-and `folder_path`. Uploads (`POST /api/files/upload` and `POST /api/uploads`) accept an optional
+File responses (`GET /api/files`, search, library routes) also carry `taken_at`, `modified_at`,
+`is_favorite` and `folder_path`. `modified_at` is the uploading device's own last-modified time
+and is what clients show as a file's date; `created_at`/`updated_at` stay the server's times.
+`PATCH /api/files/{id}` accepts `modified_at` and `taken_at` (and `null` to clear) so a client can
+fix the dates of files it uploaded before the server recorded them. Uploads (`POST /api/files/upload` and `POST /api/uploads`) accept an optional
 `taken_at` (ISO 8601) so a backed-up photo sorts by when it was taken, not when it was uploaded.
 
 Limits: a single-request upload is at most 128 MiB (`413` beyond that; use the chunked upload),

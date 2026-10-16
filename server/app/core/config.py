@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # Storage
     storage_root: str = "/data/cloud"
-    default_storage_quota_bytes: int = 10 * 1024**3  # 10 GiB
+    default_storage_quota_bytes: int = 400 * 1024**3  # 400 GiB
 
     # Chunked uploads (Phase 5)
     upload_session_expire_hours: int = 24

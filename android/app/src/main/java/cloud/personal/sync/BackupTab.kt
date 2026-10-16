@@ -137,7 +137,15 @@ class BackupTab(private val host: Host) : Tab {
         val done = LiveStatus.done.get()
         val failed = LiveStatus.failed.get()
         val waiting = LiveStatus.waiting.size
-        if (running) {
+        if (running && LiveStatus.phase == "dates") {
+            val total = LiveStatus.datesTotal
+            val doneDates = LiveStatus.datesDone.get()
+            titleView.text = "Fixing file dates"
+            subtitleView.text = "Putting your phone's real dates on files that were backed up earlier"
+            overallBar.progress = if (total > 0) doneDates.toFloat() / total else 0f
+            overallText.text = "$doneDates of $total files"
+            filesText.text = "Dates only; nothing is uploaded again."
+        } else if (running) {
             if (LiveStatus.phase == "scanning") {
                 titleView.text = "Looking for new photos..."
                 subtitleView.text = "Checking your camera roll"
@@ -163,7 +171,11 @@ class BackupTab(private val host: Host) : Tab {
             subtitleView.text = "${facts.done} backed up  |  ${facts.failed} failed  |  ${facts.visible} on this phone"
             overallBar.progress = if (facts.visible > 0) facts.done.toFloat() / facts.visible else 0f
             overallText.text = "Last run: ${facts.lastRun}"
-            filesText.text = if (pending > 0) "Tap Back up now, or wait for the next scheduled run (Wi-Fi + charging)." else ""
+            filesText.text = when {
+                pending > 0 -> "Tap Back up now, or wait for the next scheduled run (Wi-Fi + charging)."
+                facts.datesPending > 0 -> "${facts.datesPending} backed-up files still need their real dates: tap Back up now."
+                else -> ""
+            }
         }
         problemView.visibility = if (facts.lastError.isNotEmpty() && !running) View.VISIBLE else View.GONE
         problemView.text = if (facts.lastError.isNotEmpty()) "Problem: ${facts.lastError}" else ""
