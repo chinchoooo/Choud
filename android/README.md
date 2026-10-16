@@ -1,4 +1,12 @@
-# Personal Cloud — Android app (Phase 18a, first slice)
+# Personal Cloud — Android app (Phase 18a)
+
+Backs up your camera roll to your own server in the background, and lets you browse and view
+what is on the server. Four tabs: **Backup** (the live upload queue), **Files**, **Photos**,
+**More** (themes, settings, status, full activity log).
+
+Viewing is built in: images (pinch/drag/double-tap), video, audio, PDF and text/code open inside
+the app. Another app is only offered for formats it does not know, or via "Open with".
+Themes: light, dark, and two retro ones (monospace, black and white).
 
 One-way **camera-roll backup** (phone → server) that runs in the background.
 Spec and rationale: [`../docs/mobile.md`](../docs/mobile.md).

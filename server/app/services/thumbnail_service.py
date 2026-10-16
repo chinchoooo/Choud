@@ -46,6 +46,9 @@ def _image_thumbnail(source: Path, target: Path, size: int) -> None:
 
     Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
     with Image.open(source) as image:
+        # For JPEG, let the decoder shrink while reading: a 50-megapixel photo then never has to
+        # exist at full size in memory just to make a 256px thumbnail.
+        image.draft("RGB", (size * 2, size * 2))
         image = ImageOps.exif_transpose(image)
         image.thumbnail((size, size))
         if image.mode not in ("RGB", "L"):
@@ -53,16 +56,41 @@ def _image_thumbnail(source: Path, target: Path, size: int) -> None:
         image.save(target, "JPEG", quality=82, optimize=True)
 
 
+def sniff_container(path: Path) -> str | None:
+    """The ffmpeg demuxer for a real MP4/MOV or Matroska/WebM file, judged by its first bytes.
+
+    The extension and MIME type are the uploader's claim and mean nothing. ffmpeg's own format
+    detection would also happily open playlists and concat scripts that point at other files or
+    URLs, so ffmpeg is only ever pointed at a file whose bytes prove it is one of these two.
+    """
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(12)
+    except OSError:
+        return None
+    if len(head) >= 12 and head[4:8] == b"ftyp":
+        return "mov"
+    if head[:4] == b"\x1a\x45\xdf\xa3":
+        return "matroska"
+    return None
+
+
 def _video_thumbnail(source: Path, target: Path, size: int) -> None:
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         raise ThumbnailUnavailable("ffmpeg is not installed on the server")
+    demuxer = sniff_container(source)
+    if demuxer is None:
+        raise ThumbnailUnavailable("only MP4/MOV and WebM/MKV videos get thumbnails")
     scale = f"scale='min({size},iw)':'min({size},ih)':force_original_aspect_ratio=decrease"
     # Try a frame one second in; very short clips fall back to the first frame.
     for seek in ("1", "0"):
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell, paths are ours
             [
-                ffmpeg, "-v", "error", "-y", "-ss", seek, "-i", str(source),
+                ffmpeg, "-v", "error", "-y",
+                "-protocol_whitelist", "file",  # never fetch anything over the network
+                "-f", demuxer,  # the demuxer we verified, not whatever ffmpeg would guess
+                "-ss", seek, "-i", str(source),
                 "-frames:v", "1", "-vf", scale, "-q:v", "4", str(target),
             ],
             capture_output=True,

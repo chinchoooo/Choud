@@ -51,3 +51,7 @@ class StorageError(Exception):
 
 class QuotaError(Exception):
     """The upload would push the user past their storage quota."""
+
+
+class PayloadTooLargeError(Exception):
+    """A single request body is larger than the server accepts for that endpoint."""

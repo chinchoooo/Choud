@@ -1,7 +1,11 @@
 package cloud.personal.sync
 
 import android.content.Context
+import android.app.Activity
 import android.content.res.ColorStateList
+import android.graphics.drawable.ColorDrawable
+import android.os.Build
+import android.view.WindowInsetsController
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
@@ -153,4 +157,32 @@ class Ui(val context: Context, val palette: Palette) {
         LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(topDp)
         }
+}
+
+/**
+ * Paints the window and system bars in the theme's colours, with dark or light icons so the
+ * clock and battery stay readable on any background.
+ */
+fun applyWindowTheme(activity: Activity, palette: Palette, barColor: Int = palette.bg) {
+    val window = activity.window
+    window.decorView // creates the window's decor view; insetsController is null before that
+    window.setBackgroundDrawable(ColorDrawable(palette.bg))
+    window.statusBarColor = barColor
+    window.navigationBarColor = palette.bg
+    val lightBars = !palette.darkSystemBars
+    if (Build.VERSION.SDK_INT >= 30) {
+        val mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+        try {
+            window.insetsController?.setSystemBarsAppearance(if (lightBars) mask else 0, mask)
+        } catch (_: Exception) {
+            // cosmetic only: never let status-bar styling crash the app
+        }
+    } else {
+        @Suppress("DEPRECATION")
+        var flags = window.decorView.systemUiVisibility
+        flags = if (lightBars) flags or android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        else flags and android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = flags
+    }
 }

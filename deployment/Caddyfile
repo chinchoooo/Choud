@@ -7,12 +7,22 @@
 # will provision a certificate automatically.
 
 :80 {
-    # Large uploads are chunked by the client, but be generous anyway.
-    request_body {
-        max_size 10GB
+    # Only uploads carry big bodies, and the clients keep each request small on purpose:
+    # a single-request upload is at most 20 MiB and a chunk 5 MiB. The server refuses more than
+    # 128 MiB per request, and this stops an oversized body before it reaches the backend.
+    @uploads path /api/files/upload /api/uploads/*
+    handle @uploads {
+        request_body {
+            max_size 160MB
+        }
+        reverse_proxy backend:8000
     }
 
+    # Everything else is small JSON.
     handle /api/* {
+        request_body {
+            max_size 10MB
+        }
         reverse_proxy backend:8000
     }
 

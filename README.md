@@ -39,7 +39,9 @@ See [`docs/architecture.md`](docs/architecture.md) for details.
 This repository is being built incrementally, phase by phase (see
 [`docs/architecture.md`](docs/architecture.md#development-phases)).
 
-**Currently implemented: Phase 6 — Versioning and Trash.**
+**Currently implemented: Phases 1-8, the Phase 9 deployment stack, 10-lite hardening, an Android
+backup app, and a Milestone 2 slice (photo timeline, viewers, upload queue, favorites, activity,
+thumbnails, themes). See `CLAUDE.md` section 1 for the exact state.**
 
 - Repository layout
 - Docker Compose (PostgreSQL, backend, engine, frontend, reverse proxy)

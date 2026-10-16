@@ -57,6 +57,7 @@ class MainActivity : Activity(), Host {
     private lateinit var tabBar: LinearLayout
     private val tabs = ArrayList<Pair<String, Tab>>()
     private val tabLabels = ArrayList<TextView>()
+    private val tabIndicators = ArrayList<View>()
     private var selected = 0
     private var refreshingFacts = false
     private var lastFactsAt = 0L
@@ -82,17 +83,7 @@ class MainActivity : Activity(), Host {
         if (settings.loggedIn) showMain() else showLogin()
     }
 
-    private fun applySystemBars(palette: Palette) {
-        window.statusBarColor = palette.bg
-        window.navigationBarColor = palette.bg
-        var flags = window.decorView.systemUiVisibility
-        flags = if (palette.darkSystemBars) {
-            flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
-        } else {
-            flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-        }
-        window.decorView.systemUiVisibility = flags
-    }
+    private fun applySystemBars(palette: Palette) = applyWindowTheme(this, palette)
 
     // ---------------------------------------------------------------- login
 
@@ -169,6 +160,7 @@ class MainActivity : Activity(), Host {
         val p = ui.palette
         tabs.clear()
         tabLabels.clear()
+        tabIndicators.clear()
         tabs += "Backup" to BackupTab(this)
         tabs += "Files" to FilesTab(this)
         tabs += "Photos" to PhotosTab(this)
@@ -176,13 +168,19 @@ class MainActivity : Activity(), Host {
 
         tabBar = ui.horizontal().apply { setBackgroundColor(p.surface) }
         tabs.forEachIndexed { index, (label, _) ->
-            val view = ui.text(if (p.retro) label.uppercase() else label, 14f, p.mute, bold = true).apply {
+            val text = ui.text(if (p.retro) label.uppercase() else label, 14f, p.mute, bold = true).apply {
                 gravity = android.view.Gravity.CENTER
-                setPadding(0, ui.dp(14), 0, ui.dp(12))
+                setPadding(0, ui.dp(14), 0, ui.dp(11))
+            }
+            val indicator = View(this).apply { setBackgroundColor(p.accent) }
+            val column = ui.vertical().apply {
+                addView(text, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                addView(indicator, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(3)))
                 setOnClickListener { select(index) }
             }
-            tabLabels += view
-            tabBar.addView(view, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            tabLabels += text
+            tabIndicators += indicator
+            tabBar.addView(column, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
         content = FrameLayout(this)
         val root = ui.vertical().apply {
@@ -202,16 +200,7 @@ class MainActivity : Activity(), Host {
         tabLabels.forEachIndexed { i, label ->
             val active = i == index
             label.setTextColor(if (active) p.ink else p.mute)
-            label.background = if (active) {
-                android.graphics.drawable.LayerDrawable(
-                    arrayOf(
-                        android.graphics.drawable.ColorDrawable(p.surface),
-                        android.graphics.drawable.ColorDrawable(p.accent).let {
-                            android.graphics.drawable.InsetDrawable(it, 0, ui.dp(40), 0, 0)
-                        },
-                    ),
-                )
-            } else null
+            tabIndicators[i].visibility = if (active) View.VISIBLE else View.INVISIBLE
         }
         content.removeAllViews()
         val tab = tabs[index].second

@@ -190,7 +190,7 @@ class FilesTab(private val host: Host) : Tab {
                 holder.image.tag = null
                 holder.image.setImageDrawable(null)
             }
-            holder.star.text = if (file.favorite) "*" else "+"
+            holder.star.text = if (file.favorite) "★" else "☆"
             holder.star.setTextColor(if (file.favorite) palette.ink else palette.mute)
             holder.star.setOnClickListener {
                 val wanted = !file.favorite

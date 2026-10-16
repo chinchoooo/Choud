@@ -28,6 +28,7 @@ from app.services import activity_service, quota_service, version_service
 from app.services.errors import (
     ConflictError,
     NotFoundError,
+    PayloadTooLargeError,
     StorageError,
     ValidationError,
     VersionConflictError,
@@ -39,6 +40,29 @@ settings = get_settings()
 # NotFoundError/ConflictError/ValidationError/StorageError are imported from
 # app.services.errors above but stay reachable as `file_service.<Name>` (the
 # API layer and upload_service rely on that); see errors.py for why they moved.
+
+
+# The single-request upload keeps the whole file in memory while it is hashed and stored, so it
+# has a ceiling. Clients send anything larger through the chunked, resumable upload instead
+# (the web app and phone app switch at 20 MiB).
+MAX_SIMPLE_UPLOAD_BYTES = 128 * 1024 * 1024
+
+
+async def _read_bounded(upload: UploadFile, limit: int) -> bytes:
+    """Reads an upload, refusing (413) as soon as it grows past `limit` bytes."""
+    parts: list[bytes] = []
+    total = 0
+    while True:
+        block = await upload.read(1024 * 1024)
+        if not block:
+            break
+        total += len(block)
+        if total > limit:
+            raise PayloadTooLargeError(
+                f"this upload is larger than {limit} bytes; use the chunked upload for big files"
+            )
+        parts.append(block)
+    return b"".join(parts)
 
 
 def _staging_dir() -> Path:
@@ -247,7 +271,7 @@ async def upload_file(
     if folder_id is not None:
         _get_folder_or_404(db, owner, folder_id)
 
-    content = await upload.read()
+    content = await _read_bounded(upload, MAX_SIMPLE_UPLOAD_BYTES)
     quota_service.ensure_room(db, owner, len(content))
     mime_type = upload.content_type or mimetypes.guess_type(resolved_name)[0]
 

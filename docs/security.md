@@ -74,6 +74,30 @@ synchronization failures, and unexpected exceptions.
 **Never logged:** passwords, access tokens, private share tokens, raw
 file contents.
 
+## Previews, thumbnails and upload limits (Milestone 2)
+
+- **Media tokens.** `<img>`, `<video>` and in-app players cannot send an `Authorization` header,
+  so previews use a separate JWT type (`media`, one hour) in the URL path. It opens only
+  `/api/media/.../content` and `.../thumbnail`, only for the owner's own files; it is rejected by
+  every other route, and an access token is rejected by the media routes. It appears in URLs, so
+  it can show up in proxy logs and browser history: that is why it is read-only and short-lived.
+- **Uploaded files never run in the app's origin.** Only an allowlist of media types
+  (png/jpeg/gif/webp/avif/bmp, pdf, plain text, common video and audio) is sent inline. HTML, SVG,
+  XML and anything else is sent as an opaque `attachment` with `X-Content-Type-Options: nosniff`
+  and `Content-Security-Policy: default-src 'none'; sandbox`. The web and Android viewers show
+  text and HTML as escaped text, and never render SVG.
+- **Thumbnails.** Images are decoded with a pixel ceiling and, for JPEG, a down-sampling decode.
+  Video thumbnails run a pinned static `ffmpeg` only on files whose first bytes prove they are
+  MP4/MOV or WebM/MKV, with the demuxer forced and `-protocol_whitelist file`, so an uploaded
+  playlist or concat script cannot make the server read other files or fetch URLs.
+- **Upload limits.** Each chunk must be exactly the promised size (so the quota check at session
+  creation cannot be bypassed with a bigger chunk), chunks and chunk counts are bounded, and the
+  single-request upload is read in blocks and refused past 128 MiB. Caddy additionally caps
+  request bodies (160 MB for uploads, 10 MB for everything else).
+- **Not independently penetration-tested yet.** A red-team agent run was started but stopped by a
+  safety check before it did anything. The checks above are covered by tests, but an independent
+  attack pass is still worth doing before the server is exposed beyond a tailnet.
+
 ## Hardening (Phase 10)
 
 Rate limiting, security headers, and failure-recovery monitoring land in

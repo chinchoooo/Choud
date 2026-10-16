@@ -53,9 +53,11 @@ class BackupTab(private val host: Host) : Tab {
     private var runStartedAt = 0L
 
     private val activeRows = LinkedHashMap<String, ActiveRow>()
-    private var nextSignature = ""
-    private var doneSignature = ""
-    private var failuresSignature = ""
+    // null = nothing drawn yet, so the first render always happens (even when the list is empty)
+    private var nextSignature: String? = null
+    private var doneSignature: String? = null
+    private var failuresSignature: String? = null
+    private var nowSignature: List<String>? = null
 
     private class ActiveRow(
         val container: LinearLayout,
@@ -190,7 +192,8 @@ class BackupTab(private val host: Host) : Tab {
     private fun renderActive() {
         val current = LiveStatus.active.values.sortedBy { it.startedAt }
         val keys = current.map { it.key }
-        if (keys != activeRows.keys.toList()) {
+        if (keys != nowSignature) {
+            nowSignature = keys
             nowBox.removeAllViews()
             activeRows.clear()
             if (current.isEmpty()) {

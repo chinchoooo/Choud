@@ -39,6 +39,12 @@ from app.services.storage_service import get_storage_service
 settings = get_settings()
 
 
+# One chunk is held in memory while it is staged, and a session's progress is a row of chunk
+# numbers, so both are bounded. Clients use 5 MiB chunks.
+MAX_CHUNK_BYTES = 64 * 1024 * 1024
+MAX_CHUNKS = 20_000
+
+
 def _get_upload_or_404(db: Session, owner: User, upload_id: uuid.UUID) -> Upload:
     upload = db.get(Upload, upload_id)
     if upload is None or upload.owner_id != owner.id:
@@ -81,12 +87,19 @@ def create_session(
         raise ValidationError("file_size must be positive")
     if chunk_size <= 0:
         raise ValidationError("chunk_size must be positive")
+    if chunk_size > MAX_CHUNK_BYTES:
+        raise ValidationError(f"chunk_size must be at most {MAX_CHUNK_BYTES} bytes")
     # Reject a malformed precondition now, not after the whole file is uploaded.
     version_service.parse_base_version(base_version_id)
 
     quota_service.ensure_room(db, owner, file_size)
 
     total_chunks = math.ceil(file_size / chunk_size)
+    if total_chunks > MAX_CHUNKS:
+        raise ValidationError(
+            f"too many chunks ({total_chunks}); use a larger chunk_size "
+            f"(at most {MAX_CHUNKS} chunks)"
+        )
 
     upload = Upload(
         id=uuid.uuid4(),
@@ -123,7 +136,14 @@ async def write_chunk(
             f"chunk index {index} out of range for {upload.total_chunks} total chunks"
         )
 
-    content = await chunk.read()
+    # Every chunk must be exactly the size the session promised (the last one is the remainder).
+    # Without this a client could declare a tiny file to pass the quota check and then send an
+    # enormous chunk.
+    expected = min(upload.chunk_size, upload.file_size - index * upload.chunk_size)
+    content = await chunk.read(expected + 1)
+    if len(content) != expected:
+        got = "more" if len(content) > expected else str(len(content))
+        raise ValidationError(f"chunk {index} must be exactly {expected} bytes (got {got})")
     staging_path = _staging_path()
     staging_path.parent.mkdir(parents=True, exist_ok=True)
     staging_path.write_bytes(content)

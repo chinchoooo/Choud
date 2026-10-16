@@ -169,9 +169,9 @@ class PhotosTab(private val host: Host) : Tab {
                     val isVideo = viewerKind(file.name, file.mime) == ViewerKind.VIDEO
                     h.marker.visibility = if (isVideo || file.favorite) View.VISIBLE else View.GONE
                     h.marker.text = when {
-                        isVideo && file.favorite -> "VIDEO *"
+                        isVideo && file.favorite -> "VIDEO ★"
                         isVideo -> "VIDEO"
-                        else -> "*"
+                        else -> "★"
                     }
                     ThumbLoader.load(
                         h.image, "t:${file.id}:256", 256,

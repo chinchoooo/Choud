@@ -306,6 +306,30 @@ root). Idempotent; reuses existing folders; leading/trailing slashes are
 ignored. Components with `..`, `.`, backslashes, null bytes, over 255
 characters, or more than 64 levels are `422` and nothing is created.
 
+### Library, previews and thumbnails (Milestone 2)
+
+All owner-scoped, all under the normal bearer token unless noted.
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /api/library/photos?kind=all\|image\|video&offset=&limit=` | Every photo/video from every folder, newest first by `taken_at` (else upload time). `{items, total, offset, limit}` |
+| `GET /api/library/recent?limit=` | Most recently added or changed files |
+| `GET /api/library/favorites` | Starred files |
+| `PUT /api/library/favorites/{file_id}` / `DELETE ...` | Star / unstar (idempotent, `204`) |
+| `GET /api/library/usage` | `{used_bytes, quota_bytes, file_count}`; counts every version, so it only ever over-estimates |
+| `GET /api/library/activity?limit=` | What happened to your files: uploaded, new_version, renamed, moved, trashed, restored, purged |
+| `POST /api/media/token` | A **media token** (read-only, 1 hour) for `<img>`/`<video>`/players, which cannot send a header |
+| `GET /api/media/{token}/{file_id}/content` | The bytes, inline, with `Range` support so video seeks. Only an allowlist of media types is served inline (see `docs/security.md`) |
+| `GET /api/media/{token}/{file_id}/thumbnail?size=128\|256\|512\|1024` | JPEG thumbnail of an image or video, generated once and cached by content hash |
+
+File responses (`GET /api/files`, search, library routes) also carry `taken_at`, `is_favorite`
+and `folder_path`. Uploads (`POST /api/files/upload` and `POST /api/uploads`) accept an optional
+`taken_at` (ISO 8601) so a backed-up photo sorts by when it was taken, not when it was uploaded.
+
+Limits: a single-request upload is at most 128 MiB (`413` beyond that; use the chunked upload),
+a chunk is at most 64 MiB and **must be exactly the size the session promised**, a session has at
+most 20,000 chunks, and an upload that would exceed the user's quota is a `413`.
+
 ## Planned (not yet implemented)
 
 Endpoints below are listed for reference; they land with their

@@ -23,7 +23,7 @@ from app.api import (
 from app.core.config import enforce_safe_settings, get_settings
 from app.core.logging import configure_logging
 from app.core.maintenance import maintenance_loop
-from app.services.errors import QuotaError
+from app.services.errors import PayloadTooLargeError, QuotaError
 
 settings = get_settings()
 configure_logging(settings.backend_log_level)
@@ -59,6 +59,11 @@ app.add_middleware(
 @app.exception_handler(QuotaError)
 async def quota_exceeded(_: Request, exc: QuotaError) -> JSONResponse:
     """Every upload path (plain, chunked, sync) shares this one 413."""
+    return JSONResponse(status_code=413, content={"detail": str(exc)})
+
+
+@app.exception_handler(PayloadTooLargeError)
+async def payload_too_large(_: Request, exc: PayloadTooLargeError) -> JSONResponse:
     return JSONResponse(status_code=413, content={"detail": str(exc)})
 
 

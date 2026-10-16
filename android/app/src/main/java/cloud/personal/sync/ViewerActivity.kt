@@ -58,8 +58,7 @@ class ViewerActivity : Activity() {
         settings = Settings(this)
         val palette = Themes.palette(AppTheme.fromId(settings.theme))
         ui = Ui(this, palette)
-        window.statusBarColor = palette.surface
-        window.navigationBarColor = palette.bg
+        applyWindowTheme(this, palette, barColor = palette.surface)
         api = ApiClient(settings.serverUrl, settings, log = EventLog::log)
         items = ViewerSession.items.toMutableList()
         if (items.isEmpty()) {
@@ -166,14 +165,15 @@ class ViewerActivity : Activity() {
         val file = current()
         title.text = file.name
         subtitle.text = "${index + 1} of ${items.size}  |  ${fmtBytes(file.size)}"
-        star.text = if (file.favorite) "*" else "+"
+        star.text = if (file.favorite) "★" else "☆"
         star.setTextColor(if (file.favorite) ui.palette.ink else ui.palette.mute)
         prevButton.visibility = if (index > 0) View.VISIBLE else View.GONE
         nextButton.visibility = if (index < items.lastIndex) View.VISIBLE else View.GONE
         stage.removeAllViews()
         when (viewerKind(file.name, file.mime)) {
             ViewerKind.IMAGE -> showImage(file, gen)
-            ViewerKind.VIDEO, ViewerKind.AUDIO -> showMedia(file, gen)
+            ViewerKind.VIDEO -> showMedia(file, gen)
+            ViewerKind.AUDIO -> showAudio(file, gen)
             ViewerKind.PDF -> showPdf(file, gen)
             ViewerKind.TEXT -> showText(file, gen)
             ViewerKind.OTHER -> showOther(file)
@@ -183,6 +183,8 @@ class ViewerActivity : Activity() {
     private fun releaseCurrent() {
         video?.stopPlayback()
         video = null
+        audio?.let { runCatching { it.release() } }
+        audio = null
         zoom = null
         pdf?.close()
         pdf = null
@@ -228,9 +230,109 @@ class ViewerActivity : Activity() {
         }
     }
 
-    // ---------------------------------------------------------------- video / audio
+
+    // ---------------------------------------------------------------- audio
+
+    private var audio: android.media.MediaPlayer? = null
+    private val audioTicker = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** A small player of our own (the stock media controller does not show up reliably). */
+    private fun showAudio(file: RemoteItem, gen: Int) {
+        val loading = message("Loading...")
+        stage.addView(loading)
+        thread {
+            val url = try { api.contentUrl(file.id) } catch (e: Exception) { null }
+            runOnUiThread {
+                if (gen != generation) return@runOnUiThread
+                if (url == null) {
+                    loading.text = "Could not reach the server."
+                    return@runOnUiThread
+                }
+                val player = android.media.MediaPlayer()
+                audio = player
+                player.setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .build(),
+                )
+                player.setOnErrorListener { _, _, _ ->
+                    loading.text = "This file could not be played here.\nTap \"Open with\" to use another app."
+                    if (loading.parent == null) stage.addView(loading)
+                    true
+                }
+                player.setOnPreparedListener { p ->
+                    if (gen != generation) return@setOnPreparedListener
+                    stage.removeView(loading)
+                    val seek = android.widget.SeekBar(this).apply { max = maxOf(p.duration, 1) }
+                    val time = ui.muted("0:00 / ${clock(p.duration)}", 13f).apply { gravity = Gravity.CENTER }
+                    lateinit var toggle: android.widget.Button
+                    toggle = ui.button("Pause", primary = true) {
+                        if (p.isPlaying) { p.pause(); toggle.text = "Play" } else { p.start(); toggle.text = "Pause" }
+                    }
+                    val back = ui.button("-10s") { p.seekTo((p.currentPosition - 10_000).coerceAtLeast(0)) }
+                    val forward = ui.button("+10s") { p.seekTo((p.currentPosition + 10_000).coerceAtMost(p.duration)) }
+                    seek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                        override fun onProgressChanged(bar: android.widget.SeekBar?, value: Int, fromUser: Boolean) {
+                            if (fromUser) p.seekTo(value)
+                        }
+                        override fun onStartTrackingTouch(bar: android.widget.SeekBar?) {}
+                        override fun onStopTrackingTouch(bar: android.widget.SeekBar?) {}
+                    })
+                    p.setOnCompletionListener { toggle.text = "Play" }
+                    val controls = ui.horizontal().apply {
+                        gravity = Gravity.CENTER
+                        addView(back)
+                        addView(android.view.View(this@ViewerActivity), LinearLayout.LayoutParams(ui.dp(10), 1))
+                        addView(toggle)
+                        addView(android.view.View(this@ViewerActivity), LinearLayout.LayoutParams(ui.dp(10), 1))
+                        addView(forward)
+                    }
+                    putCentered(
+                        ui.vertical().apply {
+                            gravity = Gravity.CENTER
+                            setPadding(ui.dp(24), 0, ui.dp(24), 0)
+                            addView(ui.badge(typeBadge(file.name), 96))
+                            addView(ui.text(file.name, 14f).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(12), 0, ui.dp(20)) })
+                            addView(seek, ui.matchWidth())
+                            addView(time, ui.matchWidth(4))
+                            addView(controls, ui.matchWidth(16))
+                        },
+                    )
+                    p.start()
+                    val tick = object : Runnable {
+                        override fun run() {
+                            if (audio !== p || gen != generation) return
+                            try {
+                                seek.progress = p.currentPosition
+                                time.text = "${clock(p.currentPosition)} / ${clock(p.duration)}"
+                            } catch (_: IllegalStateException) {
+                                return
+                            }
+                            audioTicker.postDelayed(this, 500)
+                        }
+                    }
+                    audioTicker.post(tick)
+                }
+                try {
+                    player.setDataSource(url)
+                    player.prepareAsync()
+                } catch (e: Exception) {
+                    loading.text = "This file could not be played here.\nTap \"Open with\" to use another app."
+                }
+            }
+        }
+    }
+
+    private fun clock(millis: Int): String {
+        val total = millis / 1000
+        return "${total / 60}:${String.format(java.util.Locale.US, "%02d", total % 60)}"
+    }
+
+    // ---------------------------------------------------------------- video
 
     private fun showMedia(file: RemoteItem, gen: Int) {
+        val isAudio = viewerKind(file.name, file.mime) == ViewerKind.AUDIO
         val loading = message("Loading...")
         stage.addView(loading)
         thread {
@@ -247,6 +349,8 @@ class ViewerActivity : Activity() {
                 player.setOnPreparedListener {
                     stage.removeView(loading)
                     player.start()
+                    // Audio has no picture, so keep the transport controls on screen for good.
+                    if (isAudio) controller.show(0)
                 }
                 player.setOnErrorListener { _, _, _ ->
                     loading.text = "This file could not be played here.\nTap \"Open with\" to use another app."
@@ -254,7 +358,17 @@ class ViewerActivity : Activity() {
                     true
                 }
                 video = player
-                stage.addView(player, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER))
+                if (isAudio) {
+                    stage.addView(
+                        ui.vertical().apply {
+                            gravity = Gravity.CENTER
+                            addView(ui.badge(typeBadge(file.name), 96))
+                            addView(ui.text(file.name, 14f).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(12), 0, 0) })
+                        },
+                        FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER),
+                    )
+                }
+                stage.addView(player, if (isAudio) 1 else 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER))
                 player.setVideoURI(Uri.parse(url))
             }
         }
@@ -460,7 +574,7 @@ class ViewerActivity : Activity() {
         val file = current()
         val wanted = !file.favorite
         items[index] = file.copy(favorite = wanted)
-        star.text = if (wanted) "*" else "+"
+        star.text = if (wanted) "★" else "☆"
         star.setTextColor(if (wanted) ui.palette.ink else ui.palette.mute)
         thread {
             try {
@@ -469,7 +583,7 @@ class ViewerActivity : Activity() {
                 EventLog.log("favorite failed: ${e.message}")
                 runOnUiThread {
                     items[index] = file
-                    star.text = if (file.favorite) "*" else "+"
+                    star.text = if (file.favorite) "★" else "☆"
                 }
             }
         }
