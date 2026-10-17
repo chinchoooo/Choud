@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Choud · Loading</title>
+<style>
+:root{color-scheme:dark;--fg:#fff;--bg:#000;--line:#555}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:"Courier New",monospace;display:grid;place-items:center;overflow:hidden}
+.screen{width:min(680px,92vw);padding:clamp(24px,6vw,56px);border:1px solid #333;box-shadow:inset 0 0 0 5px #090909;position:relative}
+.screen:after{content:"";pointer-events:none;position:absolute;inset:0;background:repeating-linear-gradient(to bottom,transparent 0 3px,rgba(255,255,255,.035) 4px);opacity:.65}
+.brand{text-align:center;margin-bottom:38px}
+.logo{width:116px;height:96px;display:block;margin:0 auto 8px;image-rendering:pixelated}
+.word{font-size:clamp(32px,7vw,48px);font-weight:900;letter-spacing:-2px;margin:0}
+.rule{height:4px;width:180px;background:var(--fg);margin:10px auto 0}
+.status{display:flex;justify-content:space-between;gap:16px;font-size:14px;margin-bottom:10px}
+.track{height:22px;border:1px solid var(--fg);padding:3px;display:flex;gap:3px;margin-bottom:24px}
+.fill{height:100%;width:0;background:repeating-linear-gradient(90deg,#fff 0 8px,#000 8px 11px);transition:width .35s steps(8)}
+.logs{font-size:13px;line-height:1.9;min-height:120px}
+.log{opacity:.9}.done{color:#aaa}.cursor{display:inline-block;width:8px;height:14px;background:#fff;vertical-align:-2px;animation:blink .8s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.fill{transition:none}.cursor{animation:none}}
+</style>
+</head>
+<body>
+<main class="screen" role="status" aria-live="polite">
+  <header class="brand">
+    <svg class="logo" viewBox="0 0 64 64" aria-hidden="true" shape-rendering="crispEdges">
+      <g fill="#fff">
+        <rect x="27" y="8" width="10" height="4"/><rect x="23" y="12" width="18" height="4"/>
+        <rect x="19" y="16" width="26" height="4"/><rect x="15" y="20" width="34" height="4"/>
+        <rect x="11" y="24" width="42" height="4"/><rect x="7" y="28" width="50" height="4"/>
+        <rect x="5" y="32" width="54" height="4"/><rect x="5" y="36" width="54" height="4"/>
+        <rect x="7" y="40" width="50" height="4"/><rect x="11" y="44" width="42" height="4"/><rect x="17" y="48" width="30" height="4"/>
+      </g>
+      <rect x="20" y="40" width="26" height="12" fill="#000"/>
+      <path d="M22 50V36H31L34 39H44V50Z" fill="#000" stroke="#fff" stroke-width="2"/>
+      <path d="M22 36H31L34 39H44" fill="none" stroke="#fff" stroke-width="2"/>
+    </svg>
+    <h1 class="word">Choud</h1><div class="rule"></div>
+  </header>
+  <div class="status"><span id="message">Initializing your private cloud...</span><span id="percent">00%</span></div>
+  <div class="track" aria-label="Loading progress"><div class="fill" id="fill"></div></div>
+  <div class="logs" id="logs">
+    <div class="log">[ ] Mounting storage</div>
+    <div class="log">[ ] Syncing files</div>
+    <div class="log">[ ] Loading index</div>
+    <div class="log">[ ] Establishing local connection</div>
+  </div>
+</main>
+<script>
+/* Demo animation only. In the app, replace this timer with real initialization progress. */
+const steps=["Mounting storage","Syncing files","Loading index","Establishing local connection"];
+const fill=document.querySelector("#fill"),percent=document.querySelector("#percent"),message=document.querySelector("#message"),logs=document.querySelector("#logs");
+let p=0;
+const timer=setInterval(()=>{
+  p=Math.min(100,p+Math.ceil(Math.random()*7));
+  fill.style.width=p+"%";percent.textContent=String(p).padStart(2,"0")+"%";
+  const done=Math.min(steps.length,Math.floor(p/25));
+  logs.innerHTML=steps.map((s,i)=>`<div class="log ${i<done?"done":""}">[${i<done?"✓":i===done?"…":" "}] ${s}</div>`).join("");
+  if(p===100){clearInterval(timer);message.textContent="Your cloud is ready.";logs.insertAdjacentHTML("beforeend",'<div class="log">[✓] Ready. <span class="cursor"></span></div>');}
+},260);
+</script>
+</body></html>

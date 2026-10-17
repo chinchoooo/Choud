@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#111827</color>
+    <color name="choud_black">#FF000000</color>
+    <color name="choud_white">#FFFFFFFF</color>
+    <color name="choud_line">#FF333333</color>
 </resources>

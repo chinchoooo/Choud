@@ -84,9 +84,9 @@ class SyncWorker(private val context: Context, params: WorkerParameters) :
             )
         }
         val notification = NotificationCompat.Builder(context, CHANNEL)
-            .setContentTitle("Personal Cloud")
+            .setContentTitle("Choud")
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setSmallIcon(R.drawable.ic_stat_choud)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setProgress(total, done, total == 0)
