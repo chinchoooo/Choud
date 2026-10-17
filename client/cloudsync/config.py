@@ -43,6 +43,13 @@ class Config:
     # Files larger than this use the resumable chunked upload.
     chunk_threshold: int = 20 * MIB
     chunk_size: int = 5 * MIB
+    # "sync" mirrors one folder both ways. "backup" only uploads the listed folders, under
+    # Backups/<device_name>/<folder name> on the server, and never deletes anything there.
+    mode: str = "sync"
+    backup_folders: list = field(default_factory=list)
+    device_name: str = ""
+    # Seconds between backup passes (backup mode does not watch the disk: it stays light).
+    backup_interval: float = 900.0
     extra: dict = field(default_factory=dict)
 
     @property
@@ -56,6 +63,10 @@ class Config:
     @property
     def is_logged_in(self) -> bool:
         return bool(self.server_url and self.refresh_token)
+
+    @property
+    def has_folders(self) -> bool:
+        return bool(self.backup_folders) if self.mode == "backup" else bool(self.sync_root)
 
 
 def config_path(config_dir: Path | None = None) -> Path:

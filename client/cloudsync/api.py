@@ -112,6 +112,7 @@ class ApiClient:
         access_token: str = "",
         refresh_token: str = "",
         on_tokens: Callable[[str, str], None] | None = None,
+        remote_prefix: str = "",
     ) -> None:
         if http is None:
             if not server_url:
@@ -121,12 +122,24 @@ class ApiClient:
         self._access = access_token
         self._refresh = refresh_token
         self._on_tokens = on_tokens
+        # Backup mode keeps everything under one server folder (e.g. Backups/laptop/Documents):
+        # the client sees that folder as its root, so paths never carry the prefix.
+        self._prefix = remote_prefix.strip("/")
         # The last snapshot and its ETag: an unchanged tree is a bodyless 304.
         self._snapshot_cache: RemoteSnapshot | None = None
         self._snapshot_etag: str | None = None
 
     def close(self) -> None:
         self._http.close()
+
+    def reachable(self, timeout: float = 5.0) -> bool:
+        """True if the server answers at all (any HTTP status). A cheap check that avoids a
+        pointless disk scan while the laptop is off the VPN."""
+        try:
+            self._http.get("/api/health", timeout=timeout)
+        except httpx.HTTPError:
+            return False
+        return True
 
     # --- plumbing ------------------------------------------------------------
 
@@ -199,16 +212,19 @@ class ApiClient:
             return self._snapshot_cache
 
         body = response.json()
-        folders = {f["path"]: f["id"] for f in body["folders"]}
+        folders = {self._inside(f["path"]): f["id"] for f in body["folders"]}
+        folders.pop(None, None)
+        folders.pop("", None)
         files = {
-            f["path"]: RemoteFile(
+            self._inside(f["path"]): RemoteFile(
                 id=f["id"],
-                path=f["path"],
+                path=self._inside(f["path"]) or "",
                 size=f["size"],
                 content_hash=f["content_hash"] or "",
                 version_id=f["version_id"],
             )
             for f in body["files"]
+            if self._inside(f["path"]) is not None
         }
         snapshot = RemoteSnapshot(folders=folders, files=files)
         self._snapshot_cache = snapshot
@@ -217,8 +233,21 @@ class ApiClient:
 
     def ensure_folder(self, path: str) -> str | None:
         """Id of the server folder at `path` (created if missing); None for the root."""
-        body = self._send("POST", "/api/sync/folders", lambda: {"json": {"path": path}}).json()
+        full = f"{self._prefix}/{path}".strip("/") if path else self._prefix
+        if not full:
+            return None
+        body = self._send("POST", "/api/sync/folders", lambda: {"json": {"path": full}}).json()
         return body["id"]
+
+    def _inside(self, server_path: str) -> str | None:
+        """A server path relative to the prefix, or None when it is outside it."""
+        if not self._prefix:
+            return server_path
+        if server_path == self._prefix:
+            return ""
+        if server_path.startswith(self._prefix + "/"):
+            return server_path[len(self._prefix) + 1 :]
+        return None
 
     # --- uploads -----------------------------------------------------------------
 

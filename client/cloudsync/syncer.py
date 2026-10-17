@@ -99,6 +99,26 @@ class SyncReport:
         return text
 
 
+_BACKUP_KEEPS = {Kind.UPLOAD_NEW, Kind.UPLOAD_UPDATE, Kind.ADOPT, Kind.FORGET}
+
+
+def backup_plan(the_plan: Plan) -> Plan:
+    """Narrow a normal plan to what a one-way backup may do.
+
+    Downloads and every kind of delete are dropped. A conflict (the server copy changed too)
+    becomes a new version uploaded from this machine, so nothing is overwritten or lost.
+    """
+    kept: list[Action] = []
+    for action in the_plan.actions:
+        if action.kind is Kind.CONFLICT:
+            kept.append(Action(Kind.UPLOAD_UPDATE, action.path, action.local, action.remote, None))
+        elif action.kind in _BACKUP_KEEPS:
+            kept.append(action)
+    the_plan.actions = kept
+    the_plan.mkdir_local = []
+    return the_plan
+
+
 class SyncEngine:
     def __init__(
         self,
@@ -111,6 +131,8 @@ class SyncEngine:
         chunk_size: int = 5 * 1024 * 1024,
         now: Callable[[], float] = time.time,
         today: Callable[[], _dt.date] = _dt.date.today,
+        mode: str = "sync",
+        state_dir: Path | None = None,
     ) -> None:
         self.root = root
         self.api = api
@@ -120,7 +142,10 @@ class SyncEngine:
         self.chunk_size = chunk_size
         self._now = now
         self._today = today
-        self.state_dir = root / INTERNAL_DIR
+        # "backup" = upload only: never download, never delete anywhere, and when both sides
+        # changed this machine wins by adding a new version (the old one stays in history).
+        self.mode = mode
+        self.state_dir = state_dir or root / INTERNAL_DIR
         self.root.mkdir(parents=True, exist_ok=True)
         (self.state_dir / "tmp").mkdir(parents=True, exist_ok=True)
 
@@ -156,6 +181,8 @@ class SyncEngine:
 
         base = self.db.all_entries()
         the_plan = plan(scanned, remote, base)
+        if self.mode == "backup":
+            the_plan = backup_plan(the_plan)
         report.skipped.update(the_plan.skipped)
         self.db.replace_queue([a.key for a in the_plan.actions], self._now())
 
@@ -180,6 +207,8 @@ class SyncEngine:
             elif entry.content_hash != local.content_hash:
                 keys.append((Kind.UPLOAD_UPDATE.value, path))
         for path in base:
+            if self.mode == "backup":
+                break  # a file deleted here is never deleted on the server
             if path not in scanned.files and path not in scanned.unstable:
                 keys.append((Kind.DELETE_REMOTE.value, path))
         self.db.replace_queue(keys, self._now())
@@ -208,7 +237,7 @@ class SyncEngine:
     def _run_actions(
         self, the_plan: Plan, scanned: ScanResult, remote: RemoteSnapshot, report: SyncReport
     ) -> None:
-        folder_ids: dict[str, str | None] = {"": None}
+        folder_ids: dict[str, str | None] = {}
         taken_conflict_names: set[str] = set()
 
         for action in the_plan.actions:

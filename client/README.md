@@ -44,6 +44,33 @@ owner-only permissions.
 Exit codes of `sync`: `0` ok · `1` some files had errors · `2` server
 unreachable (changes are queued) · `3` login expired (run `login` again).
 
+### Backup mode (one laptop, saved quietly in the background)
+
+For a computer that should simply be saved to your home server whenever it is on the VPN:
+
+```bash
+bash install.sh                       # Linux/macOS; Windows: use the cloudsync .exe from the release
+cloudsync login --mode backup --server http://100.x.y.z --email you@example.com     --folder ~/Documents --folder ~/Pictures
+cloudsync install-service             # starts at login, runs at the lowest priority
+cloudsync status                      # per folder: files saved, files waiting
+cloudsync folders --add ~/Projects    # change what is backed up later
+```
+
+- **Upload only.** Nothing is ever downloaded, and nothing is ever deleted on the server: deleting a
+  file here does not delete its backup. If the copy on the server was changed by someone else too,
+  this computer's file is uploaded as a **new version**, so the older one stays in the file's history.
+- **Where it goes.** Each folder is saved under `Backups/<computer name>/<folder name>`.
+  Set the name with `--device-name`.
+- **Only when reachable.** While the server cannot be reached (Tailscale off, away from home) it
+  checks once a minute without scanning your disk; when it is back it uploads what is new.
+  Passes are 15 minutes apart (`backup_interval` in the settings file) and run at low CPU/disk
+  priority, so it stays out of the way.
+- **Leaves your folders alone.** Its bookkeeping lives in the settings directory, never inside
+  the folders it backs up.
+- **Windows:** `cloudsync install-service` creates a Task Scheduler task that runs at logon without a
+  console window. **macOS:** a launchd agent. **Linux:** a systemd user service (`journalctl --user -u
+  cloudsync -f` to watch it). `cloudsync uninstall-service` removes it again.
+
 ### Start on login
 
 *Linux (systemd user service):*
