@@ -48,3 +48,6 @@ backups/
 # --- Logs ---
 *.log
 logs/
+
+# Local-only agent/project instructions: never committed or pushed.
+CLAUDE.md
