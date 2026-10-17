@@ -9,6 +9,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import kotlin.concurrent.thread
 
 /** Every photo and video from every folder, newest first, grouped by month. */
@@ -27,6 +28,11 @@ class PhotosTab(private val host: Host) : Tab {
 
     private val statusView = ui.muted("", 12f)
     private val list = RecyclerView(ui.context)
+    private val swipe = SwipeRefreshLayout(ui.context).apply {
+        setColorSchemeColors(palette.ink)
+        setProgressBackgroundColorSchemeColor(palette.surface)
+    }
+    private var loadedAt = 0L
     private val adapter = Adapter()
     private val filterButtons = LinkedHashMap<String, TextView>()
     private val spans = 3
@@ -65,11 +71,13 @@ class PhotosTab(private val host: Host) : Tab {
                 if (last >= rows.size - 12) loadMore()
             }
         })
-        addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        swipe.addView(list)
+        swipe.setOnRefreshListener { reload() }
+        addView(swipe, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
     }
 
     override fun onShow() {
-        if (!loadedOnce) reload()
+        if (!loadedOnce || System.currentTimeMillis() - loadedAt > 30_000) reload()
     }
 
     private fun reload() {
@@ -122,6 +130,8 @@ class PhotosTab(private val host: Host) : Tab {
     }
 
     private fun refreshStatus() {
+        swipe.isRefreshing = loading
+        if (!loading) loadedAt = System.currentTimeMillis()
         statusView.text = when {
             error != null -> "Could not load: $error (tap Refresh)"
             loading && items.isEmpty() -> "Loading..."

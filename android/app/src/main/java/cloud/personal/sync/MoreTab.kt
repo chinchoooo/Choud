@@ -60,6 +60,7 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
                     text = theme.label
                     typeface = ui.typeface
                     setTextColor(palette.ink)
+                    buttonTintList = android.content.res.ColorStateList.valueOf(palette.ink)
                     isChecked = settings.theme == theme.id
                     setOnClickListener {
                         if (settings.theme != theme.id) {
@@ -143,6 +144,8 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
         typeface = ui.typeface
         setTextColor(palette.ink)
         isChecked = checked
+        // Without this the box outline is invisible on the black retro background.
+        buttonTintList = android.content.res.ColorStateList.valueOf(palette.ink)
         setOnCheckedChangeListener { _, on -> onChange(on) }
     }
 

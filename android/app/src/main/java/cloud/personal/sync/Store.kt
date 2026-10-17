@@ -44,7 +44,7 @@ class Settings(context: Context) : TokenStore {
         }
         set(v) = prefs.edit().putString("backup_folders", v.sorted().joinToString("\n")).apply()
     var theme: String
-        get() = prefs.getString("theme", "light") ?: "light"
+        get() = prefs.getString("theme", "retro") ?: "retro"
         set(v) = prefs.edit().putString("theme", v).apply()
     var lastRun: String
         get() = prefs.getString("last_run", "never") ?: "never"

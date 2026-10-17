@@ -113,11 +113,19 @@ class MainActivity : Activity(), Host {
         val url = field("Server URL, e.g. http://100.x.y.z", settings.serverUrl, InputType.TYPE_TEXT_VARIATION_URI)
         val email = field("Email", type = InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
         val password = field("Password", type = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
-        val otp = field("Two-factor code (only if you turned it on)", type = InputType.TYPE_CLASS_NUMBER)
+        val otp = field("Two-factor code (if turned on)", type = InputType.TYPE_CLASS_NUMBER)
         val device = field("This phone's name", settings.deviceName)
         val message = ui.text("", 13f, p.danger)
 
-        column.addView(ui.heading("Personal Cloud"))
+        column.addView(
+            android.widget.ImageView(this).apply {
+                setImageResource(if (p.darkSystemBars) R.drawable.choud_logo_dark else R.drawable.choud_logo_light)
+                contentDescription = "Choud"
+                adjustViewBounds = true
+            },
+            android.widget.LinearLayout.LayoutParams(ui.dp(120), ui.dp(120)),
+        )
+        column.addView(ui.heading("Choud"), ui.matchWidth(6))
         column.addView(ui.muted("Back up your photos to your own server.", 13f), ui.matchWidth(2))
         column.addView(url, ui.matchWidth(24))
         column.addView(email, ui.matchWidth(10))

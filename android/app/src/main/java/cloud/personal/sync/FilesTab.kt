@@ -11,6 +11,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import kotlin.concurrent.thread
 
 /** Browse the server's folders and files, with thumbnails; tap a file to open the built-in viewer. */
@@ -31,6 +32,10 @@ class FilesTab(private val host: Host) : Tab {
     private val statusView = ui.muted("", 13f)
     private val list = RecyclerView(ui.context)
     private val adapter = Adapter()
+    private val swipe = SwipeRefreshLayout(ui.context).apply {
+        setColorSchemeColors(palette.ink)
+        setProgressBackgroundColorSchemeColor(palette.surface)
+    }
 
     override val view: View = ui.vertical().apply {
         setBackgroundColor(palette.bg)
@@ -49,13 +54,17 @@ class FilesTab(private val host: Host) : Tab {
         addView(statusView, ui.matchWidth().apply { leftMargin = ui.dp(14); rightMargin = ui.dp(14) })
         list.layoutManager = LinearLayoutManager(ui.context)
         list.adapter = adapter
-        addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        swipe.addView(list)
+        swipe.setOnRefreshListener { reload() }
+        addView(swipe, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
     }
 
+    private var loadedAt = 0L
     private val currentId: String? get() = trail.last().id
 
     override fun onShow() {
-        if (!loadedOnce) reload()
+        // Coming back to the tab refreshes a listing that is more than half a minute old.
+        if (!loadedOnce || System.currentTimeMillis() - loadedAt > 30_000) reload()
     }
 
     override fun onBack(): Boolean {
@@ -93,6 +102,8 @@ class FilesTab(private val host: Host) : Tab {
     }
 
     private fun render() {
+        swipe.isRefreshing = loading
+        if (!loading) loadedAt = System.currentTimeMillis()
         crumbRow.removeAllViews()
         trail.forEachIndexed { index, crumb ->
             val last = index == trail.lastIndex
