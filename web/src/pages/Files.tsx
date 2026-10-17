@@ -46,7 +46,11 @@ export function Files() {
     },
   ]);
 
-  const directory = useQuery({ queryKey: ["directory", folderId], queryFn: () => listDirectory(folderId) });
+  const directory = useQuery({
+    queryKey: ["directory", folderId],
+    queryFn: () => listDirectory(folderId),
+    refetchInterval: 20_000, // pauses while the tab is hidden
+  });
   const searchQuery = useQuery({
     queryKey: ["search", searchText],
     queryFn: () => searchFiles(searchText),

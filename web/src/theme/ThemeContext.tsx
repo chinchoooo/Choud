@@ -15,7 +15,7 @@ export function isThemeId(value: unknown): value is ThemeId {
   return THEMES.some((theme) => theme.id === value);
 }
 
-/** The saved theme, else the OS preference (dark/light), else light. */
+/** The saved theme, else retro (the house look). */
 export function initialTheme(): ThemeId {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -23,11 +23,7 @@ export function initialTheme(): ThemeId {
   } catch {
     // storage unavailable (private mode): fall through
   }
-  const prefersDark =
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches;
-  return prefersDark ? "dark" : "light";
+  return "retro";
 }
 
 interface ThemeContextValue {

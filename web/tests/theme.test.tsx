@@ -8,7 +8,7 @@ function Probe() {
   return (
     <div>
       <span data-testid="theme">{theme}</span>
-      <button onClick={() => setTheme("retro")}>retro</button>
+      <button onClick={() => setTheme("dark")}>pick dark</button>
     </div>
   );
 }
@@ -32,14 +32,15 @@ describe("themes", () => {
         <Probe />
       </ThemeProvider>,
     );
-    act(() => screen.getByText("retro").click());
-    expect(document.documentElement.getAttribute("data-theme")).toBe("retro");
-    expect(localStorage.getItem("personal_cloud_theme")).toBe("retro");
-    expect(initialTheme()).toBe("retro");
+    expect(screen.getByTestId("theme")).toHaveTextContent("retro"); // the default look
+    act(() => screen.getByText("pick dark").click());
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(localStorage.getItem("personal_cloud_theme")).toBe("dark");
+    expect(initialTheme()).toBe("dark");
   });
 
   it("ignores a corrupt saved value", () => {
     localStorage.setItem("personal_cloud_theme", "<script>");
-    expect(["light", "dark"]).toContain(initialTheme());
+    expect(initialTheme()).toBe("retro");
   });
 });

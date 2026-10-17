@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../src/api/client";
 import { Login } from "../src/pages/Login";
 import { Security } from "../src/pages/Security";
+import { ThemeProvider } from "../src/theme/ThemeContext";
 
 const auth = vi.hoisted(() => ({ login: vi.fn() }));
 const api = vi.hoisted(() => ({
@@ -29,7 +30,9 @@ function renderPage(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>{ui}</MemoryRouter>
+      <ThemeProvider>
+        <MemoryRouter>{ui}</MemoryRouter>
+      </ThemeProvider>
     </QueryClientProvider>,
   );
 }

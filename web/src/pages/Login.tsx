@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { Logo } from "../components/Logo";
 
 export function Login() {
   const { login } = useAuth();
@@ -35,6 +36,7 @@ export function Login() {
 
   return (
     <div className="mx-auto max-w-sm p-8">
+      <Logo variant="full" size={120} className="mb-6" />
       <h1 className="text-2xl font-semibold text-gray-900">Log in</h1>
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <div>

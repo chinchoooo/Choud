@@ -1,4 +1,19 @@
-import { useQuery } from "@tanstack/react-query";
+import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Activity,
+  Clock,
+  Folder,
+  Image as ImageIcon,
+  Link2,
+  LogOut,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Star,
+  Trash2,
+  UserPlus,
+  type LucideIcon,
+} from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { NavLink, Outlet, useNavigate, useSearchParams } from "react-router-dom";
 
@@ -6,21 +21,39 @@ import { getUsage } from "../api/library";
 import { useAuth } from "../auth/AuthContext";
 import { formatBytes } from "../lib/format";
 import { MediaProvider } from "../media/MediaContext";
+import { Logo } from "./Logo";
 import { THEMES, isThemeId, useTheme } from "../theme/ThemeContext";
 import { UploadProvider } from "../uploads/UploadContext";
 import { UploadPanel } from "./UploadPanel";
 
-const NAV = [
-  { to: "/files", label: "My files" },
-  { to: "/photos", label: "Photos" },
-  { to: "/favorites", label: "Favorites" },
-  { to: "/recent", label: "Recent" },
-  { to: "/shares", label: "Shared links" },
-  { to: "/invites", label: "Invites" },
-  { to: "/security", label: "Security" },
-  { to: "/activity", label: "Activity" },
-  { to: "/trash", label: "Trash" },
+const NAV: { to: string; label: string; icon: LucideIcon }[] = [
+  { to: "/files", label: "My files", icon: Folder },
+  { to: "/photos", label: "Photos", icon: ImageIcon },
+  { to: "/favorites", label: "Favorites", icon: Star },
+  { to: "/recent", label: "Recent", icon: Clock },
+  { to: "/shares", label: "Shared links", icon: Link2 },
+  { to: "/invites", label: "Invites", icon: UserPlus },
+  { to: "/security", label: "Security", icon: ShieldCheck },
+  { to: "/activity", label: "Activity", icon: Activity },
+  { to: "/trash", label: "Trash", icon: Trash2 },
 ];
+
+/** Reloads whatever is on screen. Also spins while any background refresh is running. */
+function RefreshButton() {
+  const queryClient = useQueryClient();
+  const busy = useIsFetching() > 0;
+  return (
+    <button
+      type="button"
+      onClick={() => void queryClient.invalidateQueries()}
+      aria-label="Refresh"
+      title="Refresh"
+      className="border border-gray-300 p-2 text-gray-700 hover:bg-gray-100 rounded-md"
+    >
+      <RefreshCw size={16} aria-hidden className={busy ? "animate-spin" : ""} />
+    </button>
+  );
+}
 
 function UsageMeter() {
   const usage = useQuery({ queryKey: ["usage"], queryFn: getUsage, refetchInterval: 60_000 });
@@ -60,7 +93,7 @@ export function AppShell() {
   }
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `block whitespace-nowrap px-3 py-2 text-sm rounded-md ${
+    `flex items-center gap-2 whitespace-nowrap px-3 py-2 text-sm rounded-md ${
       isActive ? "bg-gray-900 text-white" : "text-gray-700 hover:bg-gray-100"
     }`;
 
@@ -70,7 +103,10 @@ export function AppShell() {
         <div className="flex min-h-screen flex-col md:flex-row">
           <aside className="shrink-0 border-b border-gray-200 bg-white md:w-56 md:border-b-0 md:border-r">
             <div className="flex items-center justify-between px-4 py-3 md:block">
-              <span className="text-base font-semibold text-gray-900">Personal Cloud</span>
+              <span className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                <Logo size={28} />
+                Choud
+              </span>
               <span className="truncate text-xs text-gray-500 md:mt-1 md:block" title={user?.email}>
                 {user?.email}
               </span>
@@ -78,6 +114,7 @@ export function AppShell() {
             <nav aria-label="Main" className="flex gap-1 overflow-x-auto px-2 pb-2 md:block md:space-y-1 md:pb-0">
               {NAV.map((item) => (
                 <NavLink key={item.to} to={item.to} className={linkClass}>
+                  <item.icon size={16} aria-hidden />
                   {item.label}
                 </NavLink>
               ))}
@@ -100,8 +137,9 @@ export function AppShell() {
               </label>
               <button
                 onClick={() => void logout()}
-                className="w-full border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                className="flex w-full items-center justify-center gap-2 border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
               >
+                <LogOut size={14} aria-hidden />
                 Log out
               </button>
             </div>
@@ -118,10 +156,15 @@ export function AppShell() {
                   aria-label="Search"
                   className="w-full max-w-xl border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 rounded-md"
                 />
-                <button type="submit" className="border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md">
+                <button
+                  type="submit"
+                  className="flex items-center gap-2 border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+                >
+                  <Search size={14} aria-hidden />
                   Search
                 </button>
               </form>
+              <RefreshButton />
               <div className="flex items-center gap-2 md:hidden">
                 <select
                   aria-label="Theme"

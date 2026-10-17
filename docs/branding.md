@@ -44,11 +44,21 @@ Light vs dark: `choud-logo-dark` (white on black) belongs on dark surfaces (`ret
 - In both detailed logos the top of the "Choud" wordmark touches the bottom edge of the folder
   outline (text baseline y=57, folder bottom y=52). Worth a nudge in the source SVG.
 
-## Not done yet (parked while Milestone 2 takes priority)
+## Web look (retro with modern icons)
+
+Retro is the default theme for anyone who has not picked one (saved choices are kept). The monospace,
+square-cornered, black-and-white styling is mixed with a modern line-icon set (`lucide-react`,
+tree-shaken, drawn as inline SVG so it follows the theme colours): one icon per sidebar entry, on
+Search, Refresh and Log out. `<Logo>` (`web/src/components/Logo.tsx`) picks the dark or light artwork
+from the active theme: the small mark beside the name in the sidebar, the full logo on the sign-in
+pages. The Refresh button reloads whatever is on screen and spins while anything is loading, and
+folder listings refresh themselves every 20 seconds while the tab is visible.
+
+## Not done yet
 
 - A branded loading screen (`choud-loading-screen.html` is a prototype with a timer; it must be
   driven by real startup state, not that timer): React boot overlay for the web app tied to
   session / server health / media token / storage queries, and an equivalent Android view tied to
   the first facts / health check. Steps and progress must be real, with reduced-motion respected.
-- A theme-aware `<Logo>` (web and Android) and the logo on the login pages.
-- Making the retro theme the default for new installs.
+- The same logo and icon treatment on Android (it has the themes and the launcher icon, not yet the
+  icon set or a retro default).
