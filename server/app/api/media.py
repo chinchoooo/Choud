@@ -35,7 +35,7 @@ from app.services import file_service, media_cache, thumbnail_service
 router = APIRouter(prefix="/api/media", tags=["media"])
 
 # Types that are safe to render inline. Anything not listed is a forced download.
-_INLINE_EXACT = {
+INLINE_TYPES = {
     "image/png",
     "image/jpeg",
     "image/gif",
@@ -84,7 +84,7 @@ def _user_for(db: Session, token: str) -> User:
     return user
 
 
-def _safe_headers(*, pdf: bool = False) -> dict[str, str]:
+def safe_headers(*, pdf: bool = False) -> dict[str, str]:
     headers = {
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "no-referrer",
@@ -109,13 +109,13 @@ def content(token: str, file_id: uuid.UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     mime = (file.mime_type or "").split(";")[0].strip().lower()
-    inline = mime in _INLINE_EXACT
+    inline = mime in INLINE_TYPES
     return FastAPIFileResponse(
         path,
         media_type=mime if inline else "application/octet-stream",
         filename=file.name,
         content_disposition_type="inline" if inline else "attachment",
-        headers=_safe_headers(pdf=mime == "application/pdf"),
+        headers=safe_headers(pdf=mime == "application/pdf"),
     )
 
 
@@ -137,4 +137,4 @@ def thumbnail(
         raise HTTPException(status_code=415, detail=str(exc)) from exc
     except file_service.StorageError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return FastAPIFileResponse(path, media_type="image/jpeg", headers=_safe_headers())
+    return FastAPIFileResponse(path, media_type="image/jpeg", headers=safe_headers())

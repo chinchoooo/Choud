@@ -13,6 +13,7 @@ from app.models import (  # noqa: F401
     file,
     file_version,
     folder,
+    share,
     upload,
     user,
 )

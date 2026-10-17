@@ -14,7 +14,9 @@ from app.api import (
     health,
     library,
     media,
+    public_shares,
     search,
+    shares,
     sync,
     trash,
     uploads,
@@ -78,5 +80,7 @@ app.include_router(sync.router)
 app.include_router(trash.router)
 app.include_router(media.router)
 app.include_router(library.router)
+app.include_router(shares.router)
+app.include_router(public_shares.router)
 
 # The shares router is added when its phase lands (see docs/architecture.md).

@@ -333,6 +333,29 @@ Limits: a single-request upload is at most 128 MiB (`413` beyond that; use the c
 a chunk is at most 64 MiB and **must be exactly the size the session promised**, a session has at
 most 20,000 chunks, and an upload that would exceed the user's quota is a `413`.
 
+### Sharing: public links (Phase 12)
+
+| Endpoint | What it does |
+| --- | --- |
+| `POST /api/shares` | Make a link to **one** file (`file_id`) or folder (`folder_id`). Optional `expires_in_hours` (1-8760), `password` (4+ chars), `label`. Returns the share with `token` and `url_path` (`/s/<token>`; add your own origin) |
+| `GET /api/shares` | Your active links, with `download_count`, `last_accessed_at`, `has_password`, `expires_at` |
+| `PATCH /api/shares/{id}` | Change `label`, `password` (`null` removes it), `expires_in_hours` (`null` = never) |
+| `DELETE /api/shares/{id}` | Revoke: the link stops working immediately (`204`) |
+
+The visitor side needs no account, and is served as plain HTML (no scripts) by the backend:
+
+| URL | What it does |
+| --- | --- |
+| `GET /s/{token}` | A file link shows the file with a download button (and an inline preview for images, video and audio). A folder link lists the folder; `?folder=<id>` navigates inside it |
+| `POST /s/{token}/unlock` | Form post of `password`; sets a one-hour signed cookie for that link only (rate limited: 10 per minute per IP) |
+| `GET /s/{token}/file/{file_id}` | The bytes as an attachment (`?inline=1` only for safe media types) |
+| `GET /s/{token}/file/{file_id}/open` | A preview page for a file inside a shared folder |
+| `GET /s/{token}/file/{file_id}/thumbnail` | A small thumbnail for images and videos |
+
+A link only reaches what it was made for: a file link that one file, a folder link only files and
+folders at or below that folder. Unknown, expired, revoked and trashed-target links all give the same
+404 page. Sharing is recorded in the activity log.
+
 ## Planned (not yet implemented)
 
 Endpoints below are listed for reference; they land with their

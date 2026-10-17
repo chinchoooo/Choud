@@ -7,3 +7,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Inline CSS for the public share pages: long declaration lines are normal there.
+"app/services/share_pages.py" = ["E501"]

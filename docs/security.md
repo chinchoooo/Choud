@@ -98,6 +98,23 @@ file contents.
   safety check before it did anything. The checks above are covered by tests, but an independent
   attack pass is still worth doing before the server is exposed beyond a tailnet.
 
+## Public share links (Phase 12)
+
+- **Bearer links.** `/s/<token>` is 256 bits of randomness; whoever holds it can see what it points
+  at. The token is stored as-is (not hashed) so the owner can copy the link again; revoking the row
+  kills it at once. Optional expiry and an Argon2id-hashed password add locks.
+- **A link reaches only its target.** Every file or folder request is checked against the share:
+  the shared file itself, or for a folder link, an item whose parent chain reaches the shared
+  folder. Other users' items, siblings and the account root are unreachable even by guessing ids.
+- **Uniform failure.** Unknown, expired, revoked and trashed-target links return the same 404.
+- **Unlocking.** A correct password sets an HMAC-signed, HttpOnly, SameSite=Lax cookie scoped to that
+  one link for one hour; changing the password invalidates every earlier unlock. Password attempts
+  are limited to 10 per minute per IP.
+- **No script, ever.** The pages are server-rendered, every name is HTML-escaped, and they are sent
+  with `default-src 'none'` (no scripts at all), `nosniff`, `no-referrer`, `no-store`, and
+  `frame-ancestors 'none'`. Files are only previewed inline for the same media allowlist as the
+  media routes; HTML/SVG and everything else is an attachment.
+
 ## Hardening (Phase 10)
 
 Rate limiting, security headers, and failure-recovery monitoring land in
