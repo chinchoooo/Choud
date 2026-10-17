@@ -337,9 +337,9 @@ most 20,000 chunks, and an upload that would exceed the user's quota is a `413`.
 
 | Endpoint | What it does |
 | --- | --- |
-| `POST /api/shares` | Make a link to **one** file (`file_id`) or folder (`folder_id`). Optional `expires_in_hours` (1-8760), `password` (4+ chars), `label`. Returns the share with `token` and `url_path` (`/s/<token>`; add your own origin) |
+| `POST /api/shares` | Make a link to **one** file (`file_id`) or folder (`folder_id`). Optional `expires_in_hours` (1-8760), `password` (4+ chars), `label`, `permission` (`view` default, or `edit`). Returns the share with `token` and `url_path` (`/s/<token>`; add your own origin) |
 | `GET /api/shares` | Your active links, with `download_count`, `last_accessed_at`, `has_password`, `expires_at` |
-| `PATCH /api/shares/{id}` | Change `label`, `password` (`null` removes it), `expires_in_hours` (`null` = never) |
+| `PATCH /api/shares/{id}` | Change `label`, `password` (`null` removes it), `expires_in_hours` (`null` = never), `permission` |
 | `DELETE /api/shares/{id}` | Revoke: the link stops working immediately (`204`) |
 
 The visitor side needs no account, and is served as plain HTML (no scripts) by the backend:
@@ -351,6 +351,14 @@ The visitor side needs no account, and is served as plain HTML (no scripts) by t
 | `GET /s/{token}/file/{file_id}` | The bytes as an attachment (`?inline=1` only for safe media types) |
 | `GET /s/{token}/file/{file_id}/open` | A preview page for a file inside a shared folder |
 | `GET /s/{token}/file/{file_id}/thumbnail` | A small thumbnail for images and videos |
+| `POST /s/{token}/upload` | **Edit links only.** Form upload of up to 20 `files` (+ `folder`, empty = the shared folder). A same-name file becomes a new version. On a file link: exactly one file, stored as a new version of the shared file |
+| `POST /s/{token}/mkdir` | Edit folder links: `name`, `parent` |
+| `POST /s/{token}/rename` | Edit folder links: `file_id`, `name` |
+| `POST /s/{token}/trash` | Edit folder links: `file_id`; moves the file to the **owner's trash** (never a hard delete) |
+
+On a view-only link all four return `403`. Targets outside the shared folder return the uniform `404`.
+Refusals (name taken, too large, over quota) render a small page with a Back button.
+There is deliberately no per-user sharing: a link is the only way to share.
 
 A link only reaches what it was made for: a file link that one file, a folder link only files and
 folders at or below that folder. Unknown, expired, revoked and trashed-target links all give the same

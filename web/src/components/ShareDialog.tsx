@@ -26,6 +26,7 @@ export function ShareDialog({ target, onClose }: Props) {
   const queryClient = useQueryClient();
   const [expiry, setExpiry] = useState<number | null>(null);
   const [password, setPassword] = useState("");
+  const [permission, setPermission] = useState<"view" | "edit">("view");
   const [created, setCreated] = useState<Share | null>(null);
   const [copied, setCopied] = useState<"yes" | "no" | null>(null);
 
@@ -35,6 +36,7 @@ export function ShareDialog({ target, onClose }: Props) {
         ...(target.kind === "file" ? { fileId: target.id } : { folderId: target.id }),
         expiresInHours: expiry,
         password: password || undefined,
+        permission,
       }),
     onSuccess: (share) => {
       setCreated(share);
@@ -55,7 +57,14 @@ export function ShareDialog({ target, onClose }: Props) {
     return (
       <Modal title={`Link for "${target.name}"`} onClose={onClose}>
         <p className="text-sm text-gray-700">
-          Anyone with this link can {target.kind === "folder" ? "open the folder" : "see and download the file"}
+          Anyone with this link can{" "}
+          {created.permission === "edit"
+            ? target.kind === "folder"
+              ? "open the folder, add files and change them"
+              : "see the file and upload new versions"
+            : target.kind === "folder"
+              ? "open the folder"
+              : "see and download the file"}
           {created.expires_at ? " until it expires" : ""}
           {created.has_password ? ", after entering the password" : ""}.
         </p>
@@ -90,6 +99,23 @@ export function ShareDialog({ target, onClose }: Props) {
       <p className="text-sm text-gray-700">
         Make a link anyone can open, without an account. You can turn it off any time from Shared links.
       </p>
+      <label className="mt-3 block text-sm text-gray-700">
+        People with the link can
+        <select
+          value={permission}
+          onChange={(event) => setPermission(event.target.value as "view" | "edit")}
+          className="mt-1 w-full border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 rounded-md"
+        >
+          <option value="view">View and download</option>
+          <option value="edit">Add, rename and delete files</option>
+        </select>
+      </label>
+      {permission === "edit" && (
+        <p className="mt-1 text-xs text-gray-500">
+          Anyone who gets this link can change the {target.kind}. Deleted files go to your trash and
+          replaced files keep their old version. Set an expiry or a password.
+        </p>
+      )}
       <label className="mt-3 block text-sm text-gray-700">
         Link works for
         <select

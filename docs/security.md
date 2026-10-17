@@ -115,6 +115,17 @@ file contents.
   `frame-ancestors 'none'`. Files are only previewed inline for the same media allowlist as the
   media routes; HTML/SVG and everything else is an attachment.
 
+### Edit links
+
+- A link made with `permission: edit` lets whoever holds it add files, make folders, rename and
+  trash files inside the shared folder (or upload new versions of one shared file). It is as
+  powerful as the secrecy of the link: use an expiry and a password, and revoke when done.
+- Nothing an editor does is unrecoverable: deletes go to the owner's trash, same-name uploads are
+  new versions, there is no hard delete and no move out of the shared folder.
+- Every action re-checks that its target is inside the link; uploads count against the **owner's**
+  quota and obey the normal size limits (128 MiB per file, 20 files per request); edit actions are
+  rate limited (60 per minute per IP).
+
 ## Hardening (Phase 10)
 
 Rate limiting, security headers, and failure-recovery monitoring land in

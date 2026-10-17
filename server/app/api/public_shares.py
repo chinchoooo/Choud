@@ -7,16 +7,21 @@ a correct password sets a short-lived signed cookie scoped to that one link.
 
 import uuid
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, Form, Query, Request, UploadFile
+from fastapi import File as FastAPIFile
 from fastapi.responses import FileResponse as FastAPIFileResponse
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.orm import Session
 
 from app.api.media import INLINE_TYPES, safe_headers
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.models.share import Share
+from app.models.user import User
+from app.schemas.files import FileUpdate
 from app.services import file_service, media_cache, share_pages, share_service, thumbnail_service
+from app.services.errors import PayloadTooLargeError, QuotaError
 
 router = APIRouter(prefix="/s", tags=["public-shares"])
 
@@ -60,7 +65,11 @@ def view(
 
     if share.file_id is not None:
         file = file_service.get_file(db, _owner(db, share), share.file_id)
-        return _html(share_pages.file_page(token, file, _inline_ok(file)))
+        return _html(
+            share_pages.file_page(
+                token, file, _inline_ok(file), editable=share_service.is_editable(share)
+            )
+        )
 
     target = share_service.folder_in_share(db, share, folder)
     if target is None:
@@ -68,7 +77,16 @@ def view(
     folders, files = share_service.folder_contents(db, share, target)
     trail = share_service.breadcrumb(db, share, target)
     return _html(
-        share_pages.folder_page(token, target.name, trail, folders, files, share.folder_id)
+        share_pages.folder_page(
+            token,
+            target.name,
+            trail,
+            folders,
+            files,
+            share.folder_id,
+            current=target,
+            editable=share_service.is_editable(share),
+        )
     )
 
 
@@ -168,6 +186,170 @@ def _inline_ok(file) -> bool:
 
 def _owner(db: Session, share: Share):
     """The share owner, to reuse the owner-scoped file lookups (the visitor is anonymous)."""
-    from app.models.user import User
-
     return db.get(User, share.owner_id)
+
+
+# --- edit links ----------------------------------------------------------------------------------
+#
+# A link made with permission "edit" lets visitors add files, make folders, rename and delete
+# inside the shared folder (or upload a new version of a single shared file). Every action
+# re-checks that the target lies inside the link; deletes go to the OWNER'S TRASH (never a hard
+# delete) and same-name uploads become new VERSIONS, so nothing an editor does is unrecoverable.
+# Uploads count against the owner's quota and obey the normal size limits.
+
+_edit_limit = Depends(rate_limit("share-edit", 60, 60))
+MAX_FILES_PER_UPLOAD = 20
+
+
+def _back(share: Share, folder_id: uuid.UUID | None) -> str:
+    if share.folder_id is None or folder_id is None or folder_id == share.folder_id:
+        return ""
+    return f"?folder={folder_id}"
+
+
+def _refused(token: str, message: str, status_code: int, back: str = "") -> HTMLResponse:
+    return _html(share_pages.message_page(token, message, back), status_code)
+
+
+def _editor(
+    request: Request, db: Session, token: str
+) -> tuple[Share | None, HTMLResponse | None]:
+    """The share if the visitor is allowed in AND the link is an edit link."""
+    share, blocked = _gate(request, db, token)
+    if blocked is not None:
+        return None, blocked
+    if not share_service.is_editable(share):
+        return None, _refused(token, "This link is view-only.", 403)
+    return share, None
+
+
+def _folder_id(raw: str) -> tuple[uuid.UUID | None, bool]:
+    """(parsed id, ok). An empty value means "the shared folder itself"."""
+    if not raw:
+        return None, True
+    try:
+        return uuid.UUID(raw), True
+    except ValueError:
+        return None, False
+
+
+def _clean_name(raw: str) -> str:
+    """Names are validated exactly like everywhere else (no slashes, no traversal, not blank)."""
+    return FileUpdate(name=raw).name
+
+
+@router.post("/{token}/upload", dependencies=[_edit_limit])
+async def upload(
+    token: str,
+    request: Request,
+    folder: str = Form(default="", max_length=64),
+    files: list[UploadFile] = FastAPIFile(...),
+    db: Session = Depends(get_db),
+):
+    share, blocked = _editor(request, db, token)
+    if blocked is not None:
+        return blocked
+    owner = _owner(db, share)
+    if len(files) > MAX_FILES_PER_UPLOAD:
+        return _refused(token, f"Add at most {MAX_FILES_PER_UPLOAD} files at a time.", 422)
+
+    if share.file_id is not None:
+        # A file link: the only edit is a new version of that one file, under its own name.
+        if len(files) != 1:
+            return _refused(token, "Choose exactly one file.", 422)
+        current = file_service.get_file(db, owner, share.file_id)
+        parent_id, forced_name, back = current.folder_id, current.name, ""
+    else:
+        wanted, ok = _folder_id(folder)
+        target = share_service.folder_in_share(db, share, wanted) if ok else None
+        if target is None:
+            return _not_found()
+        parent_id, forced_name, back = target.id, None, _back(share, target.id)
+
+    try:
+        for upload_file in files:
+            await file_service.upload_file(db, owner, upload_file, parent_id, forced_name)
+    except file_service.ValidationError as exc:
+        return _refused(token, str(exc), 422, back)
+    except file_service.ConflictError as exc:
+        return _refused(token, str(exc), 409, back)
+    except (PayloadTooLargeError, QuotaError) as exc:
+        return _refused(token, str(exc), 413, back)
+    except file_service.StorageError:
+        return _refused(token, "The file could not be stored. Try again.", 502, back)
+    share_service.record_access(db, share, download=False)
+    return RedirectResponse(f"/s/{token}{back}", status_code=303)
+
+
+@router.post("/{token}/mkdir", dependencies=[_edit_limit])
+def make_folder(
+    token: str,
+    request: Request,
+    parent: str = Form(default="", max_length=64),
+    name: str = Form(max_length=255),
+    db: Session = Depends(get_db),
+):
+    share, blocked = _editor(request, db, token)
+    if blocked is not None:
+        return blocked
+    if share.folder_id is None:
+        return _refused(token, "Folders can only be made on a folder link.", 403)
+    wanted, ok = _folder_id(parent)
+    target = share_service.folder_in_share(db, share, wanted) if ok else None
+    if target is None:
+        return _not_found()
+    back = _back(share, target.id)
+    try:
+        file_service.create_folder(db, _owner(db, share), _clean_name(name), target.id)
+    except PydanticValidationError:
+        return _refused(token, "That is not a valid folder name.", 422, back)
+    except file_service.ConflictError as exc:
+        return _refused(token, str(exc), 409, back)
+    return RedirectResponse(f"/s/{token}{back}", status_code=303)
+
+
+@router.post("/{token}/rename", dependencies=[_edit_limit])
+def rename_file(
+    token: str,
+    request: Request,
+    file_id: uuid.UUID = Form(),
+    name: str = Form(max_length=255),
+    db: Session = Depends(get_db),
+):
+    share, blocked = _editor(request, db, token)
+    if blocked is not None:
+        return blocked
+    if share.folder_id is None:
+        return _refused(token, "A single-file link cannot rename the file.", 403)
+    file = share_service.file_in_share(db, share, file_id)
+    if file is None:
+        return _not_found()
+    back = _back(share, file.folder_id)
+    try:
+        file_service.update_file(db, _owner(db, share), file.id, {"name": _clean_name(name)})
+    except PydanticValidationError:
+        return _refused(token, "That is not a valid file name.", 422, back)
+    except file_service.ConflictError as exc:
+        return _refused(token, str(exc), 409, back)
+    return RedirectResponse(f"/s/{token}{back}", status_code=303)
+
+
+@router.post("/{token}/trash", dependencies=[_edit_limit])
+def trash_file(
+    token: str,
+    request: Request,
+    file_id: uuid.UUID = Form(),
+    db: Session = Depends(get_db),
+):
+    """Delete = move to the owner's trash, where they can restore it."""
+    share, blocked = _editor(request, db, token)
+    if blocked is not None:
+        return blocked
+    if share.folder_id is None:
+        return _refused(token, "A single-file link cannot delete the file.", 403)
+    file = share_service.file_in_share(db, share, file_id)
+    if file is None:
+        return _not_found()
+    back = _back(share, file.folder_id)
+    file_service.delete_file(db, _owner(db, share), file.id)
+    return RedirectResponse(f"/s/{token}{back}", status_code=303)

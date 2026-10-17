@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -18,6 +19,8 @@ class ShareCreate(BaseModel):
     # None = no password. Anyone with the link can open it, so a password is the second lock.
     password: str | None = Field(default=None, min_length=4, max_length=128)
     label: str | None = Field(default=None, max_length=255)
+    # "view": look and download. "edit": also add files, make folders, rename, delete.
+    permission: Literal["view", "edit"] = "view"
 
     @model_validator(mode="after")
     def exactly_one_target(self) -> "ShareCreate":
@@ -32,6 +35,7 @@ class ShareUpdate(BaseModel):
     label: str | None = Field(default=None, max_length=255)
     password: str | None = Field(default=None, min_length=4, max_length=128)
     expires_in_hours: int | None = Field(default=None, ge=1, le=MAX_EXPIRY_HOURS)
+    permission: Literal["view", "edit"] | None = None
 
 
 class ShareResponse(BaseModel):
@@ -44,6 +48,7 @@ class ShareResponse(BaseModel):
     url_path: str
     label: str | None
     has_password: bool
+    permission: str
     expires_at: datetime | None
     created_at: datetime
     download_count: int

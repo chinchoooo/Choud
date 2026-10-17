@@ -9,6 +9,7 @@ export interface Share {
   url_path: string;
   label: string | null;
   has_password: boolean;
+  permission: "view" | "edit";
   expires_at: string | null;
   created_at: string;
   download_count: number;
@@ -23,6 +24,7 @@ export interface CreateShareInput {
   expiresInHours?: number | null;
   password?: string;
   label?: string;
+  permission?: "view" | "edit";
 }
 
 export function createShare(input: CreateShareInput): Promise<Share> {
@@ -32,6 +34,7 @@ export function createShare(input: CreateShareInput): Promise<Share> {
     ...(input.expiresInHours ? { expires_in_hours: input.expiresInHours } : {}),
     ...(input.password ? { password: input.password } : {}),
     ...(input.label ? { label: input.label } : {}),
+    ...(input.permission ? { permission: input.permission } : {}),
   });
 }
 
@@ -41,12 +44,13 @@ export function listShares(): Promise<Share[]> {
 
 export function updateShare(
   id: string,
-  changes: { password?: string | null; expiresInHours?: number | null; label?: string | null },
+  changes: { password?: string | null; expiresInHours?: number | null; label?: string | null; permission?: "view" | "edit" },
 ): Promise<Share> {
   return apiPatch<Share>(`/api/shares/${id}`, {
     ...("password" in changes ? { password: changes.password } : {}),
     ...("expiresInHours" in changes ? { expires_in_hours: changes.expiresInHours } : {}),
     ...("label" in changes ? { label: changes.label } : {}),
+    ...("permission" in changes ? { permission: changes.permission } : {}),
   });
 }
 

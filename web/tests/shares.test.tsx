@@ -32,6 +32,7 @@ const share: Share = {
   url_path: "/s/tok",
   label: null,
   has_password: true,
+  permission: "view",
   expires_at: null,
   created_at: "2026-10-18T00:00:00Z",
   download_count: 3,
@@ -66,6 +67,7 @@ describe("ShareDialog", () => {
         fileId: "f1",
         expiresInHours: 24,
         password: "hunter22",
+        permission: "view",
       }),
     );
     const field = (await screen.findByLabelText("Share link")) as HTMLInputElement;
@@ -78,8 +80,20 @@ describe("ShareDialog", () => {
     renderWithClient(<ShareDialog target={{ kind: "folder", id: "d1", name: "Trip" }} onClose={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "Create link" }));
     await waitFor(() =>
-      expect(api.createShare).toHaveBeenCalledWith({ folderId: "d1", expiresInHours: null, password: undefined }),
+      expect(api.createShare).toHaveBeenCalledWith({ folderId: "d1", expiresInHours: null, password: undefined, permission: "view" }),
     );
+  });
+
+  it("can make an edit link and warns about it", async () => {
+    api.createShare.mockResolvedValue({ ...share, kind: "folder", permission: "edit" });
+    renderWithClient(<ShareDialog target={{ kind: "folder", id: "d1", name: "Trip" }} onClose={() => {}} />);
+    fireEvent.change(screen.getByLabelText(/people with the link can/i), { target: { value: "edit" } });
+    expect(screen.getByText(/anyone who gets this link can change/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create link" }));
+    await waitFor(() =>
+      expect(api.createShare).toHaveBeenCalledWith(expect.objectContaining({ folderId: "d1", permission: "edit" })),
+    );
+    expect(await screen.findByText(/add files and change them/i)).toBeInTheDocument();
   });
 
   it("will not create a link with a too-short password", () => {

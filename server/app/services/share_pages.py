@@ -39,6 +39,8 @@ hr{border:0;border-top:1px dashed #555;margin:16px 0}
 ul{list-style:none;margin:0;padding:0}
 li{display:flex;gap:12px;align-items:center;padding:8px 0;border-bottom:1px dashed #333}
 li .grow{flex:1;min-width:0;overflow-wrap:anywhere}
+li{flex-wrap:wrap}
+form.inline{display:inline-flex;gap:6px;align-items:center}
 img.thumb{width:48px;height:48px;object-fit:cover;border:1px solid #444}
 img.preview,video.preview{max-width:100%;max-height:60vh;border:1px solid #444;background:#111}
 .err{color:#fff;border:1px solid #fff;padding:6px 10px;margin:12px 0}
@@ -89,10 +91,20 @@ def unlock_form(token: str, *, error: bool = False) -> str:
     )
 
 
-_INLINE_KINDS = ("image/", "video/", "audio/")
+def _hidden(name: str, value: object) -> str:
+    return f'<input type="hidden" name="{_e(name)}" value="{_e(str(value))}">'
 
 
-def file_page(token: str, file: File, inline_ok: bool) -> str:
+def message_page(token: str, message: str, back_query: str = "") -> str:
+    """What an editor sees when an action is refused (name taken, too big, over quota...)."""
+    return page(
+        f'<h1>CHOUD</h1><p class="err">{_e(message)}</p>'
+        f'<p><a class="btn" href="/s/{_e(token)}{_e(back_query)}">[ BACK ]</a></p>',
+        "Could not do that",
+    )
+
+
+def file_page(token: str, file: File, inline_ok: bool, editable: bool = False) -> str:
     url = f"/s/{_e(token)}/file/{file.id}"
     mime = (file.mime_type or "").split(";")[0].strip().lower()
     preview = ""
@@ -102,10 +114,19 @@ def file_page(token: str, file: File, inline_ok: bool) -> str:
         preview = f'<p><video class="preview" src="{url}?inline=1" controls></video></p>'
     elif inline_ok and mime.startswith("audio/"):
         preview = f'<p><audio src="{url}?inline=1" controls></audio></p>'
+    replace = ""
+    if editable:
+        replace = (
+            '<hr><p class="muted">You can replace this file with a new version. '
+            "The old version is kept.</p>"
+            f'<form method="post" action="/s/{_e(token)}/upload" enctype="multipart/form-data">'
+            '<input type="file" name="files" required aria-label="New version"> '
+            '<button type="submit">[ UPLOAD NEW VERSION ]</button></form>'
+        )
     return page(
         f"<h1>{_e(file.name)}</h1>"
         f'<p class="muted">{_size(file.size)}</p>{preview}'
-        f'<p><a class="btn" href="{url}">[ DOWNLOAD ]</a></p>',
+        f'<p><a class="btn" href="{url}">[ DOWNLOAD ]</a></p>{replace}',
         file.name,
     )
 
@@ -117,6 +138,8 @@ def folder_page(
     folders: list[Folder],
     files: list[File],
     shared_root: uuid.UUID,
+    current: Folder | None = None,
+    editable: bool = False,
 ) -> str:
     crumbs = []
     for i, folder in enumerate(trail):
@@ -126,10 +149,11 @@ def folder_page(
         else:
             query = "" if folder.id == shared_root else f"?folder={folder.id}"
             crumbs.append(f'<a href="/s/{_e(token)}{query}">{label}</a>')
+    t = _e(token)
     rows = []
     for folder in folders:
         rows.append(
-            f'<li><span class="grow">[+] <a href="/s/{_e(token)}?folder={folder.id}">'
+            f'<li><span class="grow">[+] <a href="/s/{t}?folder={folder.id}">'
             f"{_e(folder.name)}</a></span></li>"
         )
     for file in files:
@@ -137,18 +161,44 @@ def folder_page(
         thumb = ""
         if mime.startswith(("image/", "video/")):
             thumb = (
-                f'<img class="thumb" loading="lazy" alt="" '
-                f'src="/s/{_e(token)}/file/{file.id}/thumbnail">'
+                f'<img class="thumb" loading="lazy" alt="" src="/s/{t}/file/{file.id}/thumbnail">'
+            )
+        controls = ""
+        if editable:
+            controls = (
+                f'<form method="post" action="/s/{t}/rename" class="inline">'
+                f"{_hidden('file_id', file.id)}"
+                f'<input name="name" value="{_e(file.name)}" maxlength="255" required '
+                f'aria-label="New name for {_e(file.name)}"> '
+                '<button type="submit">[ RENAME ]</button></form>'
+                f'<form method="post" action="/s/{t}/trash" class="inline">'
+                f"{_hidden('file_id', file.id)}"
+                f'<button type="submit" aria-label="Delete {_e(file.name)}">[ DELETE ]</button></form>'
             )
         rows.append(
-            f'<li>{thumb}<span class="grow"><a href="/s/{_e(token)}/file/{file.id}/open">'
+            f'<li>{thumb}<span class="grow"><a href="/s/{t}/file/{file.id}/open">'
             f'{_e(file.name)}</a><br><span class="muted">{_size(file.size)}</span></span>'
-            f'<a class="btn" href="/s/{_e(token)}/file/{file.id}">[ DOWNLOAD ]</a></li>'
+            f'<a class="btn" href="/s/{t}/file/{file.id}">[ DOWNLOAD ]</a>{controls}</li>'
         )
     listing = (
         "<ul>" + "".join(rows) + "</ul>" if rows else '<p class="muted">This folder is empty.</p>'
     )
+    tools = ""
+    if editable and current is not None:
+        here = "" if current.id == shared_root else str(current.id)
+        tools = (
+            '<hr><p class="muted">You can add and edit files here. Deleted files go to the '
+            "owner's trash, where they can be restored.</p>"
+            f'<form method="post" action="/s/{t}/upload" enctype="multipart/form-data">'
+            f"{_hidden('folder', here)}"
+            '<input type="file" name="files" multiple required aria-label="Files to add"> '
+            '<button type="submit">[ ADD FILES ]</button></form>'
+            f'<form method="post" action="/s/{t}/mkdir" style="margin-top:10px">'
+            f"{_hidden('parent', here)}"
+            '<input name="name" maxlength="255" required placeholder="new folder name" '
+            'aria-label="New folder name"> <button type="submit">[ NEW FOLDER ]</button></form>'
+        )
     return page(
-        f"<h1>CHOUD</h1><p class=\"muted\">{' / '.join(crumbs)}</p><hr>{listing}",
+        f"<h1>CHOUD</h1><p class=\"muted\">{' / '.join(crumbs)}</p><hr>{listing}{tools}",
         root_name,
     )

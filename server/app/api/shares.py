@@ -33,6 +33,7 @@ def create(
             expires_in_hours=body.expires_in_hours,
             password=body.password,
             label=body.label,
+            permission=body.permission,
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

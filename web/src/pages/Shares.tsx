@@ -69,6 +69,7 @@ export function Shares() {
                   <div className="text-xs text-gray-500">
                     {expiryText(share)}
                     {share.has_password ? " · password" : ""}
+                    {share.permission === "edit" ? " · can edit" : ""}
                     {` · ${share.download_count} download${share.download_count === 1 ? "" : "s"}`}
                     {share.last_accessed_at ? ` · last opened ${formatDateTime(share.last_accessed_at)}` : ""}
                   </div>

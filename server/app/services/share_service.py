@@ -64,6 +64,7 @@ def create_share(
     expires_in_hours: int | None,
     password: str | None,
     label: str | None,
+    permission: str = "view",
 ) -> Share:
     if (file_id is None) == (folder_id is None):
         raise ValueError("give exactly one of file_id or folder_id")
@@ -80,6 +81,7 @@ def create_share(
         folder_id=folder_id,
         token=secrets.token_urlsafe(32),
         label=label,
+        permission=permission,
         password_hash=hash_password(password) if password else None,
         expires_at=_now() + timedelta(hours=expires_in_hours) if expires_in_hours else None,
         download_count=0,
@@ -87,7 +89,12 @@ def create_share(
     db.add(share)
     name = _target_name(db, share) or "shared item"
     activity_service.record(
-        db, owner.id, "shared", file_id=file_id, file_name=name, detail="public link"
+        db,
+        owner.id,
+        "shared",
+        file_id=file_id,
+        file_name=name,
+        detail="public link (can edit)" if permission == "edit" else "public link",
     )
     db.commit()
     db.refresh(share)
@@ -120,6 +127,8 @@ def update_share(db: Session, owner: User, share_id: uuid.UUID, data: dict) -> S
     share = _get_owned(db, owner, share_id)
     if "label" in data:
         share.label = data["label"]
+    if data.get("permission"):
+        share.permission = data["permission"]
     if "password" in data:
         share.password_hash = hash_password(data["password"]) if data["password"] else None
     if "expires_in_hours" in data:
@@ -149,12 +158,17 @@ def describe(db: Session, share: Share) -> dict:
         "url_path": f"/s/{share.token}",
         "label": share.label,
         "has_password": share.password_hash is not None,
+        "permission": share.permission,
         "expires_at": share.expires_at,
         "created_at": share.created_at,
         "download_count": share.download_count,
         "last_accessed_at": share.last_accessed_at,
         "active": is_active(share),
     }
+
+
+def is_editable(share: Share) -> bool:
+    return share.permission == "edit"
 
 
 # --- visitor side ---------------------------------------------------------------------------
