@@ -36,6 +36,8 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    # Authenticator code or recovery code; only needed when the account has two-factor on.
+    otp: str | None = None
 
 
 class RefreshRequest(BaseModel):
@@ -58,4 +60,5 @@ class UserResponse(BaseModel):
     email: str
     is_active: bool
     storage_quota: int
+    totp_enabled: bool = False
     created_at: datetime

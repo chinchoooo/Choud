@@ -212,9 +212,11 @@ class ApiClient(
     fun health(): String =
         send("/api/health", false).use { it.body!!.string() }
 
-    fun login(email: String, password: String) {
+    fun login(email: String, password: String, otp: String = "") {
         val body = send("/api/auth/login", false) {
-            it.post(json(JSONObject().put("email", email).put("password", password)))
+            val payload = JSONObject().put("email", email).put("password", password)
+            if (otp.isNotEmpty()) payload.put("otp", otp)
+            it.post(json(payload))
         }.jsonBody()
         tokens.access = body.getString("access_token")
         tokens.refresh = body.getString("refresh_token")

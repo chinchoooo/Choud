@@ -9,6 +9,8 @@ export function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
+  const [needsCode, setNeedsCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -17,10 +19,15 @@ export function Login() {
     setError(null);
     setIsSubmitting(true);
     try {
-      await login(email, password);
+      await login(email, password, otp.trim() || undefined);
       navigate("/files");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not log in.");
+      if (err instanceof ApiError && err.message === "two_factor_required") {
+        setNeedsCode(true);
+        setError(null);
+      } else {
+        setError(err instanceof ApiError ? err.message : "Could not log in.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -58,6 +65,27 @@ export function Login() {
             className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
           />
         </div>
+        {needsCode && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700" htmlFor="otp">
+              Two-factor code
+            </label>
+            <input
+              id="otp"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              required
+              value={otp}
+              onChange={(event) => setOtp(event.target.value)}
+              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              From your authenticator app, or one of your recovery codes.
+            </p>
+          </div>
+        )}
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button
           type="submit"

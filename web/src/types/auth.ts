@@ -4,6 +4,7 @@ export interface User {
   email: string;
   is_active: boolean;
   storage_quota: number;
+  totp_enabled?: boolean;
   created_at: string;
 }
 

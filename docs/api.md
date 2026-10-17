@@ -31,6 +31,8 @@ POST /api/auth/logout
 GET  /api/auth/me
 ```
 
+Two-factor login (authenticator app): `GET /api/auth/2fa` (status), `POST /api/auth/2fa/setup` (returns `secret` + `otpauth_uri` for a QR code), `POST /api/auth/2fa/enable` `{code}` (returns 10 one-time `recovery_codes`, shown once), `POST /api/auth/2fa/disable` `{password, code}`, `POST /api/auth/2fa/recovery-codes` `{code}` (replaces the old codes). When it is on, `POST /api/auth/login` answers `401 {"detail": "two_factor_required"}` until the request also carries `otp` (an app code or a recovery code). Refresh tokens are unaffected.
+
 `GET /api/auth/registration` — `{mode, open, invite_required, first_account}` for the sign-up page.
 
 Invites (administrator = the oldest account): `POST /api/invites` `{note?, expires_in_hours?, storage_quota_bytes?}` returns a single-use `code`; `GET /api/invites`; `DELETE /api/invites/{id}`. A code is passed as `invite_code` to register and may carry its own storage quota.

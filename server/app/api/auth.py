@@ -30,7 +30,7 @@ from app.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
-from app.services import invite_service
+from app.services import invite_service, two_factor_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 settings = get_settings()
@@ -39,6 +39,9 @@ _INVALID_CREDENTIALS = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
     detail="Incorrect email or password",
 )
+
+# Clients look for exactly this text to know they should ask for a code.
+TWO_FACTOR_REQUIRED = "two_factor_required"
 
 _INVALID_REFRESH_TOKEN = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -106,6 +109,17 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     # distinguishing them would tell an attacker which emails are registered.
     if user is None or not user.is_active or not verify_password(body.password, user.password_hash):
         raise _INVALID_CREDENTIALS
+
+    if user.totp_enabled:
+        # Only reached with the right password, so this does not reveal which emails exist.
+        if not body.otp:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail=TWO_FACTOR_REQUIRED
+            )
+        try:
+            two_factor_service.check(db, user, body.otp)
+        except two_factor_service.TwoFactorFailed as exc:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     return _issue_tokens(user)
 

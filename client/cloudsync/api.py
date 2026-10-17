@@ -43,6 +43,10 @@ class AuthError(ApiError):
     """Credentials missing, wrong or expired."""
 
 
+class TwoFactorRequired(AuthError):
+    """The account has two-factor login on: log in again with a code (`--otp`)."""
+
+
 class VersionConflict(ApiError):
     def __init__(self, detail: str, file_id: str | None, current_version_id: str | None) -> None:
         super().__init__(409, detail)
@@ -175,13 +179,21 @@ class ApiClient:
 
     # --- auth ------------------------------------------------------------------
 
-    def login(self, email: str, password: str) -> None:
-        response = self._send(
-            "POST",
-            "/api/auth/login",
-            lambda: {"json": {"email": email, "password": password}},
-            retry_auth=False,
-        )
+    def login(self, email: str, password: str, otp: str | None = None) -> None:
+        payload = {"email": email, "password": password}
+        if otp:
+            payload["otp"] = otp
+        try:
+            response = self._send(
+                "POST",
+                "/api/auth/login",
+                lambda: {"json": payload},
+                retry_auth=False,
+            )
+        except AuthError as exc:
+            if "two_factor_required" in str(exc):
+                raise TwoFactorRequired(401, "this account needs a two-factor code") from exc
+            raise
         body = response.json()
         self._set_tokens(body["access_token"], body["refresh_token"])
 

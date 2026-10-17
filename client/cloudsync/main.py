@@ -24,7 +24,7 @@ import httpx
 
 from . import __version__
 from . import service as service_module
-from .api import ApiClient, ApiError, ApiUnavailable, AuthError
+from .api import ApiClient, ApiError, ApiUnavailable, AuthError, TwoFactorRequired
 from .backup import backup_targets, lower_priority, run_backup_forever
 from .config import Config, default_config_dir, load_config, save_config
 from .database import StateDB
@@ -182,10 +182,25 @@ def cmd_login(args: argparse.Namespace, config_dir: Path | None, http=None) -> i
         config.access_token, config.refresh_token = access, refresh
 
     api = ApiClient(server, http=http, on_tokens=remember)
+    otp = args.otp or os.environ.get("CLOUDSYNC_OTP")
     try:
-        api.login(email, password)
-    except AuthError:
-        print("Login failed: wrong email or password.", file=sys.stderr)
+        try:
+            api.login(email, password, otp)
+        except TwoFactorRequired:
+            if otp or not sys.stdin.isatty():
+                raise
+            api.login(email, password, input("Two-factor code (or a recovery code): ").strip())
+    except TwoFactorRequired:
+        print("This account uses two-factor login: add --otp <code>.", file=sys.stderr)
+        return EXIT_AUTH
+    except AuthError as exc:
+        if "email or password" in exc.detail:
+            message = "wrong email or password."
+        elif "not right" in exc.detail:
+            message = "wrong two-factor code."
+        else:
+            message = exc.detail
+        print(f"Login failed: {message}", file=sys.stderr)
         return EXIT_AUTH
     except ApiUnavailable as exc:
         print(f"Could not reach {server}: {exc}", file=sys.stderr)
@@ -399,6 +414,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         help="folder to keep in sync (default: ~/CloudSync); repeat it in backup mode",
     )
+    login.add_argument("--otp", help="two-factor code or recovery code, if the account uses one")
     login.add_argument(
         "--mode", choices=["sync", "backup"], help="sync both ways (default) or upload-only backup"
     )

@@ -98,6 +98,20 @@ file contents.
   safety check before it did anything. The checks above are covered by tests, but an independent
   attack pass is still worth doing before the server is exposed beyond a tailnet.
 
+## Two-factor login (Phase 13)
+
+- Optional per account: standard TOTP (RFC 6238, SHA-1, 6 digits, 30 s) with HMAC from the standard
+  library, checked against the RFC test vectors. Any authenticator app works.
+- It is only required at **login**. After that, the app/desktop client/phone keep working with their
+  refresh tokens, so a background backup is never interrupted by a code prompt.
+- A code works once (the last used 30-second step is remembered), the previous and next window are
+  accepted for clock drift, and five wrong codes lock code entry for that account for 15 minutes.
+- Ten single-use recovery codes are made when it is turned on (stored only as SHA-256 hashes, shown
+  once). Turning it off needs the password **and** a current code.
+- The TOTP secret is stored in the database as base32 text. Someone who can read the database can
+  read it, but they could already read everything else the database protects.
+- Passkeys are not built.
+
 ## Who can register
 
 `REGISTRATION_MODE` is `invite` by default: the first account on an empty server is free, every

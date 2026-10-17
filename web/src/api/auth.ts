@@ -11,6 +11,7 @@ export interface RegisterInput {
 export interface LoginInput {
   email: string;
   password: string;
+  otp?: string;
 }
 
 export function register(input: RegisterInput): Promise<User> {

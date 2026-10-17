@@ -113,6 +113,7 @@ class MainActivity : Activity(), Host {
         val url = field("Server URL, e.g. http://100.x.y.z", settings.serverUrl, InputType.TYPE_TEXT_VARIATION_URI)
         val email = field("Email", type = InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
         val password = field("Password", type = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        val otp = field("Two-factor code (only if you turned it on)", type = InputType.TYPE_CLASS_NUMBER)
         val device = field("This phone's name", settings.deviceName)
         val message = ui.text("", 13f, p.danger)
 
@@ -121,6 +122,7 @@ class MainActivity : Activity(), Host {
         column.addView(url, ui.matchWidth(24))
         column.addView(email, ui.matchWidth(10))
         column.addView(password, ui.matchWidth(10))
+        column.addView(otp, ui.matchWidth(10))
         column.addView(device, ui.matchWidth(10))
         lateinit var loginButton: android.widget.Button
         loginButton = ui.button("Log in", primary = true) {
@@ -134,11 +136,15 @@ class MainActivity : Activity(), Host {
                     settings.deviceName = safeDeviceName(device.text.toString())
                     EventLog.log("login: $serverUrl as ${email.text.toString().trim()}, device '${settings.deviceName}'")
                     ApiClient(serverUrl, settings, log = EventLog::log)
-                        .login(email.text.toString().trim(), password.text.toString())
+                        .login(email.text.toString().trim(), password.text.toString(), otp.text.toString().trim())
                     null
                 } catch (e: Exception) {
                     EventLog.log("login failed: ${e.javaClass.simpleName}: ${e.message}")
-                    e.message ?: e.javaClass.simpleName
+                    if (e.message?.contains("two_factor_required") == true) {
+                        "this account uses two-factor login: type the code from your authenticator app"
+                    } else {
+                        e.message ?: e.javaClass.simpleName
+                    }
                 }
                 runOnUiThread {
                     loginButton.isEnabled = true

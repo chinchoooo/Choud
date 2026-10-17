@@ -17,6 +17,7 @@ const NAV = [
   { to: "/recent", label: "Recent" },
   { to: "/shares", label: "Shared links" },
   { to: "/invites", label: "Invites" },
+  { to: "/security", label: "Security" },
   { to: "/activity", label: "Activity" },
   { to: "/trash", label: "Trash" },
 ];
