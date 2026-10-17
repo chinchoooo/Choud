@@ -11,6 +11,7 @@ from app.models import (  # noqa: F401
     activity,
     favorite,
     file,
+    file_text,
     file_version,
     folder,
     invite,

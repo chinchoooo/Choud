@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # "open" (anyone who can reach the server) or "closed" (only the first account).
     registration_mode: str = "invite"
 
+    # Search inside files (app/services/index_service.py): a background pass every N seconds
+    # extracts the text of up to INDEX_BATCH new or changed files. 0 seconds disables it.
+    index_interval_seconds: int = 60
+    index_batch: int = 25
+
     # Auth endpoint rate limiting (app/core/rate_limit.py).
     rate_limit_enabled: bool = True
 

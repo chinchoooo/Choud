@@ -29,10 +29,11 @@ import logging
 import posixpath
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.file import File
+from app.models.file_text import FileText
 from app.models.file_version import FileVersion
 from app.models.folder import Folder
 from app.models.user import User
@@ -147,6 +148,7 @@ def purge_file(db: Session, owner: User, file_id: uuid.UUID) -> int:
     # File and FileVersion have no ORM relationship(), so SQLAlchemy can't
     # order these DELETEs itself: flush the versions first or PostgreSQL
     # rejects deleting the file while file_versions still references it.
+    db.execute(delete(FileText).where(FileText.file_id == file.id))  # derived search text
     db.flush()
     db.delete(file)
     db.commit()

@@ -6,6 +6,7 @@ import os
 os.environ.setdefault("MAINTENANCE_INTERVAL_SECONDS", "0")
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 os.environ.setdefault("REGISTRATION_MODE", "open")
+os.environ.setdefault("INDEX_INTERVAL_SECONDS", "0")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient
@@ -23,6 +24,7 @@ from app.models import (  # noqa: F401
     activity,
     favorite,
     file,
+    file_text,
     file_version,
     folder,
     invite,

@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core import database
 from app.core.config import get_settings
-from app.services import gc_service, media_cache, upload_service
+from app.services import gc_service, index_service, media_cache, upload_service
 from app.services.storage_service import get_storage_service
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,29 @@ def run_maintenance_once(session_factory: Callable[[], Session] | None = None) -
         return {}
     finally:
         db.close()
+
+
+def run_index_once(session_factory: Callable[[], Session] | None = None) -> dict[str, int]:
+    """Indexes the text of a few new or changed files (search inside documents)."""
+    db = (session_factory or database.SessionLocal)()
+    try:
+        counts = index_service.index_pending(db, get_settings().index_batch)
+        if any(counts.values()):
+            logger.info("index: %s", counts)
+        return counts
+    except Exception:
+        db.rollback()
+        logger.exception("indexing failed; will retry at the next interval")
+        return {}
+    finally:
+        db.close()
+
+
+async def index_loop(interval_seconds: float) -> None:
+    """Keeps the search index current, a small batch at a time."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        await asyncio.to_thread(run_index_once)
 
 
 async def maintenance_loop(interval_seconds: float) -> None:

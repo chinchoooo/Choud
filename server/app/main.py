@@ -26,7 +26,7 @@ from app.api import (
 )
 from app.core.config import enforce_safe_settings, get_settings
 from app.core.logging import configure_logging
-from app.core.maintenance import maintenance_loop
+from app.core.maintenance import index_loop, maintenance_loop
 from app.services.errors import PayloadTooLargeError, QuotaError
 
 settings = get_settings()
@@ -38,13 +38,15 @@ enforce_safe_settings(settings)
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Starts the housekeeping loop with the app and stops it on shutdown."""
-    task = None
+    tasks = []
     if settings.maintenance_interval_seconds > 0:
-        task = asyncio.create_task(maintenance_loop(settings.maintenance_interval_seconds))
+        tasks.append(asyncio.create_task(maintenance_loop(settings.maintenance_interval_seconds)))
+    if settings.index_interval_seconds > 0:
+        tasks.append(asyncio.create_task(index_loop(settings.index_interval_seconds)))
     try:
         yield
     finally:
-        if task is not None:
+        for task in tasks:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task

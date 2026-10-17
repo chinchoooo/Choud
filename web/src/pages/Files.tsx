@@ -73,9 +73,18 @@ export function Files() {
     () => (isSearching ? (searchQuery.data?.folders ?? []) : (directory.data?.subfolders ?? [])),
     [isSearching, searchQuery.data, directory.data],
   );
-  const files = useMemo(
+  const nameFiles = useMemo(
     () => (isSearching ? (searchQuery.data?.files ?? []) : (directory.data?.files ?? [])),
     [isSearching, searchQuery.data, directory.data],
+  );
+  const contentHits = useMemo(
+    () => (isSearching ? (searchQuery.data?.content ?? []) : []),
+    [isSearching, searchQuery.data],
+  );
+  // The viewer steps through name matches first, then the files found by their contents.
+  const files = useMemo(
+    () => [...nameFiles, ...contentHits.map((hit) => hit.file)],
+    [nameFiles, contentHits],
   );
   const loading = isSearching ? searchQuery.isLoading : directory.isLoading;
   const failed = isSearching ? searchQuery.isError : directory.isError;
@@ -227,12 +236,14 @@ export function Files() {
         {!loading && !failed && (
           <FileCollection
             folders={folders}
-            files={files}
+            files={nameFiles}
             mode={mode}
             showPath={isSearching}
             empty={
               isSearching
-                ? "No matches."
+                ? contentHits.length > 0
+                  ? "No file names match."
+                  : "No matches."
                 : "This folder is empty. Drop files here or use “Upload files”."
             }
             onOpenFolder={openFolder}
@@ -250,6 +261,25 @@ export function Files() {
             expandedFor={versionsFor}
             renderExpanded={(file) => <VersionHistory file={file} />}
           />
+        )}
+        {!loading && !failed && contentHits.length > 0 && (
+          <section aria-label="Matches inside files" className="mt-6">
+            <h2 className="text-sm font-medium text-gray-900">Found inside files</h2>
+            <ul className="mt-2 divide-y divide-gray-200 border border-gray-200 bg-white rounded-lg">
+              {contentHits.map((hit, index) => (
+                <li key={hit.file.id}>
+                  <button
+                    onClick={() => setViewerIndex(nameFiles.length + index)}
+                    className="block w-full px-4 py-3 text-left hover:bg-gray-50"
+                  >
+                    <span className="block text-sm font-medium text-gray-900">{hit.file.name}</span>
+                    <span className="block text-xs text-gray-500">{hit.file.folder_path || "My files"}</span>
+                    <span className="mt-1 block text-sm text-gray-700">{hit.snippet}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
       </div>
 

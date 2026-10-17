@@ -11,7 +11,8 @@ argon2-cffi==23.1.0
 httpx==0.28.1
 python-multipart==0.0.20
 pillow==11.0.0
+pypdf==5.1.0
 
 pytest==8.3.4
 pytest-cov==6.0.0
-ruff==0.8.4
+ruff==0.8.4

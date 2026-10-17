@@ -339,6 +339,16 @@ Limits: a single-request upload is at most 128 MiB (`413` beyond that; use the c
 a chunk is at most 64 MiB and **must be exactly the size the session promised**, a session has at
 most 20,000 chunks, and an upload that would exceed the user's quota is a `413`.
 
+### Search inside files (Phase 14)
+
+`GET /api/search?q=...` returns `{folders, files, content}`. `folders` and `files` are name matches
+(substring, case-insensitive). `content` lists other files whose **text** matches, each as
+`{file, snippet}` with the passage that matched. Text is extracted in the background (plain text and
+code, PDF, .docx/.pptx/.odt/.ods) a few files at a time, so a new upload becomes searchable within
+about a minute. On PostgreSQL the match is whole-word and ranked; trashed files and other
+people's files are never returned. `python -m app.cli index [--all]` indexes everything now or
+rebuilds from scratch (`INDEX_INTERVAL_SECONDS=0` turns the background pass off).
+
 ### Sharing: public links (Phase 12)
 
 | Endpoint | What it does |

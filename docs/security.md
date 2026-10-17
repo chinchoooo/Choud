@@ -98,6 +98,17 @@ file contents.
   safety check before it did anything. The checks above are covered by tests, but an independent
   attack pass is still worth doing before the server is exposed beyond a tailnet.
 
+## Search indexing (Phase 14)
+
+- Text is read from files in the background. Plain-text types are read in-process (first 5 MB, binary
+  files skipped); **PDFs and Office/OpenDocument files are parsed in a separate subprocess** with a
+  60-second timeout and (on Linux) a 1 GiB memory and CPU limit, because anyone holding an edit link
+  can upload such files. A file that cannot be parsed is recorded as failed and not retried.
+- Zip parts larger than 30 MB uncompressed are ignored (zip-bomb guard); at most 1,000,000 characters
+  are kept per file.
+- The index is derived data: results are only served when the stored text matches the file's current
+  content hash, and it is deleted with the file. Queries are parameterised and `%` / `_` match literally.
+
 ## Two-factor login (Phase 13)
 
 - Optional per account: standard TOTP (RFC 6238, SHA-1, 6 digits, 30 s) with HMAC from the standard

@@ -63,6 +63,15 @@ class DirectoryListing(BaseModel):
     files: list[FileResponse]
 
 
+class ContentHit(BaseModel):
+    """A file whose *contents* matched, with the passage that matched."""
+
+    file: FileResponse
+    snippet: str
+
+
 class SearchResponse(BaseModel):
     folders: list[FolderResponse]
     files: list[FileResponse]
+    # Files matched by what is written inside them (not by name). Empty until indexing catches up.
+    content: list[ContentHit] = []

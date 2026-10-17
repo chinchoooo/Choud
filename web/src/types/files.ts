@@ -31,9 +31,16 @@ export interface DirectoryListing {
   files: FileResponse[];
 }
 
+export interface ContentHit {
+  file: FileResponse;
+  snippet: string;
+}
+
 export interface SearchResponse {
   folders: FolderResponse[];
   files: FileResponse[];
+  /** Files matched by the text inside them (empty until the server has indexed them). */
+  content: ContentHit[];
 }
 
 export interface PhotoPage {
