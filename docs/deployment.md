@@ -229,3 +229,22 @@ against it: `COMPOSE_PROJECT_NAME=pcverify COMPOSE_ENV_FILES=/tmp/verify.env scr
 [`errors.md`](errors.md) lists real problems hit while setting this up and
 their fixes — read it before debugging a failed `docker compose up` from
 scratch. `scripts/preflight.sh` catches most of them up front.
+
+## Alerts and garbage collection (Phase 15)
+
+**Failure alerts.** Set `ALERT_WEBHOOK_URL` in `.env` to an [ntfy](https://ntfy.sh) topic URL
+(pick a long, secret topic name and subscribe in the ntfy phone app), a Discord webhook or a Slack
+webhook. The 5-minute health timer and the nightly backup then message you when something
+fails, and again when it recovers. They speak only on *changes*: one alert when a check starts
+failing, one reminder per `ALERT_REMINDER_HOURS` (default 24) while it keeps failing, one
+"recovered" message. A backup with no second copy (`BACKUP_COPY_TO` missing or unmounted) also
+raises an alert, because that is not really a backup. Delivery problems never make the script fail.
+Try it: `ALERT_WEBHOOK_URL=... scripts/healthcheck.sh` while the stack is stopped.
+
+**Garbage collection.** Purging a file already frees the bytes only it used. What GC finds are
+orphans from things that went wrong half way (a failed delete, an abandoned upload's chunks, staging
+copies from a crash). `scripts/gc.sh` only *reports* by default; `scripts/gc.sh --delete` removes
+them. Nothing referenced by any file or version of any user is ever removed (trash included), and
+nothing younger than 72 hours (`GC_GRACE_HOURS`), because an upload stores its bytes just before its
+database row is saved. The backend also reports once a day on its own; set
+`GC_DELETE_ENABLED=true` to let that daily pass delete too.

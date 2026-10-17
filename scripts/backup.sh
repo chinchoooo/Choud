@@ -18,6 +18,12 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 if [ -f .env ]; then set -a; . ./.env; set +a; fi
+# shellcheck source=lib/notify.sh
+. scripts/lib/notify.sh
+
+# Any failure below (set -e, or an explicit "backup FAILED") ends up here and raises an alert
+# (when ALERT_WEBHOOK_URL is set; see scripts/lib/notify.sh).
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then notify_event backup fail "Choud backup FAILED" "scripts/backup.sh exited with code $rc on $(hostname)"; fi' EXIT
 
 POSTGRES_USER="${POSTGRES_USER:-cloud}"
 POSTGRES_DB="${POSTGRES_DB:-personal_cloud}"
@@ -54,14 +60,17 @@ tar -tf "${tmp_dir}/storage.tar" >/dev/null \
 mv "$tmp_dir" "$out_dir"
 trap - ERR
 echo "Backup written to ${out_dir} ($(du -sh "$out_dir" | cut -f1))"
+notify_event backup ok "Choud backup" "Backup ${timestamp} written ($(du -sh "$out_dir" | cut -f1))"
 
 # --- off-site / second copy ---------------------------------------------------
 if [ -n "${BACKUP_COPY_TO:-}" ]; then
     if [ -d "$BACKUP_COPY_TO" ]; then
         cp -r "$out_dir" "${BACKUP_COPY_TO}/"
         echo "Copied to ${BACKUP_COPY_TO}/${timestamp}"
+        notify_event backup-copy ok "Choud backup copy" "Second copy written to ${BACKUP_COPY_TO}"
     else
         echo "WARNING: BACKUP_COPY_TO='${BACKUP_COPY_TO}' is not a directory (drive not mounted?) - no second copy made" >&2
+        notify_event backup-copy fail "Choud backup has no second copy" "BACKUP_COPY_TO=${BACKUP_COPY_TO} is not a directory (drive not mounted?). The backup only exists on this machine."
     fi
 else
     echo "NOTE: BACKUP_COPY_TO is not set - this backup only exists on this machine."

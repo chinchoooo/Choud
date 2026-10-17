@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     # between runs; 0 disables it.
     maintenance_interval_seconds: int = 3600
 
+    # Garbage collection of unreferenced storage (app/services/gc_service.py). The daily pass inside
+    # the backend only REPORTS what it would remove unless GC_DELETE_ENABLED is true; deleting by
+    # hand is `python -m app.cli gc --delete` (scripts/gc.sh). Objects younger than the grace period
+    # are never touched.
+    gc_enabled: bool = True
+    gc_delete_enabled: bool = False
+    gc_grace_hours: float = 72.0
+    gc_interval_hours: float = 24.0
+
     # Auth endpoint rate limiting (app/core/rate_limit.py).
     rate_limit_enabled: bool = True
 

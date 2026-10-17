@@ -11,14 +11,28 @@ API down, and a missed run is simply retried at the next interval.
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from app.core import database
-from app.services import media_cache, upload_service
+from app.core.config import get_settings
+from app.services import gc_service, media_cache, upload_service
+from app.services.storage_service import get_storage_service
 
 logger = logging.getLogger(__name__)
+
+# The first garbage-collection pass is one interval after the backend starts (not at startup, when
+# the engine may still be coming up), then once per interval.
+_last_gc = time.monotonic()
+
+
+def _gc_due() -> bool:
+    settings = get_settings()
+    interval = settings.gc_interval_hours * 3600
+    return settings.gc_enabled and (time.monotonic() - _last_gc) >= interval
 
 
 def run_maintenance_once(session_factory: Callable[[], Session] | None = None) -> dict[str, int]:
@@ -32,7 +46,20 @@ def run_maintenance_once(session_factory: Callable[[], Session] | None = None) -
         evicted = media_cache.evict_old()
         if evicted:
             logger.info("maintenance: removed %d stale preview cache file(s)", evicted)
-        return {"uploads_swept": swept, "preview_cache_evicted": evicted}
+        result = {"uploads_swept": swept, "preview_cache_evicted": evicted}
+        if _gc_due():
+            global _last_gc
+            _last_gc = time.monotonic()
+            settings = get_settings()
+            report = gc_service.run_gc(
+                db,
+                get_storage_service(),
+                Path(settings.storage_root),
+                delete=settings.gc_delete_enabled,
+                grace_hours=settings.gc_grace_hours,
+            )
+            result["gc_orphans"] = report.orphan_objects
+        return result
     except Exception:
         db.rollback()
         logger.exception("maintenance run failed; will retry at the next interval")
