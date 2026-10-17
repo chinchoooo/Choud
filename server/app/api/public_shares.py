@@ -41,6 +41,16 @@ def _not_found() -> HTMLResponse:
     return _html(share_pages.not_found(), 404)
 
 
+def _reader_gate(
+    request: Request, db: Session, token: str
+) -> tuple[Share | None, HTMLResponse | None]:
+    """Like `_gate`, but a file-request (drop) link can never be read from."""
+    share, blocked = _gate(request, db, token)
+    if blocked is None and share_service.is_drop(share):
+        return None, _not_found()
+    return share, blocked
+
+
 def _gate(request: Request, db: Session, token: str) -> tuple[Share | None, HTMLResponse | None]:
     """The share if the visitor may see it; otherwise the page to show instead."""
     share = share_service.find_active(db, token)
@@ -56,12 +66,19 @@ def view(
     token: str,
     request: Request,
     folder: uuid.UUID | None = Query(default=None),
+    sent: int = Query(default=0, ge=0, le=100),
     db: Session = Depends(get_db),
 ):
     share, blocked = _gate(request, db, token)
     if blocked is not None:
         return blocked
     share_service.record_access(db, share, download=False)
+
+    if share_service.is_drop(share):
+        root = share_service.folder_in_share(db, share, None)
+        if root is None:
+            return _not_found()
+        return _html(share_pages.drop_page(token, root.name, sent=sent))
 
     if share.file_id is not None:
         file = file_service.get_file(db, _owner(db, share), share.file_id)
@@ -122,7 +139,7 @@ def unlock(
 @router.get("/{token}/file/{file_id}/open", response_class=HTMLResponse, dependencies=[_view_limit])
 def open_file(token: str, file_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
     """A preview page for one file inside a shared folder."""
-    share, blocked = _gate(request, db, token)
+    share, blocked = _reader_gate(request, db, token)
     if blocked is not None:
         return blocked
     file = share_service.file_in_share(db, share, file_id)
@@ -140,7 +157,7 @@ def download(
     inline: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
-    share, blocked = _gate(request, db, token)
+    share, blocked = _reader_gate(request, db, token)
     if blocked is not None:
         return blocked
     file = share_service.file_in_share(db, share, file_id)
@@ -165,7 +182,7 @@ def download(
 
 @router.get("/{token}/file/{file_id}/thumbnail", dependencies=[_view_limit])
 def thumbnail(token: str, file_id: uuid.UUID, request: Request, db: Session = Depends(get_db)):
-    share, blocked = _gate(request, db, token)
+    share, blocked = _reader_gate(request, db, token)
     if blocked is not None:
         return blocked
     file = share_service.file_in_share(db, share, file_id)
@@ -211,9 +228,19 @@ def _refused(token: str, message: str, status_code: int, back: str = "") -> HTML
     return _html(share_pages.message_page(token, message, back), status_code)
 
 
-def _editor(
+def _uploader(
     request: Request, db: Session, token: str
 ) -> tuple[Share | None, HTMLResponse | None]:
+    """The share if the visitor may add files: an edit link or a file-request (drop) link."""
+    share, blocked = _gate(request, db, token)
+    if blocked is not None:
+        return None, blocked
+    if not (share_service.is_editable(share) or share_service.is_drop(share)):
+        return None, _refused(token, "This link is view-only.", 403)
+    return share, None
+
+
+def _editor(request: Request, db: Session, token: str) -> tuple[Share | None, HTMLResponse | None]:
     """The share if the visitor is allowed in AND the link is an edit link."""
     share, blocked = _gate(request, db, token)
     if blocked is not None:
@@ -246,12 +273,15 @@ async def upload(
     files: list[UploadFile] = FastAPIFile(...),
     db: Session = Depends(get_db),
 ):
-    share, blocked = _editor(request, db, token)
+    share, blocked = _uploader(request, db, token)
     if blocked is not None:
         return blocked
     owner = _owner(db, share)
     if len(files) > MAX_FILES_PER_UPLOAD:
         return _refused(token, f"Add at most {MAX_FILES_PER_UPLOAD} files at a time.", 422)
+
+    if share_service.is_drop(share):
+        return await _drop_upload(db, share, owner, token, files)
 
     if share.file_id is not None:
         # A file link: the only edit is a new version of that one file, under its own name.
@@ -279,6 +309,33 @@ async def upload(
         return _refused(token, "The file could not be stored. Try again.", 502, back)
     share_service.record_access(db, share, download=False)
     return RedirectResponse(f"/s/{token}{back}", status_code=303)
+
+
+async def _drop_upload(db: Session, share: Share, owner: User, token: str, files: list[UploadFile]):
+    """A file request: files go into the shared folder, never over anything already there."""
+    root = share_service.folder_in_share(db, share, None)
+    if root is None:
+        return _not_found()
+    sent = 0
+    try:
+        for upload_file in files:
+            name = share_service.free_name(
+                db, owner, root.id, file_service._validate_filename(upload_file.filename)
+            )
+            await file_service.upload_file(db, owner, upload_file, root.id, name, expect_new=True)
+            sent += 1
+    except file_service.ValidationError as exc:
+        return _refused(token, str(exc), 422)
+    except file_service.ConflictError as exc:
+        return _refused(token, str(exc), 409)
+    except (PayloadTooLargeError, QuotaError) as exc:
+        return _refused(token, str(exc), 413)
+    except file_service.StorageError:
+        return _refused(token, "The file could not be stored. Try again.", 502)
+    except ValueError as exc:
+        return _refused(token, str(exc), 409)
+    share_service.record_access(db, share, download=False)
+    return RedirectResponse(f"/s/{token}?sent={sent}", status_code=303)
 
 
 @router.post("/{token}/mkdir", dependencies=[_edit_limit])

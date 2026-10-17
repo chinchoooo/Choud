@@ -63,6 +63,46 @@ def decorate(db: Session, user: User, files: list[File]) -> list[FileResponse]:
     return out
 
 
+class MemoryGroup(BaseModel):
+    year: int
+    years_ago: int
+    files: list[FileResponse]
+
+
+@router.get("/memories", response_model=list[MemoryGroup])
+def memories(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Photos and videos from this day (month and day) in earlier years, newest year first."""
+    today = datetime.now().date()
+    rows = db.execute(
+        select(File.id, File.taken_at, File.modified_at, File.created_at).where(
+            File.owner_id == current_user.id,
+            File.deleted_at.is_(None),
+            or_(File.mime_type.like("image/%"), File.mime_type.like("video/%")),
+        )
+    ).all()
+    by_year: dict[int, list[uuid.UUID]] = {}
+    for row in rows:
+        when = row.taken_at or row.modified_at or row.created_at
+        if when and when.month == today.month and when.day == today.day and when.year < today.year:
+            by_year.setdefault(when.year, []).append(row.id)
+    groups = []
+    for year in sorted(by_year, reverse=True)[:10]:
+        files = list(
+            db.scalars(select(File).where(File.id.in_(by_year[year][:60])).order_by(File.name))
+        )
+        groups.append(
+            MemoryGroup(
+                year=year,
+                years_ago=today.year - year,
+                files=decorate(db, current_user, files),
+            )
+        )
+    return groups
+
+
 @router.get("/recent", response_model=list[FileResponse])
 def recent(
     limit: int = Query(default=30, ge=1, le=200),

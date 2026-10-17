@@ -34,6 +34,7 @@ def create(
             password=body.password,
             label=body.label,
             permission=body.permission,
+            max_downloads=body.max_downloads,
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -58,6 +59,8 @@ def update(
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return share_service.describe(db, share)
 
 

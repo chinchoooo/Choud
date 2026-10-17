@@ -26,7 +26,7 @@ from app.models.file import File
 from app.models.folder import Folder
 from app.models.share import Share
 from app.models.user import User
-from app.services import activity_service, file_service
+from app.services import activity_service, file_service, version_service
 from app.services.errors import NotFoundError
 
 UNLOCK_SECONDS = 3600
@@ -48,6 +48,8 @@ def is_active(share: Share, now: datetime | None = None) -> bool:
     now = now or _now()
     if share.revoked_at is not None:
         return False
+    if share.max_downloads is not None and (share.download_count or 0) >= share.max_downloads:
+        return False  # a one-time (or N-time) link that has been used up
     expires = _aware(share.expires_at)
     return expires is None or expires > now
 
@@ -65,6 +67,7 @@ def create_share(
     password: str | None,
     label: str | None,
     permission: str = "view",
+    max_downloads: int | None = None,
 ) -> Share:
     if (file_id is None) == (folder_id is None):
         raise ValueError("give exactly one of file_id or folder_id")
@@ -82,6 +85,7 @@ def create_share(
         token=secrets.token_urlsafe(32),
         label=label,
         permission=permission,
+        max_downloads=max_downloads,
         password_hash=hash_password(password) if password else None,
         expires_at=_now() + timedelta(hours=expires_in_hours) if expires_in_hours else None,
         download_count=0,
@@ -94,7 +98,9 @@ def create_share(
         "shared",
         file_id=file_id,
         file_name=name,
-        detail="public link (can edit)" if permission == "edit" else "public link",
+        detail={"edit": "public link (can edit)", "drop": "file request link"}.get(
+            permission, "public link"
+        ),
     )
     db.commit()
     db.refresh(share)
@@ -128,7 +134,11 @@ def update_share(db: Session, owner: User, share_id: uuid.UUID, data: dict) -> S
     if "label" in data:
         share.label = data["label"]
     if data.get("permission"):
+        if data["permission"] == "drop" and share.file_id is not None:
+            raise ValueError("a file request (drop) link needs a folder")
         share.permission = data["permission"]
+    if "max_downloads" in data:
+        share.max_downloads = data["max_downloads"]
     if "password" in data:
         share.password_hash = hash_password(data["password"]) if data["password"] else None
     if "expires_in_hours" in data:
@@ -159,6 +169,7 @@ def describe(db: Session, share: Share) -> dict:
         "label": share.label,
         "has_password": share.password_hash is not None,
         "permission": share.permission,
+        "max_downloads": share.max_downloads,
         "expires_at": share.expires_at,
         "created_at": share.created_at,
         "download_count": share.download_count,
@@ -169,6 +180,26 @@ def describe(db: Session, share: Share) -> dict:
 
 def is_editable(share: Share) -> bool:
     return share.permission == "edit"
+
+
+def free_name(db: Session, owner: User, folder_id: uuid.UUID | None, name: str) -> str:
+    """`name`, or `name (2).ext`, `name (3).ext`... so a file request never overwrites anything."""
+    if version_service.find_live_file(db, owner, folder_id, name) is None:
+        return name
+    stem, dot, ext = name.rpartition(".")
+    if not dot or not stem:
+        stem, ext = name, ""
+    else:
+        ext = "." + ext
+    for number in range(2, 1000):
+        candidate = f"{stem[: 250 - len(ext) - 6]} ({number}){ext}"
+        if version_service.find_live_file(db, owner, folder_id, candidate) is None:
+            return candidate
+    raise ValueError("too many files with that name")
+
+
+def is_drop(share: Share) -> bool:
+    return share.permission == "drop"
 
 
 # --- visitor side ---------------------------------------------------------------------------

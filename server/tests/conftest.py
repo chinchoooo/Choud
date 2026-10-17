@@ -28,6 +28,7 @@ from app.models import (  # noqa: F401
     file_version,
     folder,
     invite,
+    login_event,
     recovery_code,
     share,
     upload,

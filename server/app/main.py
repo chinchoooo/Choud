@@ -8,14 +8,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import (
+    admin,
     auth,
     files,
     folders,
     health,
+    insights,
     invites,
     library,
     media,
     public_shares,
+    rewind,
     search,
     shares,
     sync,
@@ -86,6 +89,9 @@ app.include_router(media.router)
 app.include_router(library.router)
 app.include_router(shares.router)
 app.include_router(invites.router)
+app.include_router(rewind.router)
+app.include_router(insights.router)
+app.include_router(admin.router)
 app.include_router(two_factor.router)
 app.include_router(public_shares.router)
 

@@ -339,6 +339,43 @@ Limits: a single-request upload is at most 128 MiB (`413` beyond that; use the c
 a chunk is at most 64 MiB and **must be exactly the size the session promised**, a session has at
 most 20,000 chunks, and an upload that would exceed the user's quota is a `413`.
 
+### Rewind (browse and restore the past)
+
+`GET /api/rewind/browse?at=<ISO time>&folder_id=` shows a folder as it was at that time: its folders
+that already existed and its files with the content they had then, each flagged `changed` (today's
+content differs) and `trashed` (in the trash today). `POST /api/rewind/restore-file`
+`{file_id, at}` puts one file back. `POST /api/rewind/restore-tree` `{folder_id?, at, dry_run}`
+previews (the default) or performs putting a whole folder tree, or everything, back. A restore adds a
+**new version** (the version you rewound away from stays in history), takes files out of the trash,
+and **never touches files created after that time**. Times in the future are refused. Names and
+locations are the current ones (renames/moves are not recorded) and purged files cannot return.
+
+### Space insights
+
+`GET /api/insights/space` returns `logical_bytes` (every version counted in full), `stored_bytes`
+(identical content once), `dedup_saved_bytes`, `current_bytes`, `trash_bytes`, `history_bytes` (only
+held by old versions), `by_type`, the `biggest` files and groups of `duplicates` (same content under
+different names). `POST /api/insights/prune-versions` `{keep, dry_run}` deletes all but the newest
+`keep` versions of each file (the current one always stays; objects are removed from disk only if
+nothing else uses them). It previews unless `dry_run` is `false`, and pruned versions cannot be
+restored or rewound to.
+
+### Memories, sign-in history and the server view
+
+`GET /api/library/memories`: photos and videos from this day in earlier years, grouped by year.
+`GET /api/auth/security-log`: your recent sign-in attempts (time, address, client, success, and
+`new_device` for a success from an unseen address + client). `GET /api/admin/server`
+(administrator only): disk free/total, users, files, versions, logical vs stored bytes, uploads in
+progress, search-index backlog and failures, registration mode.
+
+### File requests and one-time links
+
+`POST /api/shares` also accepts `permission: "drop"` (folders only) and `max_downloads`. A **drop**
+link is a file request: the visitor page only has an upload form, shows nothing that is already in the
+folder, cannot download, preview, rename or delete, and never overwrites (a clashing name becomes
+`name (2).ext`). `max_downloads` makes the link stop working for everyone once that many downloads
+have happened (1 = a one-time link); it can be raised, removed or changed with `PATCH`.
+
 ### Search inside files (Phase 14)
 
 `GET /api/search?q=...` returns `{folders, files, content}`. `folders` and `files` are name matches

@@ -5,7 +5,7 @@ Implemented in Phase 2 (Authentication). See docs/architecture.md.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -30,7 +30,7 @@ from app.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
-from app.services import invite_service, two_factor_service
+from app.services import invite_service, security_service, two_factor_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 settings = get_settings()
@@ -102,12 +102,16 @@ def registration_info(db: Session = Depends(get_db)) -> dict:
     response_model=TokenResponse,
     dependencies=[Depends(rate_limit("login", 10, 60))],
 )
-def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+def login(
+    body: LoginRequest, request: Request, db: Session = Depends(get_db)
+) -> TokenResponse:
     user = db.execute(select(User).where(User.email == body.email)).scalar_one_or_none()
 
     # Deliberately identical error for "no such user" and "wrong password" —
     # distinguishing them would tell an attacker which emails are registered.
     if user is None or not user.is_active or not verify_password(body.password, user.password_hash):
+        if user is not None:  # a made-up email is not stored; a real account's history is
+            security_service.record_login(db, user, request, success=False)
         raise _INVALID_CREDENTIALS
 
     if user.totp_enabled:
@@ -119,8 +123,10 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
         try:
             two_factor_service.check(db, user, body.otp)
         except two_factor_service.TwoFactorFailed as exc:
+            security_service.record_login(db, user, request, success=False)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
+    security_service.record_login(db, user, request, success=True)
     return _issue_tokens(user)
 
 
@@ -159,6 +165,23 @@ def logout(current_user: User = Depends(get_current_user)) -> None:
     logged in.
     """
     return None
+
+
+@router.get("/security-log")
+def security_log(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> list[dict]:
+    """Recent sign-in attempts on this account, newest first."""
+    return [
+        {
+            "at": event.at,
+            "ip": event.ip,
+            "user_agent": event.user_agent,
+            "success": event.success,
+            "new_device": event.new_device,
+        }
+        for event in security_service.recent_events(db, current_user)
+    ]
 
 
 @router.get("/me", response_model=UserResponse)

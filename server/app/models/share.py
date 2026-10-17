@@ -25,7 +25,7 @@ class Share(Base):
             "OR (file_id IS NULL AND folder_id IS NOT NULL)",
             name="ck_shares_one_target",
         ),
-        CheckConstraint("permission IN ('view', 'edit')", name="ck_shares_permission"),
+        CheckConstraint("permission IN ('view', 'edit', 'drop')", name="ck_shares_permission"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
@@ -41,10 +41,14 @@ class Share(Base):
     token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # "view" = look and download. "edit" = also add files, make folders, rename and trash inside a
-    # shared folder (or replace a shared file with a new version). Nothing is ever hard-deleted.
+    # shared folder (or replace a shared file with a new version). "drop" = a file request: visitors
+    # can only send files into the folder, never see or change what is in it. Nothing is ever
+    # hard-deleted, and a drop never overwrites: a clashing name is renamed.
     permission: Mapped[str] = mapped_column(
         String(8), nullable=False, default="view", server_default="view"
     )
+    # The link stops working after this many downloads (None = no limit): a one-time link.
+    max_downloads: Mapped[int | None] = mapped_column(Integer, nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

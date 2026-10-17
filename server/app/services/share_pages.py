@@ -131,6 +131,21 @@ def file_page(token: str, file: File, inline_ok: bool, editable: bool = False) -
     )
 
 
+def drop_page(token: str, folder_name: str, *, sent: int = 0) -> str:
+    """A file request: the visitor can send files in, and sees nothing that is already there."""
+    thanks = (
+        f'<p class="ok">Thank you: {sent} file{"s" if sent != 1 else ""} sent.</p>' if sent else ""
+    )
+    return page(
+        f"<h1>CHOUD</h1><p>Send files to <strong>{_e(folder_name)}</strong>.</p>{thanks}"
+        f'<form method="post" action="/s/{_e(token)}/upload" enctype="multipart/form-data">'
+        '<input type="file" name="files" multiple required aria-label="Files to send"> '
+        '<button type="submit">[ SEND FILES ]</button></form>'
+        '<p class="muted">You will not be able to see other files here.</p>',
+        "Send files",
+    )
+
+
 def folder_page(
     token: str,
     root_name: str,

@@ -98,6 +98,21 @@ file contents.
   safety check before it did anything. The checks above are covered by tests, but an independent
   attack pass is still worth doing before the server is exposed beyond a tailnet.
 
+## Rewind, pruning, drop links and the sign-in history
+
+- **Rewind never destroys.** A restore appends a new version, leaves files created after the chosen
+  time alone, and tree restores preview first. Rewinding is bounded by what history exists: pruned
+  versions and purged files cannot be recovered.
+- **Pruning is explicit.** It previews by default, always keeps each file's current version, and
+  deletes an object from disk only if no file or version of any user still references it.
+- **Drop (file-request) links** expose no listing, no download and no preview: the only action is
+  adding files, with the same size/quota/rate limits as edit links, and a drop never overwrites.
+- **Download limits** make a link inactive for everyone (the same uniform 404) once used up.
+- **Sign-in history** records attempts against real accounts only (a made-up email leaves no trace),
+  keeps the address and client string for a year, is visible only to the account owner, and flags a
+  success from an unseen address and client. The administrator view (`/api/admin/server`) is
+  restricted to the oldest account.
+
 ## Search indexing (Phase 14)
 
 - Text is read from files in the background. Plain-text types are read in-process (first 5 MB, binary
