@@ -110,6 +110,8 @@ make migrate         # run Alembic migrations by hand (the backend also does thi
 
 ## Documentation
 
+- [`docs/guide.md`](docs/guide.md) — **start here**: the complete guide to the whole system, with a learning path
+- [`docs/ai-prompt.md`](docs/ai-prompt.md) — ready-made prompts to learn it with an AI, or to keep building it safely
 - [`docs/architecture.md`](docs/architecture.md) — system design, philosophy, phases
 - [`docs/storage.md`](docs/storage.md) — content-addressable storage, dedup, chunking
 - [`docs/synchronization.md`](docs/synchronization.md) — desktop sync algorithm, conflicts
