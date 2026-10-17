@@ -132,6 +132,9 @@ class CameraBackup(
             needsBackup(row?.status, row?.fp, item.fp)
         }
 
+    @Volatile
+    private var remoteIndex: Map<String, RemoteFile> = emptyMap()
+
     private fun stopRequested() = LiveStatus.cancelRequested || shouldStop()
 
     /**
@@ -143,6 +146,14 @@ class CameraBackup(
         LiveStatus.start()
         log("scan: querying MediaStore for images and videos in ${settings.backupFolders.sorted()}")
         val known = db.allRows()
+        // What the server already holds (one cheap, ETag-cached request). If it cannot be read,
+        // fall back to the name-clash check at upload time.
+        remoteIndex = try {
+            api.snapshot()
+        } catch (e: Exception) {
+            log("scan: could not read the server's file list (${e.javaClass.simpleName}: ${e.message})")
+            emptyMap()
+        }
         val all: List<MediaItem>
         val items = try {
             all = scanAll()
@@ -344,7 +355,20 @@ class CameraBackup(
         }
 
         var note = "uploaded"
-        var remote = attempt(item.name)
+        // After a reinstall the app forgets what it backed up. If the server already lists this
+        // exact path, compare hashes first so identical files are never sent again.
+        val listed = remoteIndex["$folder/${item.name}"]?.contentHash
+        var remote: String? = null
+        if (listed != null) {
+            active.phase = "checking"
+            if (listed == ourHash()) {
+                log("  server already has identical bytes: skipping the upload")
+                remote = "$folder/${item.name}"
+                note = "already on the server"
+                datesSent = false // the copy there may carry the upload day: the dates pass fixes it
+            }
+        }
+        if (remote == null) remote = attempt(item.name)
         if (remote == null) {
             // Name taken. Same bytes = already backed up (e.g. after a reinstall); different
             // bytes = keep both, as a conflict copy. Nothing is ever overwritten.
