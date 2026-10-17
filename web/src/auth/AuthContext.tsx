@@ -16,7 +16,7 @@ interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (username: string, email: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string, inviteCode?: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -58,8 +58,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(
-    async (username: string, email: string, password: string) => {
-      await authApi.register({ username, email, password });
+    async (username: string, email: string, password: string, inviteCode?: string) => {
+      await authApi.register({
+        username,
+        email,
+        password,
+        ...(inviteCode ? { invite_code: inviteCode } : {}),
+      });
       await login(email, password);
     },
     [login],

@@ -16,6 +16,7 @@ const NAV = [
   { to: "/favorites", label: "Favorites" },
   { to: "/recent", label: "Recent" },
   { to: "/shares", label: "Shared links" },
+  { to: "/invites", label: "Invites" },
   { to: "/activity", label: "Activity" },
   { to: "/trash", label: "Trash" },
 ];

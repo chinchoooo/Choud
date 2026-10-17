@@ -30,6 +30,7 @@ from app.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
+from app.services import invite_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 settings = get_settings()
@@ -59,6 +60,10 @@ def _issue_tokens(user: User) -> TokenResponse:
     dependencies=[Depends(rate_limit("register", 10, 3600))],
 )
 def register(body: RegisterRequest, db: Session = Depends(get_db)) -> User:
+    try:
+        invite = invite_service.authorize_registration(db, body.invite_code)
+    except invite_service.RegistrationClosed as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     duplicate = db.execute(
         select(User).where((User.email == body.email) | (User.username == body.username))
     ).scalar_one_or_none()
@@ -75,9 +80,18 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)) -> User:
         storage_quota=settings.default_storage_quota_bytes,
     )
     db.add(user)
+    if invite is not None:
+        db.flush()
+        invite_service.redeem(db, invite, user)
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.get("/registration")
+def registration_info(db: Session = Depends(get_db)) -> dict:
+    """What the sign-up page needs: is it open, or is an invite code required."""
+    return invite_service.registration_info(db)
 
 
 @router.post(

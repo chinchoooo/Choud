@@ -98,6 +98,13 @@ file contents.
   safety check before it did anything. The checks above are covered by tests, but an independent
   attack pass is still worth doing before the server is exposed beyond a tailnet.
 
+## Who can register
+
+`REGISTRATION_MODE` is `invite` by default: the first account on an empty server is free, every
+later one needs a single-use, expiring code made by the administrator (the oldest account).
+`open` allows anyone who can reach the server; `closed` allows nobody; an unknown value behaves
+like `invite`. Existing servers pick up `invite` on the next deploy, so strangers cannot sign up.
+
 ## Public share links (Phase 12)
 
 - **Bearer links.** `/s/<token>` is 256 bits of randomness; whoever holds it can see what it points

@@ -31,7 +31,11 @@ POST /api/auth/logout
 GET  /api/auth/me
 ```
 
-`POST /api/auth/register` — `{username, email, password}` → `201` with the
+`GET /api/auth/registration` — `{mode, open, invite_required, first_account}` for the sign-up page.
+
+Invites (administrator = the oldest account): `POST /api/invites` `{note?, expires_in_hours?, storage_quota_bytes?}` returns a single-use `code`; `GET /api/invites`; `DELETE /api/invites/{id}`. A code is passed as `invite_code` to register and may carry its own storage quota.
+
+`POST /api/auth/register` — `{username, email, password, invite_code?}` → `201` with the
 new user (never the password or its hash). `409` on a duplicate
 email/username, `422` on invalid input (username: 3-50 chars,
 letters/digits/underscore only; password: 8+ chars).

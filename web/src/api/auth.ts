@@ -5,6 +5,7 @@ export interface RegisterInput {
   username: string;
   email: string;
   password: string;
+  invite_code?: string;
 }
 
 export interface LoginInput {

@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     gc_grace_hours: float = 72.0
     gc_interval_hours: float = 24.0
 
+    # Who may create accounts: "invite" (first account free, then an administrator invite code),
+    # "open" (anyone who can reach the server) or "closed" (only the first account).
+    registration_mode: str = "invite"
+
     # Auth endpoint rate limiting (app/core/rate_limit.py).
     rate_limit_enabled: bool = True
 

@@ -5,6 +5,7 @@ import os
 # on explicitly when they are what is under test).
 os.environ.setdefault("MAINTENANCE_INTERVAL_SECONDS", "0")
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
+os.environ.setdefault("REGISTRATION_MODE", "open")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient
@@ -18,7 +19,16 @@ from app.main import app
 
 # Import every model so its table registers on Base.metadata before
 # create_all runs below. Add new models here as later phases land.
-from app.models import activity, favorite, file, file_version, folder, share, upload  # noqa: F401
+from app.models import (  # noqa: F401
+    activity,
+    favorite,
+    file,
+    file_version,
+    folder,
+    invite,
+    share,
+    upload,
+)
 from app.models.user import User
 
 

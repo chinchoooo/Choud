@@ -8,6 +8,7 @@ import { Files } from "./pages/Files";
 import { Login } from "./pages/Login";
 import { Photos } from "./pages/Photos";
 import { Register } from "./pages/Register";
+import { Invites } from "./pages/Invites";
 import { Shares } from "./pages/Shares";
 import { Trash } from "./pages/Trash";
 
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="/recent" element={<Recent />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/shares" element={<Shares />} />
+          <Route path="/invites" element={<Invites />} />
           <Route path="/trash" element={<Trash />} />
         </Route>
       </Route>

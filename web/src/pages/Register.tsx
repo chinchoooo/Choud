@@ -1,7 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { ApiError } from "../api/client";
+import { getRegistrationInfo } from "../api/invites";
 import { useAuth } from "../auth/AuthContext";
 
 export function Register() {
@@ -10,6 +12,10 @@ export function Register() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+  const info = useQuery({ queryKey: ["registration"], queryFn: getRegistrationInfo, retry: false });
+  const needsInvite = info.data?.invite_required ?? false;
+  const closed = info.data?.mode === "closed" && !info.data.first_account;
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -18,7 +24,7 @@ export function Register() {
     setError(null);
     setIsSubmitting(true);
     try {
-      await register(username, email, password);
+      await register(username, email, password, inviteCode.trim() || undefined);
       navigate("/files");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not register.");
@@ -78,10 +84,28 @@ export function Register() {
           />
           <p className="mt-1 text-xs text-gray-500">At least 8 characters.</p>
         </div>
+        {needsInvite && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700" htmlFor="invite">
+              Invite code
+            </label>
+            <input
+              id="invite"
+              type="text"
+              required
+              autoComplete="off"
+              value={inviteCode}
+              onChange={(event) => setInviteCode(event.target.value)}
+              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            />
+            <p className="mt-1 text-xs text-gray-500">Ask the person who runs this server for a code.</p>
+          </div>
+        )}
+        {closed && <p className="text-sm text-gray-600">Registration is closed on this server.</p>}
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || closed}
           className="w-full rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           {isSubmitting ? "Creating account…" : "Create account"}
