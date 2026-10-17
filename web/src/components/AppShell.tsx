@@ -15,6 +15,7 @@ const NAV = [
   { to: "/photos", label: "Photos" },
   { to: "/favorites", label: "Favorites" },
   { to: "/recent", label: "Recent" },
+  { to: "/shares", label: "Shared links" },
   { to: "/activity", label: "Activity" },
   { to: "/trash", label: "Trash" },
 ];

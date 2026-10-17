@@ -8,6 +8,7 @@ import { createFolder, deleteFolder, getFolder, moveFolder, renameFolder } from 
 import { ConfirmDialog, FolderPicker, PromptDialog, plainButton, primaryButton } from "../components/Dialogs";
 import { FileCollection, ViewToggle, loadViewMode, saveViewMode, type ViewMode } from "../components/FileCollection";
 import { FileViewer } from "../components/FileViewer";
+import { ShareDialog } from "../components/ShareDialog";
 import { VersionHistory } from "../components/VersionHistory";
 import { useFileActions } from "../hooks/useFileActions";
 import { useUploads } from "../uploads/UploadContext";
@@ -18,6 +19,7 @@ type FolderDialog =
   | { kind: "rename"; folder: FolderResponse }
   | { kind: "move"; folder: FolderResponse }
   | { kind: "delete"; folder: FolderResponse }
+  | { kind: "share"; folder: FolderResponse }
   | { kind: "error"; message: string };
 
 export function Files() {
@@ -240,6 +242,7 @@ export function Files() {
             fileMenu={actions.menuFor}
             folderMenu={(folder) => [
               { label: "Open", onSelect: () => openFolder(folder) },
+              { label: "Share link…", onSelect: () => setFolderDialog({ kind: "share", folder }) },
               { label: "Rename", onSelect: () => setFolderDialog({ kind: "rename", folder }) },
               { label: "Move to…", onSelect: () => setFolderDialog({ kind: "move", folder }) },
               { label: "Delete (must be empty)", danger: true, onSelect: () => setFolderDialog({ kind: "delete", folder }) },
@@ -299,6 +302,12 @@ export function Files() {
           danger
           onClose={() => setFolderDialog(null)}
           onConfirm={() => deleteMutation.mutate(folderDialog.folder.id)}
+        />
+      )}
+      {folderDialog?.kind === "share" && (
+        <ShareDialog
+          target={{ kind: "folder", id: folderDialog.folder.id, name: folderDialog.folder.name }}
+          onClose={() => setFolderDialog(null)}
         />
       )}
       {folderDialog?.kind === "error" && (

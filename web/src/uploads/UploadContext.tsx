@@ -75,7 +75,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshLists = useCallback(() => {
-    for (const key of ["directory", "search", "photos", "recent", "favorites", "usage", "activity"]) {
+    for (const key of ["directory", "search", "photos", "recent", "favorites", "usage", "activity", "shares"]) {
       void queryClient.invalidateQueries({ queryKey: [key] });
     }
   }, [queryClient]);

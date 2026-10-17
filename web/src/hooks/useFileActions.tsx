@@ -5,6 +5,7 @@ import { ApiError } from "../api/client";
 import { deleteFile, downloadFile, moveFile, renameFile } from "../api/files";
 import { setFavorite } from "../api/library";
 import { ConfirmDialog, FolderPicker, PromptDialog } from "../components/Dialogs";
+import { ShareDialog } from "../components/ShareDialog";
 import type { MenuItem } from "../components/RowMenu";
 import type { FileResponse } from "../types/files";
 
@@ -12,6 +13,7 @@ type Dialog =
   | { kind: "rename"; file: FileResponse }
   | { kind: "move"; file: FileResponse }
   | { kind: "delete"; file: FileResponse }
+  | { kind: "share"; file: FileResponse }
   | { kind: "error"; message: string };
 
 const LISTS = ["directory", "search", "photos", "recent", "favorites", "usage", "activity", "trash", "versions"];
@@ -74,6 +76,7 @@ export function useFileActions(extra?: (file: FileResponse) => MenuItem[]) {
   function menuFor(file: FileResponse): MenuItem[] {
     return [
       { label: "Download", onSelect: () => void download(file) },
+      { label: "Share link…", onSelect: () => setDialog({ kind: "share", file }) },
       ...(extra ? extra(file) : []),
       { label: "Rename", onSelect: () => setDialog({ kind: "rename", file }) },
       { label: "Move to…", onSelect: () => setDialog({ kind: "move", file }) },
@@ -116,6 +119,13 @@ export function useFileActions(extra?: (file: FileResponse) => MenuItem[]) {
             danger
             onClose={close}
             onConfirm={() => deleteMutation.mutate(dialog.file)}
+          />
+        );
+      case "share":
+        return (
+          <ShareDialog
+            target={{ kind: "file", id: dialog.file.id, name: dialog.file.name }}
+            onClose={close}
           />
         );
       case "error":
