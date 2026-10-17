@@ -27,8 +27,9 @@ class ServicePlan:
     uninstall_files: list[Path] = field(default_factory=list)
 
 
-def _argv(python: str, config_dir: Path | None) -> list[str]:
-    args = [python, "-m", "cloudsync.main"]
+def _argv(python: str, config_dir: Path | None, frozen: bool = False) -> list[str]:
+    # A packaged .exe is the program itself; from source it is `python -m cloudsync.main`.
+    args = [python] if frozen else [python, "-m", "cloudsync.main"]
     if config_dir is not None:
         args += ["--config-dir", str(config_dir)]
     return args + ["run"]
@@ -39,9 +40,13 @@ def _quote(arg: str) -> str:
 
 
 def service_plan(
-    platform: str, python: str, home: Path, config_dir: Path | None = None
+    platform: str,
+    python: str,
+    home: Path,
+    config_dir: Path | None = None,
+    frozen: bool = False,
 ) -> ServicePlan:
-    argv = _argv(python, config_dir)
+    argv = _argv(python, config_dir, frozen)
 
     if platform.startswith("linux"):
         unit = home / ".config" / "systemd" / "user" / f"{NAME}.service"
@@ -98,10 +103,15 @@ def service_plan(
         )
 
     if platform == "win32":
-        # pythonw.exe has no console window, so nothing flashes up at logon.
-        windowless = Path(python).with_name("pythonw.exe")
-        exe = str(windowless) if windowless.exists() else python
-        command = " ".join(_quote(a) for a in [exe, *argv[1:]])
+        if frozen:
+            # The packaged .exe is a console program: start it hidden so no window sits open.
+            inner = " ".join(f"'{a}'" for a in argv)
+            command = f'powershell.exe -NoProfile -WindowStyle Hidden -Command "& {inner}"'
+        else:
+            # pythonw.exe has no console window, so nothing flashes up at logon.
+            windowless = Path(python).with_name("pythonw.exe")
+            exe = str(windowless) if windowless.exists() else python
+            command = " ".join(_quote(a) for a in [exe, *argv[1:]])
         return ServicePlan(
             "a Task Scheduler task that runs at logon",
             install_commands=[

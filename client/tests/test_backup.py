@@ -223,3 +223,11 @@ def test_service_plans_start_the_client_quietly_at_login() -> None:
     create = win.install_commands[0]
     assert create[:2] == ["schtasks", "/Create"] and "ONLOGON" in create
     assert "-m cloudsync.main run" in create[create.index("/TR") + 1]
+
+
+def test_a_packaged_windows_exe_is_started_hidden_without_python() -> None:
+    plan = service_plan("win32", r"C:\Tools\cloudsync.exe", Path("/home/me"), frozen=True)
+    command = plan.install_commands[0][plan.install_commands[0].index("/TR") + 1]
+    assert "-WindowStyle Hidden" in command
+    assert r"'C:\Tools\cloudsync.exe' 'run'" in command
+    assert "-m cloudsync.main" not in command

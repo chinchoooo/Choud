@@ -356,7 +356,11 @@ def cmd_install_service(args: argparse.Namespace, config_dir: Path | None, http=
         return EXIT_USAGE
     try:
         plan = service_module.service_plan(
-            service_module.current_platform(), sys.executable, service_module.home_dir(), config_dir
+            service_module.current_platform(),
+            sys.executable,
+            service_module.home_dir(),
+            config_dir,
+            frozen=bool(getattr(sys, "frozen", False)),
         )
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
