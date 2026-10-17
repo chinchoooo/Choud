@@ -135,7 +135,7 @@ def svg_to_vector_drawable(svg_text: str, *, scale: float, translate: tuple[floa
     layer), and the `<text>` wordmark is not ported (logos with text ship as PNG instead).
     """
     root = ET.fromstring(svg_text)
-    paths: list[str] = []
+    paths: list[tuple[str, str]] = []  # (colour, pathData); colour "" = a ready-made <path> line
     for node in root.iter():
         tag = node.tag.replace(SVG_NS, "")
         if tag == "rect":
@@ -144,8 +144,13 @@ def svg_to_vector_drawable(svg_text: str, *, scale: float, translate: tuple[floa
             x, y = node.get("x", "0"), node.get("y", "0")
             w, h = node.get("width"), node.get("height")
             data = f"M{x},{y}h{w}v{h}h-{w}z"
-            paths.append(f'        <path android:fillColor="{_android_color(node.get("fill", "#000000"))}" '
-                         f'android:pathData="{data}"/>')
+            color = _android_color(node.get("fill", "#000000"))
+            # Neighbouring rectangles of one colour go into ONE path: drawn separately, their shared
+            # edges show up as hairline seams whenever the drawable is scaled by a fraction.
+            if paths and paths[-1][0] == color:
+                paths[-1] = (color, paths[-1][1] + data)
+            else:
+                paths.append((color, data))
         elif tag == "path":
             attrs = []
             fill = node.get("fill", "none")
@@ -157,7 +162,7 @@ def svg_to_vector_drawable(svg_text: str, *, scale: float, translate: tuple[floa
                 attrs.append(f'android:strokeWidth="{node.get("stroke-width", "1")}"')
                 attrs.append('android:strokeLineJoin="miter"')
             attrs.append(f'android:pathData="{node.get("d")}"')
-            paths.append("        <path " + " ".join(attrs) + "/>")
+            paths.append(("", "        <path " + " ".join(attrs) + "/>"))
     tx, ty = translate
     return (
         '<?xml version="1.0" encoding="utf-8"?>\n'
@@ -167,7 +172,12 @@ def svg_to_vector_drawable(svg_text: str, *, scale: float, translate: tuple[floa
         f'    android:viewportWidth="{viewport:g}"\n    android:viewportHeight="{viewport:g}">\n'
         f'    <group android:scaleX="{scale:g}" android:scaleY="{scale:g}"\n'
         f'        android:translateX="{tx:g}" android:translateY="{ty:g}">\n'
-        + "\n".join(paths)
+        + "\n".join(
+            raw
+            if not color
+            else f'        <path android:fillColor="{color}" android:pathData="{raw}"/>'
+            for color, raw in paths
+        )
         + "\n    </group>\n</vector>\n"
     )
 

@@ -36,7 +36,7 @@ export function Register() {
 
   return (
     <div className="mx-auto max-w-sm p-8">
-      <Logo variant="full" size={120} className="mb-6" />
+      <Logo size={88} className="mb-6" />
       <h1 className="text-2xl font-semibold text-gray-900">Create an account</h1>
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <div>

@@ -119,14 +119,14 @@ class MainActivity : Activity(), Host {
 
         column.addView(
             android.widget.ImageView(this).apply {
-                setImageResource(if (p.darkSystemBars) R.drawable.choud_logo_dark else R.drawable.choud_logo_light)
+                // The mark alone: the wordmark in the detailed logo touches the folder outline.
+                setImageResource(R.drawable.ic_choud_mark)
                 contentDescription = "Choud"
-                adjustViewBounds = true
             },
-            android.widget.LinearLayout.LayoutParams(ui.dp(120), ui.dp(120)),
+            android.widget.LinearLayout.LayoutParams(ui.dp(88), ui.dp(88)),
         )
         column.addView(ui.heading("Choud"), ui.matchWidth(6))
-        column.addView(ui.muted("Back up your photos to your own server.", 13f), ui.matchWidth(2))
+        column.addView(ui.muted("Your files and photos, on your own server.", 13f), ui.matchWidth(2))
         column.addView(url, ui.matchWidth(24))
         column.addView(email, ui.matchWidth(10))
         column.addView(password, ui.matchWidth(10))

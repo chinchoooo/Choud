@@ -1,86 +1,57 @@
-# Personal Cloud
+# Choud
 
-A self-hosted personal cloud storage and synchronization system, designed to
-run on a repurposed Linux laptop. It provides the core experience of a
-personal Google Drive/Dropbox: upload/download, folders, search, version
-history, trash, deduplication, resumable uploads, desktop sync, offline
-operation, conflict detection, and remote access.
+**Your own cloud. Your own server. Nobody else's.**
 
-This is a personal project, not an enterprise platform. See
-[`docs/architecture.md`](docs/architecture.md) for the full design
-philosophy and non-goals.
+Choud is a self-hosted Google Drive alternative that runs on one spare Linux machine at home.
+Your files live on your disk, are stored once however many times they are uploaded, and are reachable
+from your phone and laptops over Tailscale or your home network. There are no subscriptions, no
+tracking and no storage limit beyond the drive you give it.
 
-## Architecture
+## What you get
 
-A hybrid control-plane / data-plane split:
+| | |
+| --- | --- |
+| **Files** | Folders, drag-and-drop and resumable uploads (a dropped connection only resends what is missing), duplicate-free storage, a photo timeline, favorites, recents, an activity log |
+| **Never lose anything** | Every overwrite is a new version you can restore, deleted files wait in a trash, nothing is destroyed on a doubt |
+| **Find anything** | Search by file name and by what is written *inside* documents (text, code, PDF, Word, OpenDocument) |
+| **View anywhere** | Built-in viewers for images, video, audio, PDF and text, with thumbnails; no other app needed |
+| **Share** | Public links with an expiry and a password, either view-only or "add and edit" (deletes go to your trash, replaced files keep their old version); no accounts needed for the people you share with |
+| **Phone** | An Android app backs up photos and videos in the background with the phone's real dates, browses everything, and resumes if the connection drops |
+| **Laptops** | A desktop client either mirrors a folder both ways (with conflict copies, never silent overwrites) or quietly backs up chosen folders whenever the laptop can reach your server |
+| **People** | Invite family and friends with one-time codes; each gets their own storage and quota |
+| **Safe by default** | Optional two-factor login, a registration lock, rate limiting, hash-checked uploads, scripts that can be audited, nightly verified backups and webhook alerts |
+
+The look is deliberately retro: black and white, monospace, square corners, with modern line icons.
+
+## How it is built
+
+A control-plane / data-plane split, each part doing what it is best at:
 
 ```
-Browser / Desktop Client
-        | HTTP
-        v
-  Python API (FastAPI) ---- PostgreSQL (metadata)
-        | local HTTP
-        v
-  C++ Engine (data plane) -- Local filesystem (bytes)
+Browser · Android app · Desktop client
+                 | HTTP (Tailscale or LAN)
+                 v
+      Python API (FastAPI) ---- PostgreSQL (metadata, search index)
+                 | internal network only
+                 v
+      C++ engine (data plane) -- your disk (bytes, by hash)
 ```
 
-- **Python (`server/`)** owns the HTTP API, authentication, authorization,
-  and metadata (PostgreSQL).
-- **C++ (`engine/`)** owns object storage, hashing, deduplication, chunking,
-  and synchronization primitives. It is never exposed to the internet —
-  only the backend talks to it, over the internal Docker network.
-- **React (`web/`)** owns the browser UI.
-- **`client/`** will hold the desktop synchronization client (Phase 7).
+- **Python (`server/`)** owns the API, accounts, permissions, versions, sharing and search.
+- **C++ (`engine/`)** owns hashing, content-addressed storage, deduplication and chunk assembly. It
+  is never exposed to the network: only the backend talks to it.
+- **React (`web/`)** is the browser app. **Kotlin (`android/`)** is the phone app.
+  **Python (`client/`)** is the desktop client.
 
-See [`docs/architecture.md`](docs/architecture.md) for details.
+See [`docs/architecture.md`](docs/architecture.md) for the reasoning and the non-goals.
 
 ## Project status
 
-This repository is being built incrementally, phase by phase (see
-[`docs/architecture.md`](docs/architecture.md#development-phases)).
-
-**Currently implemented: Phases 1-8, the Phase 9 deployment stack, 10-lite hardening, an Android
-backup app, and a Milestone 2 slice (photo timeline, viewers, upload queue, favorites, activity,
-thumbnails, themes). See `CLAUDE.md` section 1 for the exact state.**
-
-- Repository layout
-- Docker Compose (PostgreSQL, backend, engine, frontend, reverse proxy)
-- FastAPI skeleton with configuration and structured logging
-- Local HTTP communication between the Python backend and the C++ engine
-- Health endpoints on both services
-- Test infrastructure (pytest, GoogleTest, Vitest)
-- User registration, login, JWT access/refresh tokens (Argon2id password
-  hashing), and a `get_current_user` dependency every file endpoint uses
-  (see `docs/api.md#auth`)
-- Folders and files: create/rename/move/delete folders, upload/download/
-  rename/move/delete files (delete moves a file to the trash),
-  filename search — all owner-scoped, with path-traversal-safe storage
-  (bytes are never written to a client-supplied path)
-- A real C++ storage engine: streaming SHA-256 (OpenSSL), a
-  content-addressed object store sharded by hash prefix, and
-  deduplication — uploading the same bytes twice stores them once
-  physically, verified by a test that inspects storage directly
-- Resumable chunked uploads: large files are split into chunks client-side,
-  uploaded independently, and reconstructed server-side with a streaming
-  hash check — killing the connection partway and resuming only resends
-  the chunks that never arrived (see `docs/api.md#uploads--resumable-chunked-uploads`
-  and `docs/storage.md#chunked-uploads`)
-- Versioning: uploading a file with the same name into the same folder adds
-  a new version instead of a duplicate (identical bytes are a no-op).
-  Every version is kept, can be downloaded, and can be restored — a restore
-  adds a new version, so history is never rewritten
-  (see `docs/api.md#versions`)
-- Trash: deleted files can be listed, restored (to the original folder, or
-  the root if it is gone; renamed `name (restored).ext` on a clash), or
-  permanently deleted — which frees a stored object only when no other file
-  or version, of any user, still uses it (see `docs/api.md#trash`)
-- A working web UI: register/login, a file browser (breadcrumb
-  navigation, upload — chunked with a "Resume upload" button for large
-  files — new folder, rename, move, delete, download, search), a per-file
-  version list with download/restore, and a Trash page
-
-Desktop and phone sync, sharing, 2FA and search-by-content are **not yet
-implemented** — see the roadmap in `CLAUDE.md` for the order they land in.
+Everything above is built and tested (server, engine, web, Android and desktop client each have their
+own suite). It runs on the author's own laptop server. Honest gaps: the Android app has had little
+time on a real phone, per-user sharing (sharing with named accounts) is deliberately not built (links
+are the only way to share), passkeys and comments are not built, and there is no iOS app. The detailed
+roadmap and handoff notes are in the phase documents under [`docs/`](docs/).
 
 ## Getting started
 
