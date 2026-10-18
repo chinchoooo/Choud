@@ -548,7 +548,7 @@ RecyclerView lists, OkHttp, WorkManager, androidx security-crypto.
   `Logic.kt` (pure, unit-tested helpers: remote folder naming, selection, `dateFromFileName`),
   `EventLog.kt` (a detailed on-device log for debugging).
 - Themes match the web; the launcher icon is an adaptive icon generated from the brand SVGs
-  (`scripts/brand/build_assets.py`).
+  (`scripts/brand/from_sheet.py`).
 - 28 unit tests; signed release builds read the key from `~/.personal-cloud-signing/` (outside the repo).
 
 ---

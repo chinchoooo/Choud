@@ -188,3 +188,18 @@ fun Ui.banner(message: String, actionLabel: String? = null, onAction: (() -> Uni
         })
     }
 }
+
+/** A thin themed scroll handle instead of the system's, and no stretchy overscroll glow. */
+fun <T : View> T.styleScroll(ui: Ui): T {
+    overScrollMode = View.OVER_SCROLL_NEVER
+    isVerticalScrollBarEnabled = true
+    scrollBarSize = ui.dp(3)
+    if (android.os.Build.VERSION.SDK_INT >= 29) {
+        verticalScrollbarThumbDrawable = android.graphics.drawable.GradientDrawable().apply {
+            setColor(ui.palette.mute)
+            cornerRadius = if (ui.palette.retro) 0f else ui.dp(2).toFloat()
+        }
+        verticalScrollbarTrackDrawable = null
+    }
+    return this
+}

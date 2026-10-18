@@ -127,19 +127,84 @@ class Ui(val context: Context, val palette: Palette) {
 
     fun bar(): ProgressBarView = ProgressBarView(context, palette)
 
-    fun button(label: String, primary: Boolean = false, onClick: () -> Unit): Button = Button(context).apply {
+    /**
+     * The one button of the app: a bordered box (filled for the main action) that flips its colours
+     * while pressed, the way the web app's buttons do. Not a system Button.
+     */
+    fun button(label: String, primary: Boolean = false, onClick: () -> Unit): TextView = TextView(context).apply {
         text = if (palette.retro) label.uppercase() else label
-        isAllCaps = false
         textSize = if (palette.retro) 12f else 13f
-        typeface = this@Ui.typeface
-        setTextColor(if (primary) palette.accentInk else palette.ink)
-        minHeight = 0
-        minimumHeight = 0
-        setPadding(dp(14), dp(8), dp(14), dp(8))
-        val base = box(if (primary) palette.accent else palette.surface, if (primary) palette.accent else palette.line)
-        background = RippleDrawable(ColorStateList.valueOf(palette.line), base, null)
-        stateListAnimator = null
+        typeface = Typeface.create(this@Ui.typeface, Typeface.BOLD)
+        gravity = Gravity.CENTER
+        minHeight = dp(44)
+        minimumHeight = dp(44)
+        setPadding(dp(16), dp(10), dp(16), dp(10))
+        isClickable = true
+        isFocusable = true
+        val fill = if (primary) palette.accent else palette.surface
+        val edge = if (primary) palette.accent else palette.line
+        background = android.graphics.drawable.StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_pressed), box(if (primary) palette.surface else palette.ink, if (primary) palette.accent else palette.ink))
+            addState(intArrayOf(android.R.attr.state_focused), box(fill, palette.ink))
+            addState(intArrayOf(), box(fill, edge))
+        }
+        val normalText = if (primary) palette.accentInk else palette.ink
+        val pressedText = if (primary) palette.accent else palette.bg
+        setTextColor(
+            ColorStateList(
+                arrayOf(intArrayOf(android.R.attr.state_pressed), intArrayOf()),
+                intArrayOf(pressedText, normalText),
+            ),
+        )
         setOnClickListener { onClick() }
+    }
+
+    /** A text field in the app's look: a bordered box that gets a heavier border while focused. */
+    fun field(hint: String, value: String = "", type: Int = android.text.InputType.TYPE_CLASS_TEXT): android.widget.EditText =
+        android.widget.EditText(context).apply {
+            this.hint = hint
+            setText(value)
+            inputType = type
+            typeface = this@Ui.typeface
+            setTextColor(palette.ink)
+            setHintTextColor(palette.mute)
+            textSize = 15f
+            setSingleLine()
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            fun edge(width: Int, color: Int) = GradientDrawable().apply {
+                setColor(palette.surface)
+                cornerRadius = dp(palette.radiusDp).toFloat()
+                setStroke(dp(width), color)
+            }
+            background = android.graphics.drawable.StateListDrawable().apply {
+                addState(intArrayOf(android.R.attr.state_focused), edge(2, palette.ink))
+                addState(intArrayOf(), edge(1, palette.line))
+            }
+            highlightColor = (palette.accent and 0x00FFFFFF) or 0x55000000
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                textCursorDrawable = GradientDrawable().apply {
+                    setColor(palette.ink)
+                    setSize(dp(2), 0)
+                }
+            }
+        }
+
+    /** The cloud-and-folder mark in the theme's ink colour, `heightDp` tall (the art is 1.66 times wider than high). */
+    fun mark(heightDp: Int): android.widget.ImageView = android.widget.ImageView(context).apply {
+        setImageResource(R.drawable.ic_choud_mark)
+        imageTintList = ColorStateList.valueOf(palette.ink)
+        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        contentDescription = "Choud"
+        layoutParams = LinearLayout.LayoutParams((dp(heightDp) * 1.66f).toInt(), dp(heightDp))
+    }
+
+    /** The full logo (cloud, folder and the pixel "Choud" wordmark) in the theme's ink colour. */
+    fun logoFull(widthDp: Int): android.widget.ImageView = android.widget.ImageView(context).apply {
+        setImageResource(R.drawable.choud_logo_full)
+        imageTintList = ColorStateList.valueOf(palette.ink)
+        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        contentDescription = "Choud"
+        layoutParams = LinearLayout.LayoutParams(dp(widthDp), (dp(widthDp) * 647f / 720f).toInt())
     }
 
     /** A boxed label such as "PDF" or "DIR" for items without a thumbnail. */

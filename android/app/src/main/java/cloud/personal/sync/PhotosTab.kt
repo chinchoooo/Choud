@@ -82,6 +82,7 @@ class PhotosTab(private val host: Host) : Tab {
             }
         }
         list.layoutManager = grid
+        list.styleScroll(ui)
         // Pinch to change how many photos fit across: 2 to 6.
         val pinch = android.view.ScaleGestureDetector(ui.context, object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {

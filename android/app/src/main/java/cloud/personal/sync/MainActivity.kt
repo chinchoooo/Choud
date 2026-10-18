@@ -112,18 +112,7 @@ class MainActivity : Activity(), Host {
             setPadding(ui.dp(24), ui.dp(48), ui.dp(24), ui.dp(32))
         }
 
-        fun field(hint: String, value: String = "", type: Int = InputType.TYPE_CLASS_TEXT) = EditText(this).apply {
-            this.hint = hint
-            setText(value)
-            inputType = type
-            typeface = ui.typeface
-            setTextColor(p.ink)
-            setHintTextColor(p.mute)
-            textSize = 15f
-            setSingleLine()
-            setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14))
-            background = ui.box(p.surface, p.line)
-        }
+        fun field(hint: String, value: String = "", type: Int = InputType.TYPE_CLASS_TEXT) = ui.field(hint, value, type)
 
         val url = field("Server address, e.g. http://100.x.y.z", settings.serverUrl, InputType.TYPE_TEXT_VARIATION_URI)
         val email = field("Email", type = InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
@@ -135,19 +124,8 @@ class MainActivity : Activity(), Host {
         alt.visibility = View.GONE
         val message = ui.text(notice ?: "", 13f, p.danger).apply { gravity = android.view.Gravity.CENTER }
 
-        column.addView(
-            android.widget.ImageView(this).apply {
-                setImageResource(R.drawable.ic_choud_mark)
-                if (!p.darkSystemBars) {
-                    background = ui.box(android.graphics.Color.BLACK, radiusDp = if (p.retro) 0 else 18)
-                    setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6))
-                }
-                contentDescription = "Choud"
-            },
-            LinearLayout.LayoutParams(ui.dp(84), ui.dp(84)),
-        )
-        column.addView(ui.text(if (p.retro) "CHOUD" else "Choud", 26f, bold = true).apply { gravity = android.view.Gravity.CENTER }, ui.matchWidth(14))
-        column.addView(ui.muted("Your files and photos, on your own server.", 13f).apply { gravity = android.view.Gravity.CENTER }, ui.matchWidth(4))
+        column.addView(ui.logoFull(210))
+        column.addView(ui.muted("Your files and photos, on your own server.", 13f).apply { gravity = android.view.Gravity.CENTER }, ui.matchWidth(16))
         column.addView(url, ui.matchWidth(32))
         column.addView(email, ui.matchWidth(10))
         column.addView(password, ui.matchWidth(10))
@@ -163,7 +141,7 @@ class MainActivity : Activity(), Host {
             }
         }
         column.addView(more, ui.matchWidth(0))
-        lateinit var loginButton: android.widget.Button
+        lateinit var loginButton: android.widget.TextView
         loginButton = ui.button("Log in", primary = true) {
             loginButton.isEnabled = false
             loginButton.alpha = 0.6f
@@ -204,7 +182,7 @@ class MainActivity : Activity(), Host {
                         requestMediaPermissions()
                         SyncWorker.schedule(this, settings)
                         WarmCacheWorker.schedule(this, settings)
-                        showMain()
+                        firstSync { showMain() }
                     } else {
                         if (needsCode) otp.visibility = View.VISIBLE
                         message.setTextColor(if (needsCode) p.mute else p.danger)
@@ -230,9 +208,64 @@ class MainActivity : Activity(), Host {
      * page, and an unreachable server is shown as a message while everything cached keeps working.
      */
     private fun startApp() {
-        showMain()
         WarmCacheWorker.schedule(this, settings)
-        checkServer()
+        if (getDatabasePath("library.db").exists()) {
+            showMain()
+            checkServer()
+        } else {
+            // Nothing is remembered yet (first start, or an update from an old version): fetch the
+            // library once with the loading screen, then every later start is instant.
+            firstSync { showMain() }
+        }
+    }
+
+    /**
+     * The loading screen of the brand sheet, driven by the real steps: reach the server, check the
+     * login, fetch the library, fetch the first thumbnails. Each line and each block is something
+     * that actually finished.
+     */
+    private fun firstSync(done: () -> Unit) {
+        val screen = LoadingScreen(ui)
+        setContentView(screen.view)
+        screen.step("Initializing...", 0.05f)
+        fun say(text: String, progress: Float) = runOnUiThread { screen.step(text, progress) }
+        thread {
+            try {
+                say("Reaching your server...", 0.15f)
+                ServerPicker.pick(settings, force = true)
+                api.health()
+                say("Checking your login...", 0.4f)
+                api.usage()
+                runCatching { api.instance() }
+                say("Syncing your photos...", 0.65f)
+                val db = LibraryDb(this)
+                try {
+                    Library.sync(db, api)
+                    say("Fetching thumbnails...", 0.85f)
+                    ThumbLoader.warm(api, db.load("all").take(24))
+                } finally {
+                    db.close()
+                }
+                say("Ready.", 1f)
+                Thread.sleep(350)
+                runOnUiThread(done)
+            } catch (e: AuthError) {
+                EventLog.log("first sync: login no longer valid")
+                runOnUiThread {
+                    settings.logout()
+                    showLogin("Your session ended. Please sign in again.")
+                }
+            } catch (e: Exception) {
+                EventLog.log("first sync failed: ${e.javaClass.simpleName}: ${e.message}")
+                runOnUiThread {
+                    screen.failed(
+                        if (e is ApiUnavailable) "No answer. Is Tailscale on, and is the server running?" else "Could not load: ${e.message}",
+                        retry = { firstSync(done) },
+                        openAnyway = { done() },
+                    )
+                }
+            }
+        }
     }
 
     private fun checkServer() {
@@ -275,18 +308,7 @@ class MainActivity : Activity(), Host {
         val appBar = ui.horizontal().apply {
             setBackgroundColor(p.surface)
             setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(10))
-            addView(
-                ImageView(this@MainActivity).apply {
-                    setImageResource(R.drawable.ic_choud_mark)
-                    // The mark is white, so on light themes it sits on a black tile like an app icon.
-                    if (!p.darkSystemBars) {
-                        background = ui.box(android.graphics.Color.BLACK, radiusDp = if (p.retro) 0 else 8)
-                        setPadding(ui.dp(2), ui.dp(2), ui.dp(2), ui.dp(2))
-                    }
-                    contentDescription = "Choud"
-                },
-                LinearLayout.LayoutParams(ui.dp(30), ui.dp(30)),
-            )
+            addView(ui.mark(24))
             addView(
                 ui.text(if (p.retro) "CHOUD" else "Choud", 17f, bold = true).apply { setPadding(ui.dp(10), 0, 0, 0) },
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
@@ -425,8 +447,7 @@ class MainActivity : Activity(), Host {
 
     override fun toast(text: String, actionLabel: String?, onAction: (() -> Unit)?) {
         runOnUiThread {
-            val shown = toaster
-            if (shown != null) shown.show(text, actionLabel, onAction) else android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show()
+            toaster?.show(text, actionLabel, onAction)
         }
     }
 

@@ -23,17 +23,10 @@ class SearchPage(private val host: Host, private val openFolder: (id: String, na
     private var latest = 0
 
     fun show() {
-        val field = EditText(ui.context).apply {
-            hint = "Search your files"
-            inputType = InputType.TYPE_CLASS_TEXT
+        val field = ui.field("Search your files").apply {
             imeOptions = EditorInfo.IME_ACTION_SEARCH
-            typeface = ui.typeface
-            setTextColor(palette.ink)
-            setHintTextColor(palette.mute)
-            textSize = 15f
-            setSingleLine()
-            setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(14))
             background = null
+            setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(14))
         }
         val header = ui.horizontal().apply {
             setBackgroundColor(palette.surface)

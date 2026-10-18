@@ -83,6 +83,7 @@ class Sheets(private val ui: Ui, private val container: FrameLayout) {
             addView(
                 ScrollView(ui.context).apply {
                     isFillViewport = true
+                    styleScroll(ui)
                     addView(body)
                 },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f),

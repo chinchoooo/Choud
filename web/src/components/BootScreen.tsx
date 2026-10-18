@@ -33,8 +33,8 @@ export function BootScreen({ steps, onRetry }: { steps: BootStep[]; onRetry?: ()
       aria-label="Starting Choud"
       className="flex min-h-screen flex-col items-center justify-center bg-white p-8 text-gray-900"
     >
-      <Logo size={88} />
-      <h1 className="mt-4 text-xl font-semibold tracking-wide">CHOUD</h1>
+      <Logo variant="full" size={200} />
+      <h1 className="sr-only">Choud</h1>
       <ol className="mt-6 w-full max-w-xs space-y-2 text-sm">
         {steps.map((step) => (
           <li key={step.label} className={`flex items-start gap-2 ${step.state === "pending" ? "text-gray-400" : ""}`}>
@@ -54,9 +54,12 @@ export function BootScreen({ steps, onRetry }: { steps: BootStep[]; onRetry?: ()
         aria-valuemin={0}
         aria-valuemax={steps.length}
         aria-valuenow={done}
-        className="mt-5 h-1.5 w-full max-w-xs overflow-hidden border border-gray-300"
+        className="mt-5 flex w-full max-w-xs gap-0.5 border-2 border-gray-900 p-1"
       >
-        <div className="h-full bg-gray-900" style={{ width: `${steps.length ? (done / steps.length) * 100 : 0}%` }} />
+        {Array.from({ length: 18 }, (_, index) => {
+          const filled = steps.length > 0 && index < Math.round((done / steps.length) * 18);
+          return <span key={index} className={`h-4 flex-1 ${filled ? "bg-gray-900" : "bg-transparent"}`} />;
+        })}
       </div>
       {failed && onRetry && (
         <button

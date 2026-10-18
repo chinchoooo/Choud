@@ -1,64 +1,55 @@
 # Branding (Choud)
 
-Strict monochrome (black `#000000`, white `#FFFFFF`, secondary line `#333333`), retro-terminal
-feel, pixel-art cloud-folder mark. The supplied kit lives in [`choud-brand-assets/`](../choud-brand-assets)
-and is the source of truth: nothing is redrawn, everything below is derived from those SVGs by
-[`scripts/brand/build_assets.py`](../scripts/brand/build_assets.py).
+Strict monochrome (black `#000000`, white `#FFFFFF`), retro-terminal feel, a dithered pixel-art
+cloud with a folder, and a chunky pixel "Choud" wordmark with an underline.
+
+The **brand sheet** is the source of truth: [`choud-brand-assets/brand-sheet.png`](../choud-brand-assets/brand-sheet.png)
+shows the logo (light and dark), the app icons, the favicons and the five retro loading screens.
+Everything the apps use is cut out of it by one script, so there is a single place to change:
 
 ```bash
-python scripts/brand/build_assets.py          # regenerate (needs Pillow and Chrome/Edge)
-python scripts/brand/build_assets.py --check  # CI-style: fail if the committed assets are stale
+python scripts/brand/from_sheet.py            # regenerate every logo and icon (needs Pillow)
+python scripts/brand/from_sheet.py --check    # fail if the committed assets are stale
 ```
 
-## Done
+(The older SVG kit in `choud-brand-assets/*.svg` is a simplified drawing of the same idea and is no
+longer used by the apps.)
 
-| Where | What | Source |
-| --- | --- | --- |
-| Web favicon | `web/public/favicon.svg` (the supplied file, byte for byte) | `choud-favicon.svg` |
-| Web fallbacks | `favicon-16/32.png` (dot-free variant, crisp small), `apple-touch-icon.png`, `icon-192/512.png`, `manifest.webmanifest`, `theme-color` black | favicon / icon-dark |
-| Web logos | `web/src/assets/brand/choud-{logo,icon}-{dark,light}.svg` (copies, ready to import) | the four SVGs |
-| Android launcher | adaptive icon: black background, mark ported to a VectorDrawable and scaled into the safe zone, plus a themed (monochrome) layer | `choud-icon-dark.svg` |
-| Android status bar | `ic_stat_choud` at 24-96 px, alpha only, dot-free so it stays legible | favicon |
-| Android logos | `choud_logo_dark/light.png` (512 px, rendered from the SVGs) and `ic_choud_mark.xml` | logo SVGs / icon |
-| Android launch window | black with the mark (`choud_splash.xml`) | icon |
-| Names | web title, Android app label and notification title are "Choud" | |
+## What the script makes
 
-Light vs dark: `choud-logo-dark` (white on black) belongs on dark surfaces (`retro`, `dark`),
-`choud-logo-light` on light ones (`retro-paper`, `light`).
+The art is turned into a clean one-colour mask (so one file serves every theme), enlarged and
+re-sharpened so the pixel edges stay crisp, then written at the sizes each platform needs.
 
-## Framework-specific adaptations
+| Where | What |
+| --- | --- |
+| Android, in the app | `choud_logo_full.png` (cloud, folder, wordmark), `ic_choud_mark.png` (cloud and folder), `choud_wordmark.png`: white masks the app tints to the current theme's ink colour, so they look right in all four themes |
+| Android, launcher | adaptive icon: black background, the mark scaled into the safe zone as the foreground, plus a themed (monochrome) layer; `ic_stat_choud` for notifications |
+| Android, launch window | black with the mark (`choud_splash.xml`, `choud_splash_icon.xml`) |
+| Web logos | `web/src/assets/brand/choud-{logo,mark,icon}-{dark,light}.png`; the `Logo` component picks the dark art (white) on dark and retro-black themes, the light art on the others |
+| Web icons | `web/public/` `icon-192/512.png`, `apple-touch-icon.png`, `favicon-16/32.png`, referenced by `manifest.webmanifest` and `index.html` |
 
-- **Android has no SVG support.** Shapes (rects and paths) are converted to VectorDrawables by the
-  script; logos that contain the `<text>` wordmark ship as PNGs rendered by Chrome from the SVG,
-  because VectorDrawable cannot draw text.
-- **Adaptive icons are cropped to a shape**, and the supplied cloud fills ~84% of its box, so the
-  launcher foreground is the same artwork scaled by 1.12 dp per grid unit (farthest point of the
-  cloud stays inside the 66 dp safe circle). The website icons use the artwork unscaled.
-- **Tiny sizes:** below ~48 px the 1.6-unit dither dots turn into noise, so the 16/32 px favicons
-  and the status-bar icon are rendered from the same SVG with only those dots removed.
-- **Wordmark font:** the supplied logos set "Choud" in `font-family="monospace"`, so it is drawn in
-  the device's own monospace font. The PNG logos fix it at export time.
+## The loading screen
 
-## Known issues in the supplied kit (left as supplied)
+The sheet's loading frames (logo, one line of status text, an outlined bar filled with solid
+blocks, a "Ready." at the end) are built natively, not shown as pictures, so every line and every
+block is something that really happened:
 
-- In both detailed logos the top of the "Choud" wordmark touches the bottom edge of the folder
-  outline (text baseline y=57, folder bottom y=52). Worth a nudge in the source SVG.
+- **Android:** `LoadingScreen` + `BlockBar`. Shown after signing in, and on the first start when the
+  phone has no copy of the library yet, with the steps reach the server, check the login, sync the
+  photos, fetch the first thumbnails, ready. Later starts skip it and open instantly.
+- **Web:** `BootScreen` shows the same logo and block bar for its start-up checks.
 
-## Web look (retro with modern icons)
+## Where the look lives in the Android app
 
-Retro is the default theme for anyone who has not picked one (saved choices are kept). The monospace,
-square-cornered, black-and-white styling is mixed with a modern line-icon set (`lucide-react`,
-tree-shaken, drawn as inline SVG so it follows the theme colours): one icon per sidebar entry, on
-Search, Refresh and Log out. `<Logo>` (`web/src/components/Logo.tsx`) picks the dark or light artwork
-from the active theme: the small mark beside the name in the sidebar, the full logo on the sign-in
-pages. The Refresh button reloads whatever is on screen and spins while anything is loading, and
-folder listings refresh themselves every 20 seconds while the tab is visible.
+The app has no stock Android widgets in anything you touch. Buttons, text fields, switches, list
+rows, bottom sheets, full-screen pages, the toast, the seek bar and play/pause controls, the progress
+bars and the scroll handle are all drawn by the app in the web app's style: bordered boxes with square
+corners in the retro themes, colours inverted while pressed, a heavier border on the field that has
+focus. (Only things the phone itself owns, such as the permission prompts and the system share sheet,
+look like Android.) The pieces are `Ui.kt` (button, field, logos), `Kit.kt` (rows, switch, group,
+banner, top bar, scroll style), `Sheet.kt` (sheets and pages), `Player.kt` (seek bar and player bar)
+and `LoadingScreen.kt`.
 
-## Not done yet
+## Names
 
-- A branded loading screen (`choud-loading-screen.html` is a prototype with a timer; it must be
-  driven by real startup state, not that timer): React boot overlay for the web app tied to
-  session / server health / media token / storage queries, and an equivalent Android view tied to
-  the first facts / health check. Steps and progress must be real, with reduced-motion respected.
-- The same logo and icon treatment on Android (it has the themes and the launcher icon, not yet the
-  icon set or a retro default).
+Web title, Android app label and notification title are "Choud".

@@ -14,7 +14,6 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.MediaController
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.VideoView
@@ -41,6 +40,7 @@ class ViewerActivity : Activity() {
     private lateinit var subtitle: TextView
     private lateinit var star: ImageView
     private lateinit var sheets: Sheets
+    private var toaster: Toaster? = null
     private lateinit var offlineButton: LinearLayout
     private lateinit var stage: FrameLayout
     private lateinit var prevButton: View
@@ -97,8 +97,8 @@ class ViewerActivity : Activity() {
         }
 
         stage = FrameLayout(this).apply { setBackgroundColor(palette.bg) }
-        prevButton = navButton("<") { go(-1) }
-        nextButton = navButton(">") { go(1) }
+        prevButton = navButton(left = true) { go(-1) }
+        nextButton = navButton(left = false) { go(1) }
         stage.post { /* buttons are added after content so they stay on top */ }
 
         val root = FrameLayout(this).apply {
@@ -116,18 +116,21 @@ class ViewerActivity : Activity() {
             addView(nextButton, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.END or Gravity.CENTER_VERTICAL))
         }
         setContentView(root)
+        toaster = Toaster(ui, root)
         sheets = Sheets(ui, root)
         show()
     }
 
-    private fun navButton(label: String, onClick: () -> Unit): TextView =
-        ui.text(label, 26f, ui.palette.ink, bold = true).apply {
-            gravity = Gravity.CENTER
-            setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14))
+    private fun navButton(left: Boolean, onClick: () -> Unit): View =
+        ui.icon(R.drawable.ic_chevron, 26, ui.palette.ink).apply {
+            rotation = if (left) 180f else 0f
+            setPadding(ui.dp(10), ui.dp(18), ui.dp(10), ui.dp(18))
             background = ui.box(ui.palette.surface, ui.palette.line, radiusDp = if (ui.palette.retro) 0 else 8)
-            alpha = 0.85f
+            alpha = 0.88f
+            isClickable = true
+            contentDescription = if (left) "Previous" else "Next"
             setOnClickListener { onClick() }
-            val params = ViewGroup.MarginLayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            val params = ViewGroup.MarginLayoutParams(ui.dp(44), ui.dp(72))
             params.setMargins(ui.dp(6), 0, ui.dp(6), 0)
             layoutParams = params
         }
@@ -256,6 +259,7 @@ class ViewerActivity : Activity() {
     // ---------------------------------------------------------------- audio
 
     private var audio: android.media.MediaPlayer? = null
+    private var audioBar: PlayerBar? = null
     private val audioTicker = android.os.Handler(android.os.Looper.getMainLooper())
 
     /** A small player of our own (the stock media controller does not show up reliably). */
@@ -287,38 +291,31 @@ class ViewerActivity : Activity() {
                 player.setOnPreparedListener { p ->
                     if (gen != generation) return@setOnPreparedListener
                     stage.removeView(loading)
-                    val seek = android.widget.SeekBar(this).apply { max = maxOf(p.duration, 1) }
-                    val time = ui.muted("0:00 / ${clock(p.duration)}", 13f).apply { gravity = Gravity.CENTER }
-                    lateinit var toggle: android.widget.Button
-                    toggle = ui.button("Pause", primary = true) {
-                        if (p.isPlaying) { p.pause(); toggle.text = "Play" } else { p.start(); toggle.text = "Pause" }
+                    val source = object : PlayerSource {
+                        override fun isPlaying() = try { p.isPlaying } catch (_: IllegalStateException) { false }
+                        override fun toggle() { if (p.isPlaying) p.pause() else p.start() }
+                        override fun positionMs() = p.currentPosition
+                        override fun durationMs() = p.duration
+                        override fun seekToMs(ms: Int) = p.seekTo(ms)
                     }
-                    val back = ui.button("-10s") { p.seekTo((p.currentPosition - 10_000).coerceAtLeast(0)) }
-                    val forward = ui.button("+10s") { p.seekTo((p.currentPosition + 10_000).coerceAtMost(p.duration)) }
-                    seek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-                        override fun onProgressChanged(bar: android.widget.SeekBar?, value: Int, fromUser: Boolean) {
-                            if (fromUser) p.seekTo(value)
-                        }
-                        override fun onStartTrackingTouch(bar: android.widget.SeekBar?) {}
-                        override fun onStopTrackingTouch(bar: android.widget.SeekBar?) {}
-                    })
-                    p.setOnCompletionListener { toggle.text = "Play" }
+                    val bar = PlayerBar(ui, source)
+                    audioBar = bar
+                    val back = ui.button("-10 sec") { p.seekTo((p.currentPosition - 10_000).coerceAtLeast(0)); bar.refresh() }
+                    val forward = ui.button("+10 sec") { p.seekTo((p.currentPosition + 10_000).coerceAtMost(p.duration)); bar.refresh() }
+                    p.setOnCompletionListener { bar.refresh() }
                     val controls = ui.horizontal().apply {
                         gravity = Gravity.CENTER
-                        addView(back)
-                        addView(android.view.View(this@ViewerActivity), LinearLayout.LayoutParams(ui.dp(10), 1))
-                        addView(toggle)
-                        addView(android.view.View(this@ViewerActivity), LinearLayout.LayoutParams(ui.dp(10), 1))
-                        addView(forward)
+                        addView(back, LinearLayout.LayoutParams(ui.dp(96), ui.dp(44)))
+                        addView(android.view.View(this@ViewerActivity), LinearLayout.LayoutParams(ui.dp(12), 1))
+                        addView(forward, LinearLayout.LayoutParams(ui.dp(96), ui.dp(44)))
                     }
                     putCentered(
                         ui.vertical().apply {
                             gravity = Gravity.CENTER
-                            setPadding(ui.dp(24), 0, ui.dp(24), 0)
+                            setPadding(ui.dp(16), 0, ui.dp(16), 0)
                             addView(ui.badge(typeBadge(file.name), 96))
                             addView(ui.text(file.name, 14f).apply { gravity = Gravity.CENTER; setPadding(0, ui.dp(12), 0, ui.dp(20)) })
-                            addView(seek, ui.matchWidth())
-                            addView(time, ui.matchWidth(4))
+                            addView(bar, ui.matchWidth())
                             addView(controls, ui.matchWidth(16))
                         },
                     )
@@ -327,12 +324,11 @@ class ViewerActivity : Activity() {
                         override fun run() {
                             if (audio !== p || gen != generation) return
                             try {
-                                seek.progress = p.currentPosition
-                                time.text = "${clock(p.currentPosition)} / ${clock(p.duration)}"
+                                bar.refresh()
                             } catch (_: IllegalStateException) {
                                 return
                             }
-                            audioTicker.postDelayed(this, 500)
+                            audioTicker.postDelayed(this, 400)
                         }
                     }
                     audioTicker.post(tick)
@@ -367,14 +363,30 @@ class ViewerActivity : Activity() {
                     return@runOnUiThread
                 }
                 val player = VideoView(this)
-                val controller = MediaController(this).apply { setAnchorView(player) }
-                player.setMediaController(controller)
+                val source = object : PlayerSource {
+                    override fun isPlaying() = player.isPlaying
+                    override fun toggle() { if (player.isPlaying) player.pause() else player.start() }
+                    override fun positionMs() = player.currentPosition
+                    override fun durationMs() = player.duration
+                    override fun seekToMs(ms: Int) = player.seekTo(ms)
+                }
+                val bar = PlayerBar(ui, source).apply { setBackgroundColor(ui.palette.surface) }
                 player.setOnPreparedListener {
                     stage.removeView(loading)
                     player.start()
-                    // Audio has no picture, so keep the transport controls on screen for good.
-                    if (isAudio) controller.show(0)
+                    bar.refresh()
+                    val tick = object : Runnable {
+                        override fun run() {
+                            if (video !== player || gen != generation) return
+                            bar.refresh()
+                            audioTicker.postDelayed(this, 400)
+                        }
+                    }
+                    audioTicker.post(tick)
                 }
+                player.setOnCompletionListener { bar.refresh() }
+                // Tap the picture to show or hide the controls; audio keeps them on screen.
+                if (!isAudio) player.setOnClickListener { bar.visibility = if (bar.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
                 player.setOnErrorListener { _, _, _ ->
                     loading.text = "This file could not be played here.\nTap \"Open with\" to use another app."
                     if (loading.parent == null) stage.addView(loading)
@@ -392,6 +404,7 @@ class ViewerActivity : Activity() {
                     )
                 }
                 stage.addView(player, if (isAudio) 1 else 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER))
+                stage.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
                 player.setVideoURI(Uri.parse(url))
             }
         }
@@ -658,7 +671,7 @@ class ViewerActivity : Activity() {
     }
 
     private fun say(text: String) {
-        android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show()
+        toaster?.show(text)
     }
 
     private fun showMore() {

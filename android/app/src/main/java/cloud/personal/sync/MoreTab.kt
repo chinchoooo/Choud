@@ -71,7 +71,7 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
         val page = ui.vertical().apply {
             addView(ui.topBar(title, onBack = { pop() }))
             addView(ui.divider())
-            addView(ScrollView(ui.context).apply { addView(column) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(ScrollView(ui.context).apply { styleScroll(ui); addView(column) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         }
         setScreen(Screen(page, onTick))
     }
@@ -100,7 +100,7 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
         column.addView(accountCard(), ui.matchWidth().apply { setMargins(ui.dp(16), ui.dp(16), ui.dp(16), 0) })
         homeRows = ui.vertical().also { column.addView(it) }
         buildHomeRows()
-        setScreen(Screen(ScrollView(ui.context).apply { addView(column) }))
+        setScreen(Screen(ScrollView(ui.context).apply { styleScroll(ui); addView(column) }))
     }
 
     private fun accountCard(): View = ui.card().apply {
@@ -365,18 +365,7 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
 
     private fun editAwayAddress() {
         host.sheets.show("Away address") { sheet ->
-            val field = android.widget.EditText(ui.context).apply {
-                hint = "https://my-server.example.com"
-                setText(settings.altServerUrl)
-                typeface = ui.typeface
-                setTextColor(palette.ink)
-                setHintTextColor(palette.mute)
-                textSize = 15f
-                setSingleLine()
-                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
-                setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14))
-                background = ui.box(palette.surface, palette.line)
-            }
+            val field = ui.field("https://my-server.example.com", settings.altServerUrl, android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI)
             sheet.body.addView(
                 ui.muted("Used when the main address does not answer. Leave empty to turn it off.", 12f).apply { setPadding(ui.dp(20), 0, ui.dp(20), ui.dp(10)) },
             )

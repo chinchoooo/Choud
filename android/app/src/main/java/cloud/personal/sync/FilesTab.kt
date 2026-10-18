@@ -83,6 +83,7 @@ class FilesTab(private val host: Host) : Tab {
         selectionBar.view.visibility = View.GONE
         addView(ui.divider())
         list.layoutManager = LinearLayoutManager(ui.context)
+        list.styleScroll(ui)
         list.adapter = adapter
         list.setHasFixedSize(true)
         list.setItemViewCacheSize(30)
@@ -152,18 +153,7 @@ class FilesTab(private val host: Host) : Tab {
     /** A sheet with a text field and Save, used for naming things. */
     private fun askName(title: String, hint: String, initial: String, onName: (String) -> Unit) {
         host.sheets.show(title) { sheet ->
-            val field = android.widget.EditText(ui.context).apply {
-                this.hint = hint
-                setText(initial)
-                setSelection(initial.length)
-                typeface = ui.typeface
-                setTextColor(palette.ink)
-                setHintTextColor(palette.mute)
-                textSize = 15f
-                setSingleLine()
-                setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14))
-                background = ui.box(palette.surface, palette.line)
-            }
+            val field = ui.field(hint, initial).apply { setSelection(initial.length) }
             sheet.body.addView(
                 field,
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
