@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 ALLOWED_SIZES = (128, 256, 512, 1024)
+FORMATS = {"jpg": "image/jpeg", "webp": "image/webp"}
 # Refuse to decode absurdly large images (decompression bombs) or run ffmpeg on huge inputs.
 MAX_IMAGE_PIXELS = 120_000_000
 
@@ -42,7 +43,7 @@ def kind_of(file: File) -> str | None:
     return None
 
 
-def _image_thumbnail(source: Path, target: Path, size: int) -> None:
+def _image_thumbnail(source: Path, target: Path, size: int, fmt: str = "jpg") -> None:
     from PIL import Image, ImageOps
 
     Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
@@ -54,7 +55,20 @@ def _image_thumbnail(source: Path, target: Path, size: int) -> None:
         image.thumbnail((size, size))
         if image.mode not in ("RGB", "L"):
             image = image.convert("RGB")
-        image.save(target, "JPEG", quality=82, optimize=True)
+        if fmt == "webp":
+            # About a third smaller than JPEG at the same look, which is most of the bytes on a
+            # slow link. method=4 is the usual speed/size balance.
+            image.save(target, "WEBP", quality=72, method=4)
+        else:
+            image.save(target, "JPEG", quality=82, optimize=True)
+
+
+def _to_webp(jpeg: Path, target: Path) -> None:
+    """Re-encodes a (small) JPEG thumbnail as WebP (video frames come out of ffmpeg as JPEG)."""
+    from PIL import Image
+
+    with Image.open(jpeg) as image:
+        image.convert("RGB").save(target, "WEBP", quality=72, method=4)
 
 
 def sniff_container(path: Path) -> str | None:
@@ -103,18 +117,30 @@ def _video_thumbnail(source: Path, target: Path, size: int) -> None:
     raise ThumbnailUnavailable("could not extract a frame from the video")
 
 
-def get_thumbnail(file: File, size: int) -> Path:
-    """Path of a JPEG thumbnail at most `size` px on its longest side (generated if needed)."""
+def get_thumbnail(file: File, size: int, fmt: str = "jpg") -> Path:
+    """Path of a thumbnail at most `size` px on its longest side (generated if needed).
+
+    `fmt` is "jpg" (works everywhere) or "webp" (smaller; every Android and browser we support).
+    """
     if size not in ALLOWED_SIZES:
         raise ThumbnailUnavailable(f"size must be one of {ALLOWED_SIZES}")
+    if fmt not in FORMATS:
+        raise ThumbnailUnavailable(f"format must be one of {tuple(FORMATS)}")
     kind = kind_of(file)
     if kind is None or not file.content_hash:
         raise ThumbnailUnavailable("no thumbnail for this type of file")
 
     directory = thumbs_dir()
     directory.mkdir(parents=True, exist_ok=True)
-    cached = directory / f"{file.content_hash}-{size}.jpg"
+    cached = directory / f"{file.content_hash}-{size}.{fmt}"
     if cached.exists():
+        return cached
+    if fmt == "webp" and kind == "video":
+        # ffmpeg writes JPEG; make that first (cached for the JPEG callers too), then convert.
+        jpeg = get_thumbnail(file, size, "jpg")
+        tmp_webp = directory / f"{file.content_hash}-{size}.tmp.webp"
+        _to_webp(jpeg, tmp_webp)
+        tmp_webp.replace(cached)
         return cached
 
     # Read the stored object in place when we can (no copy of a multi-megabyte original just to
@@ -124,12 +150,12 @@ def get_thumbnail(file: File, size: int) -> Path:
     if source is None:
         staged = file_service.prepare_download(file)
         source = staged
-    fd, tmp_name = tempfile.mkstemp(dir=directory, suffix=".tmp.jpg")
+    fd, tmp_name = tempfile.mkstemp(dir=directory, suffix=f".tmp.{fmt}")
     os.close(fd)  # we only want a unique name; Pillow/ffmpeg reopen it
     tmp_out = Path(tmp_name)
     try:
         if kind == "image":
-            _image_thumbnail(source, tmp_out, size)
+            _image_thumbnail(source, tmp_out, size, fmt)
         else:
             _video_thumbnail(source, tmp_out, size)
         tmp_out.replace(cached)  # atomic: a half-written thumbnail is never served
@@ -159,9 +185,10 @@ def _marker(content_hash: str) -> Path:
 def pregenerate(db, limit: int = 6) -> int:
     """Makes grid thumbnails ahead of time for photos and videos that lack one, newest first.
 
-    at once, which is the slow part of opening Photos. Files that cannot have a thumbnail get a
-    marker so they are not retried forever. Returns how many thumbnails were made.
-    so they are not retried forever. Returns how many thumbnails were made.
+    Opening Photos then finds them ready instead of making a whole screenful at once, which is
+    the slow part. For each file it makes the JPEG and WebP grid thumbnails and the ThumbHash
+    placeholder. Files that cannot have a thumbnail get a marker so they are not retried forever.
+    Returns how many files it worked on.
     """
     from sqlalchemy import or_, select
 
@@ -177,19 +204,22 @@ def pregenerate(db, limit: int = 6) -> int:
         .order_by(File.created_at.desc())
     ).scalars()
     made = 0
+    dirty = False
     for file in rows:
         if made >= limit:
             break
         content_hash = file.content_hash
-        if content_hash in _settled:
+        if content_hash in _settled and file.thumbhash is not None:
             continue
-        if (directory / f"{content_hash}-{PREGENERATE_SIZE}.jpg").exists() or _marker(
-            content_hash
-        ).exists():
+        if _marker(content_hash).exists():
             _settled.add(content_hash)
             continue
         try:
-            get_thumbnail(file, PREGENERATE_SIZE)
+            jpeg = get_thumbnail(file, PREGENERATE_SIZE, "jpg")
+            get_thumbnail(file, PREGENERATE_SIZE, "webp")
+            if file.thumbhash is None:
+                file.thumbhash = _thumbhash_for(file, jpeg)
+                dirty = True
             made += 1
         except (ThumbnailUnavailable, file_service.StorageError):
             _marker(content_hash).touch()
@@ -197,4 +227,14 @@ def pregenerate(db, limit: int = 6) -> int:
             logger.warning("thumbnail pre-generation failed for %s: %s", file.id, exc)
             _marker(content_hash).touch()
         _settled.add(content_hash)
+    if dirty:
+        db.commit()
     return made
+
+
+def _thumbhash_for(file: File, jpeg: Path) -> str | None:
+    """The ThumbHash of a file, shared by every file with the same bytes."""
+    from app.services import thumbhash
+
+    # "" means "tried, nothing to show": it stops the file being retried on every pass.
+    return thumbhash.thumbhash_of_image(jpeg) or ""

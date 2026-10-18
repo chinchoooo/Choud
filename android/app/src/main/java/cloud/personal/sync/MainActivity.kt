@@ -296,6 +296,12 @@ class MainActivity : Activity(), Host {
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
             )
             addView(appStatus)
+            addView(
+                ui.iconOnly(R.drawable.ic_search, "Search", p.ink) {
+                    SearchPage(this@MainActivity) { id, name -> showFolder(id, name) }.show()
+                },
+                LinearLayout.LayoutParams(ui.dp(40), ui.dp(40)).apply { leftMargin = ui.dp(6) },
+            )
         }
 
         // Bottom navigation: an icon and a label per tab; the current one is inverted, as on the web.
@@ -340,6 +346,7 @@ class MainActivity : Activity(), Host {
         setContentView(stack)
         select(selected.coerceIn(0, tabs.lastIndex))
         lastFactsAt = 0
+        handleShareIntent(intent)
     }
 
     private fun select(index: Int) {
@@ -425,6 +432,62 @@ class MainActivity : Activity(), Host {
             val shown = toaster
             if (shown != null) shown.show(text, actionLabel, onAction) else android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private var pickCallback: ((List<android.net.Uri>) -> Unit)? = null
+
+    override fun pickFiles(onPicked: (List<android.net.Uri>) -> Unit) {
+        pickCallback = onPicked
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        @Suppress("DEPRECATION")
+        startActivityForResult(intent, REQUEST_PICK)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_PICK) return
+        val callback = pickCallback
+        pickCallback = null
+        if (resultCode != RESULT_OK || data == null || callback == null) return
+        val uris = ArrayList<android.net.Uri>()
+        data.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
+        data.data?.let { if (uris.isEmpty()) uris.add(it) }
+        if (uris.isNotEmpty()) callback(uris)
+    }
+
+    override fun showFolder(id: String, name: String) {
+        val index = tabs.indexOfFirst { it.first == "Files" }
+        if (index < 0) return
+        select(index)
+        (tabs[index].second as? FilesTab)?.open(id, name)
+    }
+
+    /** Files shared into Choud from another app: ask where to put them, then upload. */
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null || !settings.loggedIn) return
+        val uris = ArrayList<android.net.Uri>()
+        when (intent.action) {
+            Intent.ACTION_SEND -> @Suppress("DEPRECATION") (intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM))?.let { uris.add(it) }
+            Intent.ACTION_SEND_MULTIPLE -> @Suppress("DEPRECATION") intent.getParcelableArrayListExtra<android.net.Uri>(Intent.EXTRA_STREAM)?.let { uris.addAll(it) }
+            else -> return
+        }
+        intent.action = null // handled: a rotation must not upload them again
+        if (uris.isEmpty()) return
+        FolderPickerDialog(this, this, "Upload ${uris.size} file${if (uris.size == 1) "" else "s"} to...", emptySet()) { target, _ ->
+            PhoneUpload.upload(this, target, uris) { _, _ -> }
+        }.show()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleShareIntent(intent)
     }
 
     override fun requestMediaPermissions() {
@@ -545,6 +608,8 @@ class MainActivity : Activity(), Host {
 }
 
 /** The list the viewer is browsing; set right before it opens (a list of file entries is not Parcelable-cheap). */
+private const val REQUEST_PICK = 4101
+
 object ViewerSession {
     @Volatile
     var items: List<RemoteItem> = emptyList()

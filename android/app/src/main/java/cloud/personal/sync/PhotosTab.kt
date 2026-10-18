@@ -19,7 +19,7 @@ class PhotosTab(private val host: Host) : Tab {
     private val ui = host.ui
     private val palette = ui.palette
 
-    private val pageSize = 120
+    private val db by lazy { LibraryDb(ui.context) }
     private var kind = "all"
     private val items = ArrayList<RemoteItem>()
     private var rows: List<PhotoRow> = emptyList()
@@ -89,9 +89,15 @@ class PhotosTab(private val host: Host) : Tab {
         (list.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
         list.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                if (dy <= 0 || loading || items.size >= total) return
+                if (dy == 0) return
+                // Warm the thumbnails a few screens ahead, in the direction of travel.
                 val last = grid.findLastVisibleItemPosition()
-                if (last >= rows.size - 12) loadMore()
+                val first = grid.findFirstVisibleItemPosition()
+                val range = if (dy > 0) (last + 1)..(last + 60) else (first - 60) until first
+                for (i in range) {
+                    val row = rows.getOrNull(i) as? PhotoRow.Photo ?: continue
+                    ThumbLoader.prefetchPhoto(host.api, row.item.id, row.item.version)
+                }
             }
         })
         swipe.addView(list)
@@ -171,6 +177,8 @@ class PhotosTab(private val host: Host) : Tab {
         val picked = chosen()
         val on = !picked.all { it.favorite }
         bulk.favorite(picked, on) {
+            val ids = selected.toList()
+            thread { runCatching { db.setFavorite(ids, on) } }
             for (i in items.indices) if (items[i].id in selected) items[i] = items[i].copy(favorite = on)
             rows = groupByMonth(items)
             adapter.notifyDataSetChanged()
@@ -187,25 +195,55 @@ class PhotosTab(private val host: Host) : Tab {
     /** Bumped by every reload so a slow answer for an older request never lands on the new list. */
     private var generation = 0
 
-    /** Paints the last known first page at once (no blank flash), then asks the server what changed. */
+    /**
+     * Paints the library from the phone's own database at once (every month, no network), then asks
+     * the server only what changed since last time: usually a bodyless 304, otherwise a few rows.
+     */
     private fun reload() {
         loadedOnce = true
         generation++
-        loading = false
+        val gen = generation
+        val wantedKind = kind
+        loading = true
         error = null
-        val cached = host.api.cachedPhotos(kind, 0, pageSize)
-        if (cached != null) {
-            items.clear()
-            items.addAll(cached.items)
-            total = cached.total
-            rows = groupByMonth(items)
-        } else {
-            items.clear()
-            rows = emptyList()
-            total = 0
+        refreshStatus()
+        thread {
+            try {
+                val local = db.load(wantedKind)
+                host.runOnUi { if (gen == generation) applyItems(local) }
+            } catch (e: Exception) {
+                EventLog.log("photos: local database unreadable: ${e.javaClass.simpleName}: ${e.message}")
+            }
+            try {
+                val changed = Library.sync(db, host.api)
+                val fresh = if (changed) db.load(wantedKind) else null
+                host.runOnUi {
+                    if (gen != generation) return@runOnUi
+                    loading = false
+                    error = null
+                    if (fresh != null) applyItems(fresh) else refreshStatus()
+                }
+            } catch (e: Exception) {
+                EventLog.log("photos: could not refresh: ${e.javaClass.simpleName}: ${e.message}")
+                host.runOnUi {
+                    if (gen != generation) return@runOnUi
+                    loading = false
+                    error = if (e is ApiError && e.status == 404) "Update your Choud server to see photos in this version of the app." else (e.message ?: e.javaClass.simpleName)
+                    refreshStatus()
+                }
+            }
         }
+    }
+
+    private fun applyItems(list: List<RemoteItem>) {
+        items.clear()
+        items.addAll(list)
+        total = items.size
+        rows = groupByMonth(items)
         adapter.notifyDataSetChanged()
-        loadMore(replace = true)
+        refreshStatus()
+        // Read ahead: the first screens' worth of thumbnails come in one batched request each.
+        items.take(72).forEach { ThumbLoader.prefetchPhoto(host.api, it.id, it.version) }
     }
 
     private fun showState(content: View?) {
@@ -217,55 +255,10 @@ class PhotosTab(private val host: Host) : Tab {
         }
     }
 
-    private fun loadMore(replace: Boolean = false) {
-        if (loading) return
-        loading = true
-        val wantedKind = kind
-        val wantedGeneration = generation
-        val offset = if (replace) 0 else items.size
-        refreshStatus()
-        thread {
-            try {
-                val page = host.api.listPhotos(wantedKind, offset, pageSize)
-                host.runOnUi {
-                    if (wantedKind != kind || wantedGeneration != generation) return@runOnUi
-                    if (replace) {
-                        // Only swap the first page in if nothing further was scrolled in meanwhile.
-                        if (items.size <= pageSize) {
-                            items.clear()
-                            items.addAll(page.items)
-                        }
-                    } else {
-                        if (offset != items.size) return@runOnUi
-                        items.addAll(page.items)
-                    }
-                    total = page.total
-                    rows = groupByMonth(items)
-                    loading = false
-                    error = null
-                    adapter.notifyDataSetChanged()
-                    refreshStatus()
-                    // Read ahead: warm the phone's thumbnail cache for this whole page in the background.
-                    page.items.forEach { f ->
-                        ThumbLoader.prefetch("t:${f.id}:256", 256) { host.api.thumbnailUrl(f.id, 256) }
-                    }
-                }
-            } catch (e: Exception) {
-                EventLog.log("photos: could not load: ${e.javaClass.simpleName}: ${e.message}")
-                host.runOnUi {
-                    if (wantedGeneration != generation) return@runOnUi
-                    loading = false
-                    error = e.message ?: e.javaClass.simpleName
-                    refreshStatus()
-                }
-            }
-        }
-    }
-
     private fun refreshStatus() {
         swipe.isRefreshing = loading && items.isNotEmpty()
         if (!loading) loadedAt = System.currentTimeMillis()
-        countView.text = if (items.isEmpty()) "" else "${items.size} of $total"
+        countView.text = if (items.isEmpty()) "" else "${items.size} item${if (items.size == 1) "" else "s"}"
         when {
             loading && items.isEmpty() -> {
                 showState(
@@ -342,10 +335,7 @@ class PhotosTab(private val host: Host) : Tab {
                         isVideo -> "VIDEO"
                         else -> "★"
                     }
-                    ThumbLoader.load(
-                        h.image, "t:${file.id}:256", 256,
-                        urlProvider = { host.api.thumbnailUrl(file.id, 256) },
-                    )
+                    ThumbLoader.loadPhoto(h.image, host.api, file.id, file.version, file.thumbhash)
                     val picked = file.id in selected
                     h.check.visibility = if (picked) View.VISIBLE else View.GONE
                     h.image.alpha = if (picked) 0.5f else 1f

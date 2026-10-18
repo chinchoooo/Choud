@@ -25,6 +25,12 @@ class SheetHandle(val body: LinearLayout, private val close: () -> Unit, private
     fun dismiss() = close()
 }
 
+/** A full-screen page over the app: put views in `body`; Back or `dismiss()` closes it. */
+class Page(val body: LinearLayout, private val close: () -> Unit, private val open: () -> Boolean) {
+    val isShowing: Boolean get() = open()
+    fun dismiss() = close()
+}
+
 /** A scroll area that never grows taller than a share of the screen. */
 private class CappedScroll(context: android.content.Context, private val maxFraction: Float) : ScrollView(context) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -39,17 +45,62 @@ private class CappedScroll(context: android.content.Context, private val maxFrac
  */
 class Sheets(private val ui: Ui, private val container: FrameLayout) {
     private var layer: FrameLayout? = null
+    private val pages = ArrayList<FrameLayout>()
 
-    val isOpen: Boolean get() = layer != null
+    val isOpen: Boolean get() = layer != null || pages.isNotEmpty()
 
+    /** Back pressed: closes the sheet if one is open, else the top page. */
     fun dismiss() {
+        if (layer != null) closeSheet() else pages.lastOrNull()?.let { closePage(it) }
+    }
+
+    private fun closeSheet() {
         layer?.let { container.removeView(it) }
         layer = null
     }
 
+    private fun closePage(page: FrameLayout) {
+        container.removeView(page)
+        pages.remove(page)
+    }
+
+    /**
+     * A full-screen page with a back arrow and a title. `header` (a search field, say) sits under the
+     * title bar and does not scroll.
+     */
+    fun page(title: String, header: View? = null): Page {
+        val p = ui.palette
+        val body = ui.vertical()
+        lateinit var root: FrameLayout
+        val bar = ui.topBar(title, onBack = { closePage(root) })
+        val column = ui.vertical().apply {
+            addView(bar)
+            addView(ui.divider())
+            if (header != null) {
+                addView(header)
+                addView(ui.divider())
+            }
+            addView(
+                ScrollView(ui.context).apply {
+                    isFillViewport = true
+                    addView(body)
+                },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f),
+            )
+        }
+        root = FrameLayout(ui.context).apply {
+            setBackgroundColor(p.bg)
+            isClickable = true // nothing underneath may be tapped through the page
+            addView(column, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        container.addView(root, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        pages.add(root)
+        return Page(body, { closePage(root) }, { pages.contains(root) })
+    }
+
     /** Opens an empty sheet with a title; the caller fills `body`. Any open sheet is replaced. */
     fun show(title: String?, subtitle: String? = null, fill: (SheetHandle) -> Unit = {}): SheetHandle {
-        dismiss()
+        closeSheet()
         val p = ui.palette
         val body = ui.vertical()
         val scroll = CappedScroll(ui.context, 0.78f).apply { addView(body) }
@@ -83,7 +134,7 @@ class Sheets(private val ui: Ui, private val container: FrameLayout) {
         val root = FrameLayout(ui.context).apply {
             setBackgroundColor(0x99000000.toInt())
             isClickable = true
-            setOnClickListener { dismiss() }
+            setOnClickListener { closeSheet() }
             addView(panel, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
         }
         container.addView(root, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -94,7 +145,7 @@ class Sheets(private val ui: Ui, private val container: FrameLayout) {
             root.animate().alpha(1f).setDuration(120).start()
             panel.animate().translationY(0f).setDuration(180).start()
         }
-        val handle = SheetHandle(body, { if (layer === root) dismiss() }, { layer === root })
+        val handle = SheetHandle(body, { if (layer === root) closeSheet() }, { layer === root })
         fill(handle)
         return handle
     }

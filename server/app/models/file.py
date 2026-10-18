@@ -52,6 +52,8 @@ class File(Base):
     # The last-modified time the uploading device reports (a phone photo's own date). Lists show
     # this; created_at/updated_at remain the server's bookkeeping times.
     modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # A ~30-byte blurry stand-in for the picture (ThumbHash, base64) so a grid can paint instantly.
+    thumbhash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Soft delete / trash (see docs/architecture.md#13-trash). NULL means
     # not deleted.

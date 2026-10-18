@@ -152,6 +152,18 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
             full(),
         )
 
+        rows.addView(ui.sectionHeader("Your library"))
+        val panels = Panels(host)
+        rows.addView(
+            ui.group(
+                ui.listRow(R.drawable.ic_link, "Shared links", "See, copy or stop the links you made") { panels.sharedLinks() },
+                ui.listRow(R.drawable.ic_trash, "Trash", "Restore deleted files") { panels.trash() },
+                ui.listRow(R.drawable.ic_drive, "Storage", "Where your space went") { panels.storage() },
+                ui.listRow(R.drawable.ic_shield, "Sign-in history", "Recent attempts on your account") { panels.security() },
+            ),
+            full(),
+        )
+
         rows.addView(ui.sectionHeader("Photos and storage"))
         val keptCount = OfflineStore.items(context).size
         rows.addView(

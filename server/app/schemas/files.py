@@ -48,6 +48,8 @@ class FileResponse(BaseModel):
     taken_at: datetime | None = None
     # The uploading device's own last-modified time; clients show this as the file's date.
     modified_at: datetime | None = None
+    # ThumbHash (base64) of a photo or video: a tiny blurry placeholder, if one has been made yet.
+    thumbhash: str | None = None
     created_at: datetime
     updated_at: datetime
     # Filled in by the routes that know the viewer's favorites / the folder tree.

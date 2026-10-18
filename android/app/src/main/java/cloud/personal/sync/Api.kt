@@ -48,6 +48,10 @@ data class RemoteItem(
     val createdAtMillis: Long?,
     /** The phone's own last-modified time for the file, if the server has it. */
     val modifiedAtMillis: Long? = null,
+    /** A ~25-byte blurry stand-in (base64 ThumbHash) painted while the real thumbnail loads. */
+    val thumbhash: String = "",
+    /** The start of the content hash: part of the thumbnail's cache key, so an edited photo reloads. */
+    val version: String = "",
 ) {
     /** For the photo timeline: when it was taken, else the file's own date, else the upload time. */
     val sortMillis: Long get() = takenAtMillis ?: modifiedAtMillis ?: createdAtMillis ?: 0L
@@ -78,6 +82,8 @@ private fun JSONObject.toItem() = RemoteItem(
     takenAtMillis = parseMillis(if (isNull("taken_at")) null else optString("taken_at")),
     createdAtMillis = parseMillis(optString("created_at")),
     modifiedAtMillis = parseMillis(if (isNull("modified_at")) null else optString("modified_at")),
+    thumbhash = if (isNull("thumbhash")) "" else optString("thumbhash", ""),
+    version = if (isNull("content_hash")) "" else optString("content_hash", "").take(12),
 )
 
 /** A request body that re-opens its source each time, so a retry after a token refresh works. */
@@ -279,7 +285,7 @@ class ApiClient(
     fun uploadNew(
         open: () -> InputStream,
         name: String,
-        folderId: String,
+        folderId: String?,
         size: Long,
         mime: String,
         contentHash: String,
@@ -296,7 +302,7 @@ class ApiClient(
         UploadResult(body.getString("id"), body.optString("content_hash", ""))
 
     private fun uploadSmall(
-        open: () -> InputStream, name: String, folderId: String, size: Long, mime: String,
+        open: () -> InputStream, name: String, folderId: String?, size: Long, mime: String,
         onBytes: (Long) -> Unit,
         takenAt: String?,
         modifiedAt: String?,
@@ -305,7 +311,7 @@ class ApiClient(
             send("/api/files/upload") {
                 val form = MultipartBody.Builder().setType(MultipartBody.FORM)
                     .addFormDataPart("name", name)
-                    .addFormDataPart("folder_id", folderId)
+                    .apply { if (folderId != null) addFormDataPart("folder_id", folderId) }
                     .addFormDataPart("base_version_id", "none")
                     .apply { if (takenAt != null) addFormDataPart("taken_at", takenAt) }
                     .apply { if (modifiedAt != null) addFormDataPart("modified_at", modifiedAt) }
@@ -318,7 +324,7 @@ class ApiClient(
     private fun uploadChunked(
         open: () -> InputStream,
         name: String,
-        folderId: String,
+        folderId: String?,
         size: Long,
         contentHash: String,
         resumeId: String?,
@@ -339,8 +345,9 @@ class ApiClient(
         if (session == null) {
             val payload = JSONObject()
                 .put("file_name", name).put("file_size", size).put("chunk_size", CHUNK_SIZE)
-                .put("expected_hash", contentHash).put("folder_id", folderId)
+                .put("expected_hash", contentHash)
                 .put("base_version_id", "none")
+            if (folderId != null) payload.put("folder_id", folderId)
             if (takenAt != null) payload.put("taken_at", takenAt)
             if (modifiedAt != null) payload.put("modified_at", modifiedAt)
             val created = send("/api/uploads") { it.post(json(payload)) }.jsonBody()
@@ -560,6 +567,183 @@ class ApiClient(
     fun createShareLink(fileId: String, expiresInHours: Int?, maxDownloads: Int?): String =
         createShare(fileId, expiresInHours, maxDownloads).link
 
+    // ---------------------------------------------------------------- folders, trash, shares, insights
+
+    /** Makes a folder inside `parentId` (null = top level) and returns its id. */
+    fun createFolder(name: String, parentId: String?): String {
+        val body = JSONObject().put("name", name)
+        if (parentId != null) body.put("parent_id", parentId)
+        return send("/api/folders") { it.post(json(body)) }.jsonBody().getString("id")
+    }
+
+    fun renameFile(id: String, name: String) {
+        send("/api/files/$id") { it.patch(json(JSONObject().put("name", name))) }.close()
+    }
+
+    fun renameFolder(id: String, name: String) {
+        send("/api/folders/$id") { it.patch(json(JSONObject().put("name", name))) }.close()
+    }
+
+    class TrashedItem(val id: String, val name: String, val size: Long, val deletedAtMillis: Long?)
+
+    fun trash(): List<TrashedItem> {
+        val files = send("/api/trash").jsonBody().getJSONArray("files")
+        return (0 until files.length()).map {
+            val f = files.getJSONObject(it)
+            TrashedItem(f.getString("id"), f.getString("name"), f.optLong("size", 0), parseMillis(f.optString("deleted_at")))
+        }
+    }
+
+    fun purge(id: String) {
+        send("/api/trash/$id") { it.delete() }.close()
+    }
+
+    class ShareInfo(
+        val id: String,
+        val targetName: String,
+        val kind: String,
+        val link: String,
+        val permission: String,
+        val expiresAtMillis: Long?,
+        val downloads: Int,
+        val maxDownloads: Int?,
+        val active: Boolean,
+        val hasPassword: Boolean,
+    )
+
+    fun shares(): List<ShareInfo> {
+        val body = send("/api/shares").use { org.json.JSONArray(it.body!!.string()) }
+        return (0 until body.length()).map {
+            val s = body.getJSONObject(it)
+            val publicUrl = if (s.isNull("public_url")) "" else s.optString("public_url")
+            ShareInfo(
+                id = s.getString("id"),
+                targetName = s.optString("target_name", ""),
+                kind = s.optString("kind", "file"),
+                link = publicUrl.ifBlank { base + s.getString("url_path") },
+                permission = s.optString("permission", "view"),
+                expiresAtMillis = if (s.isNull("expires_at")) null else parseMillis(s.optString("expires_at")),
+                downloads = s.optInt("download_count", 0),
+                maxDownloads = if (s.isNull("max_downloads")) null else s.optInt("max_downloads"),
+                active = s.optBoolean("active", true),
+                hasPassword = s.optBoolean("has_password", false),
+            )
+        }
+    }
+
+    fun revokeShare(id: String) {
+        send("/api/shares/$id") { it.delete() }.close()
+    }
+
+    fun revokeAllShares(): Int =
+        send("/api/shares/revoke-all") { it.post(json(JSONObject())) }.jsonBody().optInt("revoked", 0)
+
+    class Space(
+        val currentBytes: Long,
+        val dedupSavedBytes: Long,
+        val historyBytes: Long,
+        val trashBytes: Long,
+        val byType: List<Pair<String, Long>>,
+        val biggest: List<Pair<String, Long>>,
+    )
+
+    fun space(): Space {
+        val b = send("/api/insights/space").jsonBody()
+        val types = b.optJSONObject("by_type")
+        val byType = types?.keys()?.asSequence()?.map { it to types.getLong(it) }?.sortedByDescending { it.second }?.toList() ?: emptyList()
+        val big = b.optJSONArray("biggest")
+        val biggest = if (big == null) emptyList() else (0 until big.length()).map { big.getJSONObject(it).let { f -> f.getString("name") to f.optLong("size", 0) } }
+        return Space(b.optLong("current_bytes"), b.optLong("dedup_saved_bytes"), b.optLong("history_bytes"), b.optLong("trash_bytes"), byType, biggest)
+    }
+
+    class LoginEvent(val atMillis: Long?, val ip: String, val agent: String, val success: Boolean, val newDevice: Boolean)
+
+    fun securityLog(): List<LoginEvent> {
+        val arr = send("/api/auth/security-log").use { org.json.JSONArray(it.body!!.string()) }
+        return (0 until arr.length()).map {
+            val e = arr.getJSONObject(it)
+            LoginEvent(parseMillis(e.optString("at")), e.optString("ip", ""), e.optString("user_agent", ""), e.optBoolean("success", true), e.optBoolean("new_device", false))
+        }
+    }
+
+    class SearchResults(val folders: List<FolderItem>, val files: List<RemoteItem>, val inside: List<Pair<RemoteItem, String>>)
+
+    fun search(query: String): SearchResults {
+        val body = send("/api/search?q=" + java.net.URLEncoder.encode(query, "UTF-8")).jsonBody()
+        val folders = body.getJSONArray("folders")
+        val files = body.getJSONArray("files")
+        val content = body.optJSONArray("content")
+        return SearchResults(
+            (0 until folders.length()).map { folders.getJSONObject(it).let { f -> FolderItem(f.getString("id"), f.getString("name")) } },
+            (0 until files.length()).map { files.getJSONObject(it).toItem() },
+            if (content == null) emptyList() else (0 until content.length()).map {
+                val h = content.getJSONObject(it)
+                h.getJSONObject("file").toItem() to h.optString("snippet", "")
+            },
+        )
+    }
+
+    /** What is in the trash, restorable. */
+    fun restoreTrashed(id: String) = restoreFile(id)
+
+    /** One thumbnail (WebP) by its stable URL, with the login in a header. Null if the file has none. */
+    fun thumbFetch(fileId: String, size: Int, version: String): ByteArray? = try {
+        send("/api/thumbs/$fileId?size=$size&format=webp&v=$version").use { it.body?.bytes() }
+    } catch (e: ApiError) {
+        null
+    }
+
+    /** What the server answered for one id of a thumbnail batch. */
+    class ThumbFrame(val id: String, val status: Int, val bytes: ByteArray)
+
+    /** Up to 48 thumbnails in ONE request. Statuses: 0 = thumbnail, 1 = pending (ask on its own), 2 = none. */
+    fun thumbBatch(ids: List<String>, size: Int): List<ThumbFrame> {
+        val body = JSONObject()
+            .put("ids", org.json.JSONArray(ids))
+            .put("size", size)
+            .put("format", "webp")
+        val bytes = send("/api/media/thumbs") { it.post(json(body)) }.use { it.body!!.bytes() }
+        return parseThumbFrames(bytes)
+    }
+
+    /**
+     * The library index: every photo and video as compact rows. With `since` (a cursor from an
+     * earlier answer) only what changed. Null means "unchanged" (a bodyless 304).
+     */
+    fun libraryIndex(since: String?, etag: String?): LibraryIndexResult? {
+        val path = "/api/library/index" + if (since.isNullOrEmpty()) "" else "?since=" + java.net.URLEncoder.encode(since, "UTF-8")
+        val response = send(path) { b -> if (!etag.isNullOrEmpty()) b.header("If-None-Match", etag) else b }
+        response.use {
+            if (it.code == 304) return null
+            val body = JSONObject(it.body!!.string())
+            val rowsJson = body.getJSONArray("rows")
+            val rows = ArrayList<IndexRow>(rowsJson.length())
+            for (i in 0 until rowsJson.length()) {
+                val r = rowsJson.getJSONArray(i)
+                fun str(n: Int) = if (r.isNull(n)) "" else r.optString(n, "")
+                rows.add(
+                    IndexRow(
+                        id = str(0), name = str(1), mime = str(2), size = r.optLong(3, 0),
+                        taken = parseMillis(str(4)), modified = parseMillis(str(5)), created = parseMillis(str(6)),
+                        hash = str(7), thumbhash = str(8), folderPath = str(9),
+                    ),
+                )
+            }
+            fun strings(name: String): List<String> {
+                val a = body.optJSONArray(name) ?: return emptyList()
+                return (0 until a.length()).map { a.getString(it) }
+            }
+            return LibraryIndexResult(
+                cursor = if (body.isNull("cursor")) null else body.optString("cursor"),
+                full = body.optBoolean("full", true),
+                etag = it.header("ETag"),
+                rows = rows,
+                removed = strings("removed"),
+                favorites = strings("favorites"),
+            )
+        }
+    }
+
     fun contentUrl(fileId: String): String = "$base/api/media/${mediaToken()}/$fileId/content"
 
     /**
@@ -604,4 +788,45 @@ class ApiClient(
             return done
         }
     }
+}
+
+
+class IndexRow(
+    val id: String,
+    val name: String,
+    val mime: String,
+    val size: Long,
+    val taken: Long?,
+    val modified: Long?,
+    val created: Long?,
+    val hash: String,
+    val thumbhash: String,
+    val folderPath: String,
+)
+
+class LibraryIndexResult(
+    val cursor: String?,
+    val full: Boolean,
+    val etag: String?,
+    val rows: List<IndexRow>,
+    val removed: List<String>,
+    val favorites: List<String>,
+)
+
+/** Parses the server's batch of thumbnails: `[16-byte id][status][4-byte length][bytes]` repeated. */
+fun parseThumbFrames(data: ByteArray): List<ApiClient.ThumbFrame> {
+    val out = ArrayList<ApiClient.ThumbFrame>()
+    var pos = 0
+    while (pos + 21 <= data.size) {
+        val hi = java.nio.ByteBuffer.wrap(data, pos, 16)
+        val most = hi.long
+        val least = hi.long
+        val id = java.util.UUID(most, least).toString()
+        val status = data[pos + 16].toInt() and 0xFF
+        val length = java.nio.ByteBuffer.wrap(data, pos + 17, 4).int
+        if (length < 0 || pos + 21 + length > data.size) break // a cut-off frame: stop, keep what arrived
+        out.add(ApiClient.ThumbFrame(id, status, data.copyOfRange(pos + 21, pos + 21 + length)))
+        pos += 21 + length
+    }
+    return out
 }

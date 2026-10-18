@@ -59,6 +59,7 @@ class FilesTab(private val host: Host) : Tab {
             onFavorite = { favoriteSelection() },
             onMove = { bulk.move(selectedFiles(), selectedFolders()) { endSelection(); reload() } },
             onDelete = { bulk.delete(selectedFiles(), selectedFolders()) { endSelection(); reload() } },
+            onRename = { renameSelected() },
         ),
     )
 
@@ -73,6 +74,7 @@ class FilesTab(private val host: Host) : Tab {
                 },
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
             )
+            addView(ui.iconOnly(R.drawable.ic_plus, "Add", palette.ink) { showAddSheet() })
             addView(ui.iconOnly(R.drawable.ic_refresh, "Refresh", palette.mute) { reload() })
         }
         topRow = top
@@ -92,6 +94,95 @@ class FilesTab(private val host: Host) : Tab {
     }
 
     private val currentId: String? get() = trail.last().id
+
+    /** Jumps into a folder from elsewhere (a search result). */
+    fun open(id: String, name: String) {
+        trail.clear()
+        trail.add(Crumb(null, "My files"))
+        trail.add(Crumb(id, name))
+        reload()
+    }
+
+    private fun showAddSheet() {
+        host.sheets.actions(
+            trail.last().name,
+            null,
+            listOf(
+                SheetItem(R.drawable.ic_nav_backup, "Upload files", "From this phone into this folder") { uploadHere() },
+                SheetItem(R.drawable.ic_folder_plus, "New folder") { askNewFolder() },
+            ),
+        )
+    }
+
+    private fun uploadHere() {
+        val into = currentId
+        host.pickFiles { uris -> PhoneUpload.upload(host, into, uris) { _, _ -> reload() } }
+    }
+
+    private fun askNewFolder() = askName("New folder", "Folder name", "") { name ->
+        val parent = currentId
+        thread {
+            try {
+                host.api.createFolder(name, parent)
+                ListCache.clear()
+                host.runOnUi { host.toast("Created $name."); reload() }
+            } catch (e: Exception) {
+                host.runOnUi { host.toast("Could not create it: ${e.message}") }
+            }
+        }
+    }
+
+    private fun renameSelected() {
+        val file = selectedFiles().firstOrNull()
+        val folder = selectedFolders().firstOrNull()
+        val current = file?.name ?: folder?.name ?: return
+        askName("Rename", "New name", current) { name ->
+            thread {
+                try {
+                    if (file != null) host.api.renameFile(file.id, name) else host.api.renameFolder(folder!!.id, name)
+                    ListCache.clear()
+                    host.runOnUi { endSelection(); host.toast("Renamed."); reload() }
+                } catch (e: Exception) {
+                    host.runOnUi { host.toast("Could not rename: ${e.message}") }
+                }
+            }
+        }
+    }
+
+    /** A sheet with a text field and Save, used for naming things. */
+    private fun askName(title: String, hint: String, initial: String, onName: (String) -> Unit) {
+        host.sheets.show(title) { sheet ->
+            val field = android.widget.EditText(ui.context).apply {
+                this.hint = hint
+                setText(initial)
+                setSelection(initial.length)
+                typeface = ui.typeface
+                setTextColor(palette.ink)
+                setHintTextColor(palette.mute)
+                textSize = 15f
+                setSingleLine()
+                setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14))
+                background = ui.box(palette.surface, palette.line)
+            }
+            sheet.body.addView(
+                field,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    setMargins(ui.dp(16), 0, ui.dp(16), ui.dp(12))
+                },
+            )
+            sheet.body.addView(
+                host.sheets.buttons(sheet, "Save") {
+                    val name = field.text.toString().trim()
+                    if (name.isNotEmpty() && name != initial) onName(name)
+                },
+            )
+            field.postDelayed({
+                field.requestFocus()
+                (ui.context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                    .showSoftInput(field, 0)
+            }, 150)
+        }
+    }
 
     override fun onShow() {
         // Coming back to the tab refreshes a listing that is more than half a minute old.

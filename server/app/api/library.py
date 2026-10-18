@@ -1,10 +1,11 @@
 """Library views over a user's files (Phase 11): recents, photos, favorites,
 usage and activity. All owner-scoped."""
 
+import hashlib
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -192,6 +193,106 @@ def photos(
     )
     return PhotoPage(
         items=decorate(db, current_user, files), total=total, offset=offset, limit=limit
+    )
+
+
+INDEX_COLUMNS = [
+    "id",
+    "name",
+    "mime",
+    "size",
+    "taken",
+    "modified",
+    "created",
+    "hash",
+    "thumbhash",
+    "folder_path",
+]
+
+
+def _iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return (value if value.tzinfo else value.replace(tzinfo=UTC)).isoformat()
+
+
+class LibraryIndex(BaseModel):
+    cursor: str | None
+    full: bool
+    columns: list[str]
+    rows: list[list]
+    removed: list[str]
+    favorites: list[str]
+
+
+@router.get("/index", response_model=LibraryIndex)
+def library_index(
+    request: Request,
+    response: Response,
+    since: str | None = Query(default=None, max_length=64),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """The whole photo and video library as compact rows, so a phone can keep it in a local
+    database and paint any month instantly, offline.
+
+    Without `since` it is every live photo and video. With `since` (a `cursor` from an earlier
+    answer) it is only what changed after that: `rows` are new or changed files, `removed` are ids
+    that were trashed. `favorites` is always the full list of starred ids (it is small). Answers
+    carry an ETag, so asking again when nothing changed costs one tiny 304.
+    """
+    media = or_(File.mime_type.like("image/%"), File.mime_type.like("video/%"))
+    base = (File.owner_id == current_user.id, media)
+    newest = db.scalar(select(func.max(File.updated_at)).where(*base))
+    favorite_ids = sorted(
+        str(i)
+        for i in db.scalars(select(Favorite.file_id).where(Favorite.user_id == current_user.id))
+    )
+    since_at: datetime | None = None
+    if since:
+        try:
+            since_at = datetime.fromisoformat(since)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="since must be an ISO date") from exc
+    cursor = _iso(newest)
+    count = db.scalar(select(func.count()).select_from(File).where(*base)) or 0
+    # The ETag names the library's STATE (not the question): a client that applied state S and asks
+    # "anything since S?" with that ETag gets a bodyless 304 while nothing has changed.
+    etag_source = f"{cursor}|{count}|{','.join(favorite_ids)}"
+    etag = '"' + hashlib.sha1(etag_source.encode()).hexdigest()[:20] + '"'  # noqa: S324
+    headers = {"ETag": etag, "Cache-Control": "private, no-cache"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    response.headers.update(headers)
+
+    changed = base if since_at is None else (*base, File.updated_at >= since_at)
+    where = (*changed, File.deleted_at.is_(None)) if since_at is None else changed
+    files = list(db.scalars(select(File).where(*where)))
+    live = [f for f in files if f.deleted_at is None]
+    removed = [str(f.id) for f in files if f.deleted_at is not None]
+    paths = _folder_paths(db, current_user) if live else {}
+    rows = [
+        [
+            str(f.id),
+            f.name,
+            f.mime_type or "",
+            f.size,
+            _iso(f.taken_at),
+            _iso(f.modified_at),
+            _iso(f.created_at),
+            (f.content_hash or "")[:16],
+            f.thumbhash or "",
+            paths.get(f.folder_id, "") if f.folder_id else "",
+        ]
+        for f in live
+    ]
+    return LibraryIndex(
+        cursor=cursor,
+        full=since_at is None,
+        columns=INDEX_COLUMNS,
+        rows=rows,
+        removed=removed,
+        favorites=favorite_ids,
     )
 
 

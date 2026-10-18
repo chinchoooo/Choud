@@ -13,11 +13,14 @@ scripts...) is sent as an opaque download, with `nosniff` and a locked-down
 Content-Security-Policy, so an uploaded page can never run script in the app.
 """
 
+import struct
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse as FastAPIFileResponse
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -29,6 +32,7 @@ from app.core.security import (
     create_media_token,
     decode_token,
 )
+from app.models.file import File
 from app.models.user import User
 from app.services import file_service, media_cache, thumbnail_service
 
@@ -138,3 +142,113 @@ def thumbnail(
     except file_service.StorageError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return FastAPIFileResponse(path, media_type="image/jpeg", headers=safe_headers())
+
+
+# --- stable, cacheable thumbnails for the phone app -----------------------------------------------
+#
+# The token routes above change their URL every hour, so no HTTP cache can ever reuse a thumbnail.
+# These take the normal Authorization header instead and have a URL that only changes when the
+# picture does (`v` is a prefix of its content hash), so the phone can keep each thumbnail forever.
+
+thumbs_router = APIRouter(prefix="/api/thumbs", tags=["media"])
+IMMUTABLE = "private, max-age=31536000, immutable"
+
+
+@thumbs_router.get("/{file_id}")
+def stable_thumbnail(
+    file_id: uuid.UUID,
+    request: Request,
+    size: int = Query(default=256),
+    format: str = Query(default="webp"),  # noqa: A002 - the query parameter is called "format"
+    v: str | None = Query(default=None, max_length=64),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        file = file_service.get_file(db, user, file_id)
+    except file_service.NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    etag = f'"{(file.content_hash or "")[:24]}-{size}-{format}"'
+    headers = {"ETag": etag, "Cache-Control": IMMUTABLE, "X-Content-Type-Options": "nosniff"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    try:
+        path = thumbnail_service.get_thumbnail(file, size, format)
+    except thumbnail_service.ThumbnailUnavailable as exc:
+        raise HTTPException(status_code=415, detail=str(exc)) from exc
+    except file_service.StorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return FastAPIFileResponse(path, media_type=thumbnail_service.FORMATS[format], headers=headers)
+
+
+MAX_BATCH = 48
+MAX_BATCH_GENERATE = 4  # thumbnails made on the spot per batch; the rest are "pending"
+
+FRAME_OK, FRAME_PENDING, FRAME_NONE = 0, 1, 2
+
+
+class ThumbBatch(BaseModel):
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=MAX_BATCH)
+    size: int = 256
+    format: str = "webp"
+
+
+def _frame(file_id: uuid.UUID, status: int, payload: bytes = b"") -> bytes:
+    return file_id.bytes + struct.pack(">BI", status, len(payload)) + payload
+
+
+@router.post("/thumbs")
+def thumbnail_batch(
+    body: ThumbBatch,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Up to 48 thumbnails in one response: one round trip instead of 48.
+
+    The body is a run of frames, each `[16-byte file id][1 byte status][4 byte big-endian length]
+    [bytes]`. Status 0 = the thumbnail, 1 = pending (ask for it on its own), 2 = no thumbnail for
+    this id (unknown, not yours, or not an image/video). Only thumbnails that already exist are
+    sent inline, plus at most a few made on the spot, so one slow photo cannot hold up the rest.
+    """
+    if (
+        body.size not in thumbnail_service.ALLOWED_SIZES
+        or body.format not in thumbnail_service.FORMATS
+    ):
+        raise HTTPException(status_code=422, detail="unsupported size or format")
+    rows = db.execute(
+        select(File).where(
+            File.id.in_(body.ids), File.owner_id == user.id, File.deleted_at.is_(None)
+        )
+    ).scalars()
+    files = {file.id: file for file in rows}
+    directory = thumbnail_service.thumbs_dir()
+    budget = MAX_BATCH_GENERATE
+
+    def frames():
+        nonlocal budget
+        for file_id in body.ids:
+            file = files.get(file_id)
+            if file is None or thumbnail_service.kind_of(file) is None or not file.content_hash:
+                yield _frame(file_id, FRAME_NONE)
+                continue
+            cached = directory / f"{file.content_hash}-{body.size}.{body.format}"
+            if not cached.exists():
+                if budget <= 0:
+                    yield _frame(file_id, FRAME_PENDING)
+                    continue
+                budget -= 1
+                try:
+                    cached = thumbnail_service.get_thumbnail(file, body.size, body.format)
+                except (thumbnail_service.ThumbnailUnavailable, file_service.StorageError):
+                    yield _frame(file_id, FRAME_NONE)
+                    continue
+            try:
+                yield _frame(file_id, FRAME_OK, cached.read_bytes())
+            except OSError:
+                yield _frame(file_id, FRAME_PENDING)
+
+    return StreamingResponse(
+        frames(),
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+    )

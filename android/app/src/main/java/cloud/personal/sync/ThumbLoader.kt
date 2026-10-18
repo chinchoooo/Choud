@@ -107,6 +107,156 @@ object ThumbLoader {
         pool.prestartAllCoreThreads()
     }
 
+    // ------------------------------------------------------------------------------------------
+    // Photos: placeholder at once, thumbnails fetched a screenful at a time in ONE request.
+
+    private class PhotoJob(val key: String, val id: String, val version: String, val view: WeakReference<ImageView>?, val px: Int)
+
+    private val pending = ArrayList<PhotoJob>()
+    private var flushPosted = false
+    private val flush = Runnable { flushPending() }
+    private const val BATCH_SIZE = 24
+
+    /**
+     * Shows a photo's thumbnail in `view`. The blurry stand-in (`placeholder`, a ThumbHash) is drawn
+     * immediately; the real picture follows from memory, disk, or one batched request for everything
+     * that is on screen at the same moment. Must be called on the main thread.
+     */
+    fun loadPhoto(view: ImageView, api: ApiClient, id: String, version: String, placeholder: String, px: Int = 256) {
+        val key = "w:$id:$version:$px"
+        view.tag = key
+        cache.get(key)?.let {
+            view.setImageBitmap(it)
+            return
+        }
+        val blur = if (placeholder.isNotEmpty()) ThumbHash.bitmap(placeholder) else null
+        if (blur != null) view.setImageBitmap(blur) else view.setImageDrawable(null)
+        pending.add(PhotoJob(key, id, version, WeakReference(view), px))
+        schedule(api)
+    }
+
+    /** Warms the disk cache for photos about to scroll into view. Main thread. */
+    fun prefetchPhoto(api: ApiClient, id: String, version: String, px: Int = 256) {
+        val key = "w:$id:$version:$px"
+        val file = diskFile(key)
+        if (cache.get(key) != null || (file != null && file.exists())) return
+        if (pending.any { it.key == key }) return
+        pending.add(PhotoJob(key, id, version, null, px))
+        schedule(api)
+    }
+
+    @Volatile private var batchApi: ApiClient? = null
+
+    private fun schedule(api: ApiClient) {
+        batchApi = api
+        if (!flushPosted) {
+            flushPosted = true
+            // One frame is enough to gather everything a fast scroll just bound.
+            main.postDelayed(flush, 12)
+        }
+    }
+
+    private fun flushPending() {
+        flushPosted = false
+        val api = batchApi ?: return
+        val jobs = ArrayList(pending)
+        pending.clear()
+        // What was bound last is what is on screen now: newest first, read-ahead last.
+        val visible = jobs.filter { it.view != null }.reversed()
+        val ahead = jobs.filter { it.view == null }
+        for (group in (visible + ahead).chunked(BATCH_SIZE)) {
+            val runnable = Runnable { runPhotoGroup(api, group) }
+            if (group.first().view != null) queue.offerFirst(runnable) else queue.offerLast(runnable)
+        }
+        pool.prestartAllCoreThreads()
+    }
+
+    private fun stillWanted(job: PhotoJob): Boolean {
+        val view = job.view ?: return true
+        val target = view.get() ?: return false
+        return target.tag == job.key
+    }
+
+    private fun show(job: PhotoJob, bitmap: Bitmap) {
+        if (job.view == null) return
+        main.post {
+            val target = job.view.get() ?: return@post
+            if (target.tag == job.key) target.setImageBitmap(bitmap)
+        }
+    }
+
+    private fun runPhotoGroup(api: ApiClient, group: List<PhotoJob>) {
+        val misses = ArrayList<PhotoJob>()
+        for (job in group) {
+            if (!stillWanted(job)) continue
+            val inMemory = cache.get(job.key)
+            if (inMemory != null) {
+                show(job, inMemory)
+                continue
+            }
+            val file = diskFile(job.key)?.takeIf { it.isFile && it.length() > 0 }
+            if (file != null) {
+                file.setLastModified(System.currentTimeMillis())
+                val bitmap = decodeFile(file, job.px)
+                if (bitmap != null) {
+                    cache.put(job.key, bitmap)
+                    show(job, bitmap)
+                    continue
+                }
+            }
+            misses.add(job)
+        }
+        if (misses.isEmpty()) return
+        // Several jobs can want the same photo (a visible cell and a read-ahead): all get the answer.
+        val byId = HashMap<String, MutableList<PhotoJob>>()
+        misses.forEach { byId.getOrPut(it.id) { ArrayList() }.add(it) }
+        val frames = try {
+            api.thumbBatch(byId.keys.toList(), misses.first().px)
+        } catch (e: Exception) {
+            EventLog.log("thumbnails: batch failed: ${e.javaClass.simpleName}: ${e.message}")
+            return
+        }
+        val answered = HashSet<String>()
+        for (frame in frames) {
+            val jobs = byId[frame.id] ?: continue
+            answered.add(frame.id)
+            when (frame.status) {
+                0 -> keepAndShow(jobs, frame.bytes)
+                1 -> fetchOne(api, jobs) // the server had not made it yet: ask on its own
+                else -> {} // no thumbnail for this file: the placeholder stays
+            }
+        }
+        // A cut-off answer: whatever never arrived is fetched singly.
+        byId.filterKeys { it !in answered }.values.forEach { fetchOne(api, it) }
+    }
+
+    private fun fetchOne(api: ApiClient, jobs: List<PhotoJob>) {
+        val job = jobs.firstOrNull { stillWanted(it) } ?: return
+        val bytes = try {
+            api.thumbFetch(job.id, job.px, job.version)
+        } catch (e: Exception) {
+            null
+        } ?: return
+        keepAndShow(jobs, bytes)
+    }
+
+    private fun keepAndShow(jobs: List<PhotoJob>, bytes: ByteArray) {
+        val job = jobs.first()
+        diskFile(job.key)?.let { target ->
+            try {
+                val part = File(target.parentFile, target.name + ".part")
+                part.writeBytes(bytes)
+                if (!part.renameTo(target)) part.delete()
+            } catch (_: IOException) {
+                // the disk cache is a bonus: failing to write it must never fail the image
+            }
+            if (lastTrim.get() + 60_000 < System.currentTimeMillis()) trimDisk()
+        }
+        val bitmap = decodeBytes(bytes, job.px) ?: return
+        cache.put(job.key, bitmap)
+        jobs.forEach { show(it, bitmap) }
+    }
+
     private fun runJob(job: Job) {
         val view = job.view?.get()
         if (job.view != null && (view == null || view.tag != job.key)) return // scrolled away: skip

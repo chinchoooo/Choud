@@ -17,6 +17,8 @@ class SelectionActions(
     val onFavorite: () -> Unit,
     val onMove: () -> Unit,
     val onDelete: () -> Unit,
+    /** Shown only while exactly one item is selected. Null = this tab cannot rename. */
+    val onRename: (() -> Unit)? = null,
 )
 
 /**
@@ -48,6 +50,7 @@ class SelectionBar(private val ui: Ui, private val actions: SelectionActions) {
     }
 
     fun update(selectedCount: Int, hasFiles: Boolean, hasFolders: Boolean, allFavorite: Boolean) {
+        val canRename = actions.onRename != null && selectedCount == 1
         count.text = if (selectedCount == 0) "Select items" else "$selectedCount selected"
         row.removeAllViews()
         val any = selectedCount > 0
@@ -61,6 +64,7 @@ class SelectionBar(private val ui: Ui, private val actions: SelectionActions) {
             },
         )
         row.addView(ui.iconButton(R.drawable.ic_move, "Move", enabled = any) { actions.onMove() })
+        if (canRename) row.addView(ui.iconButton(R.drawable.ic_pencil, "Rename") { actions.onRename?.invoke() })
         row.addView(ui.iconButton(R.drawable.ic_delete, "Delete", tint = ui.palette.danger, enabled = any) { actions.onDelete() })
     }
 }

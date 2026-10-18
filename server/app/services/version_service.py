@@ -85,6 +85,8 @@ def _append_version(
     )
     db.add(version)
 
+    if file.content_hash != content_hash:
+        file.thumbhash = None  # the picture changed; the placeholder is made again
     file.content_hash = content_hash
     # storage_key is "the key used to locate bytes in the storage backend",
     # which has been the content hash since Phase 4.

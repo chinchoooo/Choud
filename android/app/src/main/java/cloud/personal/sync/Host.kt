@@ -19,6 +19,12 @@ interface Host {
     fun openViewer(items: List<RemoteItem>, index: Int)
     fun onThemeChanged()
     fun requestMediaPermissions()
+
+    /** Opens the system file picker (several files) and returns what was chosen. */
+    fun pickFiles(onPicked: (List<android.net.Uri>) -> Unit)
+
+    /** Switches to the Files tab, inside the given folder. */
+    fun showFolder(id: String, name: String)
     fun runOnUi(block: () -> Unit)
 
     /** A message pill at the bottom of the screen, with an optional action such as "Undo". */
