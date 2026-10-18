@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import (
     admin,
+    archive,
     auth,
     files,
     folders,
@@ -92,6 +93,7 @@ app.include_router(invites.router)
 app.include_router(rewind.router)
 app.include_router(insights.router)
 app.include_router(admin.router)
+app.include_router(archive.router)
 app.include_router(two_factor.router)
 app.include_router(public_shares.router)
 
