@@ -121,3 +121,17 @@ packaging for other Linux distributions.
 ## Licence
 
 By contributing you agree that your contribution is released under the project's [MIT licence](LICENSE).
+
+## For maintainers: how the repository is protected
+
+- **`main`** cannot be deleted or force-pushed (nobody can bypass this). Changes need a pull request with
+  one approving review from a code owner (`.github/CODEOWNERS`), resolved review threads, and all six CI
+  jobs passing on an up-to-date branch. Repository admins can bypass the review and CI rule for an
+  emergency fix.
+- **Release tags** (`v*`) cannot be moved, changed or deleted, so a published version stays what it was.
+- **Actions:** the default token is read-only, and workflows from first-time outside contributors need a
+  maintainer's approval before they run.
+- **GitHub security features:** secret scanning with push protection, Dependabot alerts and security
+  updates, and private vulnerability reporting are on (see [`SECURITY.md`](SECURITY.md)).
+- Dependency bump pull requests arrive monthly and grouped (`.github/dependabot.yml`); major upgrades are
+  done by hand.
