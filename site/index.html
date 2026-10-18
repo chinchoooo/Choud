@@ -34,6 +34,7 @@
     </a>
     <nav class="top" aria-label="Sections">
       <a href="#speed">Speed</a>
+      <a href="#plug">Pull the plug</a>
       <a href="#features">Features</a>
       <a href="#built">How it works</a>
       <a href="#run">Run it</a>
@@ -113,6 +114,58 @@
         </table>
       </div>
       <p class="muted">The photo grid is fast because a screen of thumbnails is one round trip instead of 24, and a blurry placeholder paints instantly. More tests, including a 5 GB mixed folder, and how to repeat all of them yourself: <a href="https://github.com/chinchoooo/Choud/blob/main/docs/benchmarks.md">docs/benchmarks.md</a>.</p>
+    </div>
+  </section>
+
+  <section id="landlord">
+    <div class="wrap">
+      <h2>The landlord problem</h2>
+      <p>Every big cloud drive works the same way: your memories sit in someone else's building, and you pay rent to keep them there. That is not a secret. It is just a deal worth reading twice.</p>
+      <div class="scroll">
+        <table class="case">
+          <thead><tr><th>The question</th><th>A rented cloud drive</th><th>Choud</th></tr></thead>
+          <tbody>
+            <tr><td>How much room do I get?</td><td>15 GB free, shared with your mail and photos. Then a monthly bill, for as long as you want your files.</td><td class="win">Your whole disk. Buy a bigger one once.</td></tr>
+            <tr><td>Whose computer holds my files?</td><td>The company's servers.</td><td class="win">The machine in your house.</td></tr>
+            <tr><td>Who can lock me out?</td><td>The company can suspend or close an account under its terms, and the files go with it.</td><td class="win">Nobody but you.</td></tr>
+            <tr><td>What if they drop the product?</td><td>Google has shut down a long list of products. It is their call, on their date.</td><td class="win">It is your server and your code. MIT licensed, so it keeps running.</td></tr>
+            <tr><td>What does it cost?</td><td>A subscription.</td><td class="win">Nothing. You bring the hardware.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="stamp-row"><span class="stamp" id="stamp" aria-hidden="true">YOURS</span><p class="muted">The middle column comes from Google's published terms and storage plans: check them yourself at <a href="https://policies.google.com/terms">policies.google.com/terms</a>. Drive is a good product, and on speed Choud only matches it. The difference is who owns the building.</p></div>
+    </div>
+  </section>
+
+  <section id="plug">
+    <div class="wrap">
+      <h2>Pull the plug</h2>
+      <p>Most storage trouble happens when the power dies halfway through saving. Press the button, then pull the plug while the file is being written. Both disks lose power at the same instant.</p>
+      <div class="plug-grid">
+        <div class="disk" id="disk-a">
+          <h3>An app that saves over the old file</h3>
+          <div class="blocks" data-blocks></div>
+          <p class="status" data-status>idle</p>
+          <p class="result" data-result></p>
+        </div>
+        <div class="disk" id="disk-b">
+          <h3>Choud: write aside, flush, then rename</h3>
+          <div class="blocks" data-blocks></div>
+          <ol class="steps" data-steps>
+            <li>write to a temporary name</li>
+            <li>flush the bytes to the disk</li>
+            <li>rename to the real name</li>
+            <li>flush the folder entry</li>
+          </ol>
+          <p class="status" data-status>idle</p>
+          <p class="result" data-result></p>
+        </div>
+      </div>
+      <div class="plug-controls">
+        <button class="btn solid" id="plug-btn" type="button">Start saving report.pdf</button>
+        <button class="btn" id="plug-reset" type="button" hidden>Try again</button>
+      </div>
+      <p class="muted">A simplified animation of the rule the storage engine follows. The real thing is tested by killing a process mid-write: see <a href="https://github.com/chinchoooo/Choud/blob/main/engine/tests/durability_tests.cpp">durability_tests.cpp</a>.</p>
     </div>
   </section>
 
@@ -294,6 +347,119 @@ scripts/deploy.sh     # checks the machine, builds, starts, waits until healthy<
   draw();
   if (!still) {
     setInterval(function () { pos = (pos + 1) % width; draw(); }, 90);
+  }
+
+  // ---- the stamp slams down once the table is on screen
+  var stamp = document.getElementById("stamp");
+  if (stamp && "IntersectionObserver" in window) {
+    var stampObserver = new IntersectionObserver(function (entries) {
+      if (entries[0].isIntersecting) { stamp.classList.add("slam"); stampObserver.disconnect(); }
+    }, { threshold: 0.6 });
+    stampObserver.observe(stamp);
+  } else if (stamp) { stamp.classList.add("slam"); }
+
+  // ---- pull the plug: two disks, one power cut
+  var TOTAL = 24, TICK = still ? 40 : 230;
+  var btn = document.getElementById("plug-btn");
+  var again = document.getElementById("plug-reset");
+  var a = document.getElementById("disk-a"), b = document.getElementById("disk-b");
+  var state = "idle", written = 0, timer = null;
+
+  function cells(disk) {
+    var holder = disk.querySelector("[data-blocks]");
+    if (!holder.children.length) {
+      for (var n = 0; n < TOTAL; n++) holder.appendChild(document.createElement("i"));
+    }
+    return holder.children;
+  }
+  function say(disk, status, result) {
+    disk.querySelector("[data-status]").textContent = status;
+    disk.querySelector("[data-result]").textContent = result || "";
+  }
+  function setSteps(n) {
+    var items = b.querySelectorAll("[data-steps] li");
+    for (var k = 0; k < items.length; k++) items[k].className = k < n ? "done" : (k === n ? "now" : "");
+  }
+  function fillAll(disk, cls) {
+    var cs = cells(disk);
+    for (var n = 0; n < cs.length; n++) cs[n].className = cls;
+  }
+  function reset() {
+    clearInterval(timer);
+    state = "idle"; written = 0;
+    // both disks start with the old report.pdf safely stored
+    fillAll(a, "old"); fillAll(b, "old");
+    a.classList.remove("off"); b.classList.remove("off");
+    say(a, "report.pdf (old copy) is on the disk", "");
+    say(b, "report.pdf (old copy) is on the disk", "");
+    setSteps(0);
+    btn.textContent = "Start saving report.pdf";
+    btn.classList.remove("danger");
+    btn.disabled = false;
+    again.hidden = true;
+  }
+  function frame() {
+    if (state !== "writing") return;
+    var ac = cells(a), bc = cells(b);
+    if (written < TOTAL) {
+      ac[written].className = "new";   // the plain app overwrites the old bytes in place
+      bc[written].className = "tmp";   // Choud fills a separate temporary file instead
+      written++;
+      say(a, "saving: " + written + " of " + TOTAL + " blocks", "");
+      say(b, "writing report.pdf.tmp: " + written + " of " + TOTAL + " blocks", "");
+    } else {
+      clearInterval(timer);
+      state = "done";
+      fillAll(a, "new");
+      fillAll(b, "new");
+      setSteps(4);
+      say(a, "saved", "Too slow, it finished. Try again and pull the plug earlier.");
+      say(b, "saved, renamed and flushed", "Too slow, it finished. Try again and pull the plug earlier.");
+      btn.textContent = "Saved";
+      btn.classList.remove("danger");
+      btn.disabled = true;
+      again.hidden = false;
+    }
+  }
+  function pull() {
+    clearInterval(timer);
+    state = "cut";
+    document.body.classList.add("blackout");
+    setTimeout(function () {
+      document.body.classList.remove("blackout");
+      a.classList.add("off"); b.classList.add("off");
+      var ac = cells(a);
+      // the plain app: the new blocks already replaced the start of the old file, the tail is still old
+      for (var n = 0; n < written; n++) ac[n].className = "new";
+      for (var m = written; m < TOTAL; m++) ac[m].className = "old";
+      say(a, "power lost after " + written + " of " + TOTAL + " blocks",
+        written > 0
+          ? "After reboot: " + written + " blocks of the new file glued to " + (TOTAL - written) + " blocks of the old one. report.pdf will not open."
+          : "After reboot: nothing was written.");
+      // Choud: the temporary file never had the real name, so the old copy is untouched
+      fillAll(b, "old");
+      setSteps(0);
+      say(b, "power lost after " + written + " of " + TOTAL + " blocks",
+        "After reboot: removed 1 unfinished temporary file. report.pdf is the old copy, complete and intact. 0 half-written files.");
+      btn.textContent = "Power lost";
+      btn.classList.remove("danger");
+      btn.disabled = true;
+      again.hidden = false;
+    }, still ? 150 : 900);
+  }
+  if (btn) {
+    reset();
+    btn.addEventListener("click", function () {
+      if (state === "idle") {
+        state = "writing";
+        btn.textContent = "PULL THE PLUG";
+        btn.classList.add("danger");
+        timer = setInterval(frame, TICK);
+      } else if (state === "writing") {
+        pull();
+      }
+    });
+    again.addEventListener("click", reset);
   }
 })();
 </script>
