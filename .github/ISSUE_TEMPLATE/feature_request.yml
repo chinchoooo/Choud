@@ -1,0 +1,31 @@
+name: Feature request
+description: An idea for something Choud should do
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Choud stays small on purpose (see the non-goals in `docs/architecture.md`). A good request describes
+        the problem you have, not only the solution, and says why it matters to someone running this at home.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What have you tried or considered instead?
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Would you work on it?
+      options:
+        - label: I would be willing to open a pull request

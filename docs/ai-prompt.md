@@ -35,10 +35,12 @@ where the truth is, so it does not guess.
 >    safety.
 > 8. Search: filename search, the background text indexer, the sandboxed PDF/Office parser, full-text
 >    search on PostgreSQL.
-> 9. Sharing: public links, script-free pages, the parent-chain check, edit links and their limits.
+> 9. Sharing: public links, script-free pages, the parent-chain check, edit links and their limits, the two
+>    doors (private `:80`, loopback public `:8081`), the kill switch and `scripts/enable-public-links.sh`.
 > 10. Sync: snapshot + ETag, the three-way decision table, conditional writes and 409, conflict
 >     copies, backup mode, offline behaviour.
-> 11. The Android app: backup pipeline, dates, hash-only-when-needed, the reinstall skip.
+> 11. The Android app: backup pipeline, dates, hash-only-when-needed, the reinstall skip, the in-house
+>     component kit, the local photo library and why Photos is fast (`docs/mobile-perf.md`).
 > 12. The web app: API layer, upload queue, themes via CSS variables.
 > 13. Deployment and operations: compose, Caddy, systemd timers, backups and restore, alerts, releases.
 > 14. Security: walk the threat model, then try to find the weakest spot and explain it.

@@ -1,5 +1,8 @@
 # Choud
 
+[![CI](https://github.com/chinchoooo/Choud/actions/workflows/ci.yml/badge.svg)](https://github.com/chinchoooo/Choud/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 <div align="center">
   <img src="choud-brand-assets/choud-logo-light.svg" alt="Choud" width="400" />
 </div>
@@ -58,7 +61,7 @@ Everything above is built and tested (server, engine, web, Android and desktop c
 own suite). It runs on the author's own laptop server. Honest gaps: the Android app has had little
 time on a real phone, per-user sharing (sharing with named accounts) is deliberately not built (links
 are the only way to share), passkeys and comments are not built, and there is no iOS app. The detailed
-roadmap and handoff notes are in the phase documents under [`docs/`](docs/).
+history, decisions and what to build next are in [`docs/roadmap.md`](docs/roadmap.md), and what each version added is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Getting started
 
@@ -117,16 +120,27 @@ make migrate         # run Alembic migrations by hand (the backend also does thi
 
 ## Documentation
 
+The full index is [`docs/README.md`](docs/README.md). The main pages:
+
 - [`docs/guide.md`](docs/guide.md) — **start here**: the complete guide to the whole system, with a learning path
-- [`docs/ai-prompt.md`](docs/ai-prompt.md) — ready-made prompts to learn it with an AI, or to keep building it safely
-- [`docs/architecture.md`](docs/architecture.md) — system design, philosophy, phases
+- [`docs/learning-prompt.md`](docs/learning-prompt.md) — a lesson pack you can paste into ChatGPT (or any assistant) to be taught the project step by step
+- [`docs/ai-prompt.md`](docs/ai-prompt.md) — prompts for an assistant that can read the repo, to learn it or keep building it safely
+- [`docs/architecture.md`](docs/architecture.md) — system design, philosophy, rules and non-goals
 - [`docs/storage.md`](docs/storage.md) — content-addressable storage, dedup, chunking
 - [`docs/synchronization.md`](docs/synchronization.md) — desktop sync algorithm, conflicts
 - [`docs/api.md`](docs/api.md) — HTTP API reference
 - [`docs/security.md`](docs/security.md) — auth, authorization, and hardening notes
-- [`docs/deployment.md`](docs/deployment.md) — running this on real hardware (laptop server + Tailscale)
+- [`docs/deployment.md`](docs/deployment.md) — running this on real hardware (laptop server + Tailscale), and making share links public
+- [`docs/mobile-perf.md`](docs/mobile-perf.md) — why photos are fast on the phone, and how to measure
 - [`docs/errors.md`](docs/errors.md) — real problems hit during setup, and their fixes
+
+## Contributing
+
+Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) first (the short version:
+small focused changes, tests including failure cases, and the project's rules about not losing data and
+not over-engineering), and the [code of conduct](CODE_OF_CONDUCT.md). Report security problems privately,
+as described in [`SECURITY.md`](SECURITY.md). AI coding assistants should start with [`AGENTS.md`](AGENTS.md).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Third-party software and assets are listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

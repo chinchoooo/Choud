@@ -121,7 +121,7 @@ server/        Python backend (FastAPI + SQLAlchemy + Alembic)
   app/core/              config, DB session, security (JWT, Argon2), TOTP, rate limiting, logging,
                          maintenance loop, custom GUID column type
   app/cli.py             `python -m app.cli gc | index`
-  migrations/versions/   Alembic migrations 0001-0015
+  migrations/versions/   Alembic migrations 0001-0017
   tests/                 pytest suite (uses an in-memory SQLite DB and a fake engine)
 engine/        C++ storage engine (CMake, Boost.Beast HTTP, OpenSSL, GoogleTest)
   src/hashing  streaming SHA-256         src/storage  object store + manager
@@ -138,9 +138,10 @@ web/           React + TypeScript + Vite + Tailwind + TanStack Query
 android/       Kotlin app, programmatic views (no XML layouts, no Compose)
 client/        Python desktop client `cloudsync` (sync mode + backup mode)
 deployment/    Caddyfile, systemd units (backup timer, health timer, boot unit)
-scripts/       setup, preflight, deploy, backup, restore, healthcheck, gc, notify, brand assets
+scripts/       setup, preflight, deploy, backup, restore, healthcheck, gc, notify, enable-public-links,
+               netcheck, brand/from_sheet.py (logos and icons from the brand sheet)
 docs/          this guide and the topic documents
-choud-brand-assets/   the supplied logo kit (source of truth for branding)
+choud-brand-assets/   the brand sheet (logo, icons, loading screens): the source of truth for branding
 ```
 
 Rule of thumb for finding code: **an endpoint lives in `server/app/api/<feature>.py`, its logic in
@@ -158,7 +159,7 @@ All primary keys are UUIDs, created through a custom `GUID` column type that wor
 | --- | --- | --- |
 | `users` | accounts | `username`, `email` (unique), `password_hash` (Argon2id), `is_active`, `storage_quota` (bytes), `totp_secret`, `totp_enabled`, `totp_last_step`, `totp_failures`, `totp_locked_until` |
 | `folders` | folder tree per user | `owner_id`, `parent_id` (null = root), `name` |
-| `files` | one row per logical file | `owner_id`, `folder_id`, `name`, `mime_type`, `size`, `content_hash` (SHA-256 of the **current** content), `storage_key`, `current_version_id`, `taken_at` (photo taken), `modified_at` (device's own date), `deleted_at` (non-null = in trash) |
+| `files` | one row per logical file | `owner_id`, `folder_id`, `name`, `mime_type`, `size`, `content_hash` (SHA-256 of the **current** content), `storage_key`, `current_version_id`, `taken_at` (photo taken), `modified_at` (device's own date), `thumbhash` (a ~25-byte blurry placeholder, base64), `deleted_at` (non-null = in trash) |
 | `file_versions` | every version of every file | `file_id`, `version_number`, `content_hash`, `size`, `restored_from_version`, `created_by` |
 | `uploads` | resumable chunked upload sessions | `file_name`, `file_size`, `chunk_size`, `total_chunks`, `received_chunks` (comma-separated indexes), `expected_hash`, `base_version_id`, `status`, `expires_at`, `folder_id`, dates |
 | `favorites` | a user's starred files | `(user_id, file_id)` |
@@ -168,6 +169,7 @@ All primary keys are UUIDs, created through a custom `GUID` column type that wor
 | `recovery_codes` | two-factor recovery | `user_id`, `code_hash` (SHA-256), `used_at` |
 | `file_text` | extracted text for content search | `file_id`, `content_hash`, `status` (`ok`/`skipped`/`failed`), `text` |
 | `login_events` | an account's sign-in history | `user_id`, `at`, `ip`, `user_agent`, `success`, `new_device` |
+| `instance_settings` | server-wide switches (today: the public-links kill switch) | `key`, `value` |
 
 Invariants worth knowing (each is enforced by code and covered by a test):
 
@@ -183,9 +185,9 @@ Invariants worth knowing (each is enforced by code and covered by a test):
 - Folder delete is a hard delete and only for **empty** folders; files only go to trash.
 - A share has exactly one target (a check constraint).
 
-Migrations are Alembic files `0001`..`0015` (users, folders+files, uploads, versions, upload base
+Migrations are Alembic files `0001`..`0017` (users, folders+files, uploads, versions, upload base
 version, library features, quota raise, `modified_at`, shares, share permission, invites, two-factor,
-file text, drop links + download limits, login events). They run **automatically when the backend container starts** (`entrypoint.sh`). On a brand
+file text, drop links + download limits, login events, instance settings, thumbhash). They run **automatically when the backend container starts** (`entrypoint.sh`). On a brand
 new PostgreSQL use `scripts/migrate.sh` by hand (it pre-creates a wide `alembic_version` table; see
 `errors.md` for why).
 
@@ -404,6 +406,49 @@ fixes files that were uploaded before dates were stored. WorkManager schedules p
   the server is unreachable).
 - **Desktop client.** An upload speed limit (`cloudsync limit KBPS`).
 
+### 6.12 Fast photos on slow links (0.5)
+
+Opening a screen of photos over a 100-200 ms link is limited by **round trips**, so the design removes
+them rather than speeding up bytes. See [`mobile-perf.md`](mobile-perf.md) for measurements.
+
+- **A thumbnail by a stable URL.** `GET /api/thumbs/{id}?size=256&format=webp&v=<hash>` is authorised
+  with the normal bearer header and answers `Cache-Control: private, max-age=31536000, immutable` plus an
+  `ETag` (so `304`). The URL only changes when the picture does, so a client keeps each thumbnail forever.
+  (The older `/api/media/{token}/...` routes, whose URLs change hourly, remain for the web app.)
+- **Batching.** `POST /api/media/thumbs` takes up to 48 ids and returns binary frames
+  `[16-byte id][status][length][bytes]`; only thumbnails that already exist are sent, plus at most four
+  made on the spot, so one slow photo never blocks the rest.
+- **Pre-generation.** A background loop makes the JPEG and WebP grid thumbnails and the **ThumbHash**
+  (`thumbhash.py`, stored in `files.thumbhash`) for every photo and video, newest first, reading each
+  stored object in place from the shared volume.
+- **The library index.** `GET /api/library/index[?since=<cursor>]` returns every photo and video as
+  compact rows (and, with `since`, only what changed plus the ids that were trashed). Its `ETag` names the
+  library's state, so asking again when nothing changed is a bodyless `304`.
+- **On the phone**, those pieces feed a local SQLite copy of the library, ThumbHash placeholders, one batch
+  request for everything on screen, and a daily warm-up on Wi-Fi while charging.
+
+### 6.13 Public links and the two doors (0.5)
+
+Caddy listens on two sockets. **`:80`** is the private door (the app, the API, the share pages), reached
+over Tailscale or the LAN. **`127.0.0.1:8081`** is the public door: bound to loopback, so only a local
+tunnel (Tailscale Funnel, Cloudflare Tunnel) can reach it, and by default it serves **only `/s/*`**; the
+app, API and login answer 404 there. (`PUBLIC_DOOR_MODE=full` serves the whole app, an opt-in for people
+who accept the exposure and use two-factor login.)
+
+- Requests through the public door carry `X-Choud-Door: public` (the private door strips that header, so it
+  cannot be forged) and `X-Forwarded-For` rewritten to the address the tunnel saw, so per-visitor rate
+  limits cannot be dodged.
+- `scripts/enable-public-links.sh` starts the tunnel, checks the address **the way the internet reaches it**
+  (public DNS; a machine usually cannot reach its own tailnet address), writes `PUBLIC_BASE_URL` to `.env`
+  and restarts only the backend.
+- The **kill switch** (`instance_settings.public_links_enabled`, flipped by an administrator at
+  `PUT /api/admin/public-links`) makes the public door answer 404 for every share link at once while the
+  private door keeps working. `GET /api/instance` reports `ready`, `paused` or `not_configured`, and every
+  share response carries it, so clients can say whether a link opens for people outside the network.
+- `GET /s/_health` returns which door a request came through and the client address the server saw; the
+  script and the administrator's "Check from outside" use it. `POST /api/shares/revoke-all` stops every
+  link of the caller.
+
 ## 7. The API surface (summary)
 
 Full detail and request/response shapes are in [`api.md`](api.md). Grouped by router:
@@ -420,7 +465,7 @@ Full detail and request/response shapes are in [`api.md`](api.md). Grouped by ro
 | `/api/library` | recent, photos timeline, favorites (+ put/delete), usage, activity |
 | `/api/media` | issue media token, content (Range), thumbnail |
 | `/api/search` | names + contents |
-| `/api/shares` | create/list/update/revoke public links |
+| `/api/shares` | create/list/update/revoke public links, `revoke-all` |
 | `/s/{token}...` | the public pages: view, unlock, download, thumbnail, and for edit links upload/mkdir/rename/trash |
 | `/api/invites` | administrator: create/list/delete sign-up codes |
 | `/api/sync` | `snapshot` (the whole tree with versions) and `folders` (ensure a path exists) |
@@ -431,6 +476,10 @@ Full detail and request/response shapes are in [`api.md`](api.md). Grouped by ro
 | `/api/admin/server` | administrator only: disk, counts, search backlog, settings |
 | `/api/auth/security-log` | your recent sign-in attempts, with new-device flags |
 | `/api/library/memories` | photos and videos from this day in earlier years |
+| `/api/library/index` | the whole photo library as compact rows, with delta sync and `304` |
+| `/api/thumbs/{id}` | a thumbnail on a stable, cacheable URL (WebP or JPEG) |
+| `/api/media/thumbs` | up to 48 thumbnails in one binary response |
+| `/api/instance`, `/api/admin/public-links` | what the server is, whether public links work, the kill switch |
 
 Conditional writes: upload, chunked-upload sessions and delete accept `base_version_id`; if the file is
 no longer on that version the server answers **409 with a `version_conflict` code**. Do not weaken
@@ -535,21 +584,31 @@ React 18 + TypeScript + Vite + Tailwind + React Router + TanStack Query.
 
 ## 11. Inside the Android app
 
-Kotlin, **programmatic views** (`Ui.kt` builds themed widgets in code; no XML layouts, no Compose),
-RecyclerView lists, OkHttp, WorkManager, androidx security-crypto.
+Kotlin, **programmatic views** (no XML layouts, no Compose, no Material), RecyclerView lists, OkHttp,
+WorkManager, androidx security-crypto. It has its own small component kit, so every control looks the same
+in all four themes and matches the web app: **no stock `Button`, `AlertDialog`, `Toast` or media
+controller**.
 
-- **Screens/tabs:** `MainActivity` (login incl. two-factor field, tab host), `BackupTab` (live queue:
-  now/up next/recently finished, bars, speed, ETA), `FilesTab` and `PhotosTab` (thumbnails,
-  pull-to-refresh, auto-refresh when stale), `MoreTab` (folders to back up, theme, log, settings),
-  `ViewerActivity` (built-in viewers: zoomable image, video, own audio player, PDF via PdfRenderer, text).
-- **Engine room:** `Backup.kt` (scan, hash only when needed, 3 parallel uploads, conflict copies,
-  dates, reinstall skip), `Api.kt` (HTTP + token refresh, single-flight), `Store.kt` (settings and the
-  `BackupDb` SQLite with fingerprints and date flags), `SyncWorker.kt` (WorkManager schedule),
-  `Logic.kt` (pure, unit-tested helpers: remote folder naming, selection, `dateFromFileName`),
-  `EventLog.kt` (a detailed on-device log for debugging).
-- Themes match the web; the launcher icon is an adaptive icon generated from the brand SVGs
-  (`scripts/brand/from_sheet.py`).
-- 28 unit tests; signed release builds read the key from `~/.personal-cloud-signing/` (outside the repo).
+- **The kit:** `Ui.kt` (button, text field, logos, boxes), `Kit.kt` (list row, switch, group, banner, top bar,
+  scroll style), `Sheet.kt` (bottom sheets, confirm dialogs and full-screen pages), `Player.kt` (seek bar
+  and player bar), `Toaster.kt` (the message pill), `LoadingScreen.kt` (the brand sheet's loading screen),
+  `Icons.kt`, `Theme.kt`.
+- **Screens:** `MainActivity` (sign-in, the loading screen, the tab host, search, share-into-Choud),
+  `BackupTab` (live queue), `FilesTab`, `PhotosTab`, `MoreTab` (a settings hub; sub-screens for appearance,
+  folders, addresses, diagnostics), `Panels.kt` (trash, shared links, storage, sign-in history),
+  `SearchPage.kt`, `ViewerActivity` (zoomable image, video, audio, PDF, text; an action bar; phone-only
+  photos open too). Tabs are built when first shown.
+- **Photos pipeline:** `LibraryDb` + `Library.sync` (a local copy of the library, delta sync),
+  `ThumbLoader` (placeholders, batched WebP thumbnails, memory and disk caches), `ThumbHash.kt`,
+  `LocalMedia` (photos only on the phone, merged into the timeline), `WarmCacheWorker`.
+- **Engine room:** `Backup.kt` (scan, hash only when needed, three parallel uploads, conflict copies, dates,
+  reinstall skip), `Api.kt` (HTTP, token refresh, single-flight), `Net.kt` (one shared HTTP client),
+  `ServerPicker` (private address first, then a public one, probed in parallel), `Store.kt` (plain settings
+  plus a lazily opened encrypted store for the two tokens; the `BackupDb`), `SyncWorker.kt`, `Logic.kt`
+  (pure, unit-tested helpers), `EventLog.kt`.
+- Logos and icons are generated from the brand sheet (`scripts/brand/from_sheet.py`, see
+  [`branding.md`](branding.md)).
+- About 40 unit tests; signed release builds read the key from `~/.personal-cloud-signing/` (outside the repo).
 
 ---
 
@@ -641,7 +700,8 @@ Commands: `cd server && pytest`; `cd client && pytest`; `cd web && npm run build
 
 ## 16. Known gaps and what to build next
 
-Not built: iOS app; passkeys; comments; per-user sharing (by decision); WebDAV (mounting the drive as
+Not built: iOS app; a tablet layout and a fast-scroll date handle for the Android Photos grid; two-way
+folder sync on the phone; passkeys; comments; per-user sharing (by decision); WebDAV (mounting the drive as
 a normal folder); Vault in the Android app and desktop client (it is web-only); video transcoding;
 renames/moves in sync are delete+create; the desktop client has no tray icon or selective sync;
 Rewind does not record renames/moves; an independent security test; the engine's `include/sync/*`

@@ -58,8 +58,8 @@ if [ "$want_code" = 1 ]; then printf '%s' "$code"; else printf '%s' "$body"; fi
 """
 
 TAILSCALE_STATUS = {
-    "Self": {"DNSName": "arvismint.tail1234.ts.net."},
-    "CertDomains": ["arvismint.tail1234.ts.net"],
+    "Self": {"DNSName": "myserver.tail1234.ts.net."},
+    "CertDomains": ["myserver.tail1234.ts.net"],
 }
 
 
@@ -121,7 +121,7 @@ def test_tailscale_success_sets_the_address_and_restarts_only_the_backend(box):
     result = _run(box)
     assert result.returncode == 0, result.stdout + result.stderr
     env = (box[0] / ".env").read_text()
-    assert "PUBLIC_BASE_URL=https://arvismint.tail1234.ts.net\n" in env
+    assert "PUBLIC_BASE_URL=https://myserver.tail1234.ts.net\n" in env
     assert "JWT_SECRET=x" in env  # nothing else touched
     assert (box[0] / ".env.bak").exists()
     calls = _calls(box)
@@ -185,15 +185,15 @@ def test_verification_asks_public_dns_and_connects_to_that_address(box):
     """A machine cannot loop back to its own tailnet address: the check must go the public way."""
     result = _run(box)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "resolves arvismint.tail1234.ts.net to 203.0.113.7" in result.stdout
+    assert "resolves myserver.tail1234.ts.net to 203.0.113.7" in result.stdout
     calls = (box[1] / "curl_calls").read_text()
-    assert "--resolve arvismint.tail1234.ts.net:443:203.0.113.7" in calls
+    assert "--resolve myserver.tail1234.ts.net:443:203.0.113.7" in calls
 
 
 def test_no_verify_switches_links_on_without_the_outside_check(box):
     result = _run(box, "--no-verify", FAKE_PUBLIC="down")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PUBLIC_BASE_URL=https://arvismint.tail1234.ts.net" in (box[0] / ".env").read_text()
+    assert "PUBLIC_BASE_URL=https://myserver.tail1234.ts.net" in (box[0] / ".env").read_text()
     assert "skipping the outside check" in result.stdout
 
 

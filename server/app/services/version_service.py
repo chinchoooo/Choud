@@ -1,6 +1,6 @@
 """File version history: create, list, restore (Phase 6).
 
-Design rules (see CLAUDE.md "Phase 6 decisions" and docs/architecture.md
+Design rules (see docs/roadmap.md "Phase 6 decisions" and docs/architecture.md
 #12-versioning):
 
 - Uploading a file with the same name into the same folder adds a new

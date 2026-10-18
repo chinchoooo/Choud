@@ -3,7 +3,7 @@
 `file_service.delete_file` only sets `files.deleted_at`; everything that
 happens to a file *after* that lives here.
 
-Rules (CLAUDE.md "Phase 6 decisions"):
+Rules (docs/roadmap.md "Phase 6 decisions"):
 
 - Trash holds files only. There is no auto-expiry — a file leaves the trash
   only when the owner restores or purges it.

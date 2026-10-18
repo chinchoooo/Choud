@@ -1,6 +1,6 @@
 // Resumable chunked uploads (Phase 5) — see docs/architecture.md#10-chunked-uploads.
 //
-// A plain fetch chain, per CLAUDE.md's Phase 5 plan: no upload library,
+// A plain fetch chain, per the Phase 5 plan in docs/roadmap.md: no upload library,
 // just create a session, slice the File client-side with File.slice(),
 // POST each chunk, then complete. `resumeUpload` re-reads the session's
 // status first and only (re)sends chunks the server doesn't already

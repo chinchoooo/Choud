@@ -26,8 +26,8 @@ curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker "$USER"      # then log out and back in
 
 # 2. Get the code
-git clone https://github.com/bored-arvi/Choud.git personal-cloud
-cd personal-cloud
+git clone https://github.com/chinchoooo/Choud.git choud
+cd choud
 
 # 3. Generate .env with strong random secrets (never overwrites an existing one)
 scripts/setup.sh

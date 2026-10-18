@@ -243,7 +243,7 @@ def sweep_expired_uploads(db: Session) -> int:
 
     Meant to be run periodically (a cron-style job, or triggered
     alongside a healthcheck — see docs/architecture.md#11-chunk-storage
-    and CLAUDE.md's Phase 5 notes); not wired to a scheduler itself, since
+    and the Phase 5 notes in docs/roadmap.md); not wired to a scheduler itself, since
     this project deliberately avoids infrastructure it doesn't need
     (Rule 2). Returns how many sessions were swept.
     """

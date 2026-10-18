@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security problem
+    url: https://github.com/chinchoooo/Choud/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue.
+  - name: Question or help setting up
+    url: https://github.com/chinchoooo/Choud/discussions
+    about: Ask in Discussions (if enabled) or read docs/deployment.md and docs/errors.md first.
