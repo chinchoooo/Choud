@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import hashlib
+import inspect
 import io
 import json
 import math
@@ -96,8 +97,11 @@ class Line:
         self.rate = mbps * 1_000_000 / 8 if mbps else None
         self.lock = threading.Lock()
         self.free_at = time.perf_counter()
+        self.moved = 0  # bytes that have passed through, for the progress bar
 
     def take(self, nbytes: int) -> None:
+        with self.lock:
+            self.moved += nbytes
         if not self.rate:
             return
         with self.lock:
@@ -184,7 +188,15 @@ class Api:
         self.fresh()
         if self.rtt:
             time.sleep(self.rtt)  # a simulated distance: the request "travels" before it is sent
-        return self.http.request(method, path, **kwargs)
+        # A 429 means the server asked for a pause: wait as long as it says and try again, so one
+        # throttled request does not end a long run. (Streamed bodies cannot be resent, so those
+        # are retried only for requests without a generator body.)
+        for attempt in range(6):
+            reply = self.http.request(method, path, **kwargs)
+            if reply.status_code != 429 or inspect.isgenerator(kwargs.get("content")):
+                return reply
+            time.sleep(min(30, int(reply.headers.get("retry-after", "2")) + attempt))
+        return reply
 
 
 def multipart(
@@ -295,13 +307,20 @@ def download_file(api: Api, line: Line, file_id: str, expect_sha: str | None) ->
     api.fresh()
     digest = hashlib.sha256()
     total = 0
-    with api.http.stream("GET", f"/api/files/{file_id}/download") as reply:
-        if reply.status_code != 200:
-            raise RuntimeError(f"download {file_id}: {reply.status_code}")
-        for piece in reply.iter_bytes(BLOCK):
-            line.take(len(piece))
-            digest.update(piece)
-            total += len(piece)
+    for attempt in range(6):
+        with api.http.stream("GET", f"/api/files/{file_id}/download") as reply:
+            if reply.status_code == 429:  # the server asked for a pause; wait and ask again
+                time.sleep(min(30, int(reply.headers.get("retry-after", "2")) + attempt))
+                continue
+            if reply.status_code != 200:
+                raise RuntimeError(f"download {file_id}: {reply.status_code}")
+            for piece in reply.iter_bytes(BLOCK):
+                line.take(len(piece))
+                digest.update(piece)
+                total += len(piece)
+            break
+    else:
+        raise RuntimeError(f"download {file_id}: still throttled (429) after retries")
     if expect_sha and digest.hexdigest() != expect_sha:
         raise RuntimeError(f"download {file_id}: the bytes do not match what was uploaded")
     return total
@@ -326,6 +345,51 @@ def profile(name: str, size_mb: float) -> list[tuple[str, int]]:
     return plan
 
 
+class Bar:
+    """A one-line progress bar that redraws in place: phase, percent, bytes, speed and time left."""
+
+    def __init__(self, phase: str, line: Line, total: int, files: int) -> None:
+        self.phase, self.line, self.total, self.files = phase, line, total, files
+        self.done_files = 0
+        self.started = time.perf_counter()
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def file_done(self) -> None:
+        self.done_files += 1
+
+    def __enter__(self) -> "Bar":
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.stop.set()
+        self.thread.join()
+        self._draw(final=True)
+        print(flush=True)
+
+    def _run(self) -> None:
+        while not self.stop.wait(0.5):
+            self._draw()
+
+    def _draw(self, final: bool = False) -> None:
+        moved = min(self.line.moved, self.total)
+        fraction = moved / self.total if self.total else 1.0
+        elapsed = time.perf_counter() - self.started
+        speed = moved / elapsed if elapsed > 0 else 0.0
+        left = (self.total - moved) / speed if speed > 0 and not final else 0.0
+        width = 28
+        filled = int(width * fraction)
+        bar = "#" * filled + "-" * (width - filled)
+        print(
+            f"\r   {self.phase:<8} [{bar}] {fraction * 100:5.1f}%  "
+            f"{moved / 1e6:7.0f}/{self.total / 1e6:.0f} MB  {speed * 8 / 1e6:6.1f} Mbps  "
+            f"files {self.done_files}/{self.files}  {fmt_time(elapsed)} (left {fmt_time(left)})   ",
+            end="",
+            flush=True,
+        )
+
+
 def run_paced(
     api: Api,
     folder: str,
@@ -347,21 +411,32 @@ def run_paced(
     up_line, down_line = Line(up_mbps), Line(down_mbps)
     ids: dict[str, str] = {}
     start = time.perf_counter()
-    with ThreadPoolExecutor(workers) as pool:
-        futures = {
-            pool.submit(upload_file, api, up_line, folder, name, seeds[name], size): name
-            for name, size in files
-        }
-        for future, name in futures.items():
-            ids[name] = future.result()
+    with Bar("upload", up_line, total, len(files)) as bar, ThreadPoolExecutor(workers) as pool:
+
+        def up(item):
+            name, size = item
+            ids[name] = upload_file(api, up_line, folder, name, seeds[name], size)
+            bar.file_done()
+
+        list(pool.map(up, files))
     up_seconds = time.perf_counter() - start
-    start = time.perf_counter()
-    with ThreadPoolExecutor(workers) as pool:
-        got = list(
-            pool.map(
-                lambda item: download_file(api, down_line, ids[item[0]], shas.get(item[0])), files
-            )
+    # Printed now, so a failure in the download half cannot lose it.
+    up_min_now = total * 8 / (up_mbps * 1e6) if up_mbps else 0
+    if up_seconds:
+        print(
+            f"   upload   {fmt_time(up_seconds)} (line minimum {fmt_time(up_min_now)}, "
+            f"{round(100 * up_min_now / up_seconds, 1)}% of the line)",
+            flush=True,
         )
+    start = time.perf_counter()
+    with Bar("download", down_line, total, len(files)) as bar, ThreadPoolExecutor(workers) as pool:
+
+        def down(item):
+            got_bytes = download_file(api, down_line, ids[item[0]], shas.get(item[0]))
+            bar.file_done()
+            return got_bytes
+
+        got = list(pool.map(down, files))
     down_seconds = time.perf_counter() - start
     assert sum(got) == total, "downloaded byte count differs from uploaded"
     up_min = total * 8 / (up_mbps * 1e6) if up_mbps else 0
