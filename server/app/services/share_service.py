@@ -246,8 +246,15 @@ def check_password(share: Share, password: str) -> bool:
     return share.password_hash is not None and verify_password(password, share.password_hash)
 
 
+def _unlock_key() -> bytes:
+    """A key derived (HKDF-SHA256) from the JWT secret for this one purpose, so the secret
+    itself never signs anything else and a token for one use cannot be replayed as another."""
+    prk = hmac.new(b"choud-hkdf-salt", get_settings().jwt_secret.encode(), hashlib.sha256).digest()
+    return hmac.new(prk, b"share-unlock-cookie", hashlib.sha256).digest()
+
+
 def _unlock_signature(share: Share, expires: int) -> str:
-    secret = get_settings().jwt_secret.encode()
+    secret = _unlock_key()
     # Changing the password changes the fingerprint, which invalidates every old unlock.
     fingerprint = hashlib.sha256((share.password_hash or "").encode()).hexdigest()[:16]
     message = f"{share.id}:{expires}:{fingerprint}".encode()

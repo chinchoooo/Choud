@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app import __version__
 from app.api import (
     admin,
     archive,
@@ -59,14 +60,31 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
                 await task
 
 
-app = FastAPI(title="Personal Cloud API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Choud API", version=__version__, lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_cors_origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+@app.middleware("http")
+async def request_guards(request: Request, call_next):
+    """Refuses oversized bodies up front and adds the basic response headers."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > settings.max_request_bytes:
+        return JSONResponse({"detail": "request body too large"}, status_code=413)
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    if request.url.path.startswith("/api/auth/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.exception_handler(QuotaError)
@@ -101,5 +119,3 @@ app.include_router(admin.router)
 app.include_router(archive.router)
 app.include_router(two_factor.router)
 app.include_router(public_shares.router)
-
-# The shares router is added when its phase lands (see docs/architecture.md).

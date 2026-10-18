@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
+    # Browsers may call the API cross-origin only from these origins (comma-separated).
+    # Empty = same-origin only, which is what the bundled web app and the apps need.
+    cors_allowed_origins: str = ""
+
+    # Largest request body the API accepts, in bytes (uploads are sent in chunks, so this only
+    # has to cover one chunk plus overhead). Bigger bodies get a 413 before being read.
+    max_request_bytes: int = 64 * 1024**2
+
     # Storage
     storage_root: str = "/data/cloud"
     default_storage_quota_bytes: int = 400 * 1024**3  # 400 GiB

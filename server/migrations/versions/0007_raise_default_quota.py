@@ -31,4 +31,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    pass
+    # Deliberately a no-op: the old per-account values were not recorded, and lowering a quota
+    # below what a person already stores would only break their uploads. Nothing else to undo.
+    return None

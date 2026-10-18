@@ -15,6 +15,7 @@ from app.api.library import decorate
 from app.api.preconditions import conflict_http, parse_base_version
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.rate_limit import rate_limit
 from app.models.user import User
 from app.schemas.files import DirectoryListing, FileResponse, FileUpdate
 from app.services import file_service
@@ -47,7 +48,12 @@ def list_directory(
     )
 
 
-@router.post("/upload", response_model=FileResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/upload",
+    dependencies=[Depends(rate_limit("upload", 600, 60))],
+    response_model=FileResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def upload(
     file: UploadFile = FastAPIFile(...),
     folder_id: uuid.UUID | None = Form(default=None),
@@ -99,7 +105,7 @@ def get_file(
         raise _not_found(exc) from exc
 
 
-@router.get("/{file_id}/download")
+@router.get("/{file_id}/download", dependencies=[Depends(rate_limit("download", 600, 60))])
 def download(
     file_id: uuid.UUID,
     current_user: User = Depends(get_current_user),

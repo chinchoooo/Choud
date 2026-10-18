@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.api.preconditions import conflict_http
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.rate_limit import rate_limit
 from app.models.user import User
 from app.schemas.files import FileResponse
 from app.schemas.uploads import (
@@ -36,7 +37,12 @@ def _conflict(exc: upload_service.ConflictError) -> HTTPException:
     return HTTPException(status_code=409, detail=str(exc))
 
 
-@router.post("", response_model=UploadSessionResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    dependencies=[Depends(rate_limit("upload", 600, 60))],
+    response_model=UploadSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_upload(
     body: UploadCreateRequest,
     current_user: User = Depends(get_current_user),
@@ -81,7 +87,11 @@ def get_upload_status(
     )
 
 
-@router.post("/{upload_id}/chunks/{index}", response_model=ChunkAckResponse)
+@router.post(
+    "/{upload_id}/chunks/{index}",
+    dependencies=[Depends(rate_limit("upload-chunk", 1200, 60))],
+    response_model=ChunkAckResponse,
+)
 async def upload_chunk(
     upload_id: uuid.UUID,
     index: int,
@@ -109,7 +119,11 @@ async def upload_chunk(
     )
 
 
-@router.post("/{upload_id}/complete", response_model=FileResponse)
+@router.post(
+    "/{upload_id}/complete",
+    dependencies=[Depends(rate_limit("upload", 600, 60))],
+    response_model=FileResponse,
+)
 def complete_upload(
     upload_id: uuid.UUID,
     current_user: User = Depends(get_current_user),

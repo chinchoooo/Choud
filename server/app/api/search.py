@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.library import decorate
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.rate_limit import rate_limit
 from app.models.user import User
 from app.schemas.files import ContentHit, SearchResponse
 from app.services import file_service, index_service
@@ -13,7 +14,9 @@ from app.services import file_service, index_service
 router = APIRouter(prefix="/api", tags=["search"])
 
 
-@router.get("/search", response_model=SearchResponse)
+@router.get(
+    "/search", dependencies=[Depends(rate_limit("search", 120, 60))], response_model=SearchResponse
+)
 def search(
     q: str = Query(..., min_length=1, max_length=255),
     current_user: User = Depends(get_current_user),
@@ -26,6 +29,4 @@ def search(
         ContentHit(file=item, snippet=snippet)
         for item, (_, snippet) in zip(decorated, hits, strict=True)
     ]
-    return SearchResponse(
-        folders=folders, files=decorate(db, current_user, files), content=content
-    )
+    return SearchResponse(folders=folders, files=decorate(db, current_user, files), content=content)

@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.rate_limit import rate_limit
 from app.core.security import (
     MEDIA_TOKEN_MINUTES,
     MEDIA_TOKEN_TYPE,
@@ -69,7 +70,9 @@ class MediaToken(BaseModel):
     expires_in: int
 
 
-@router.post("/token", response_model=MediaToken)
+@router.post(
+    "/token", dependencies=[Depends(rate_limit("media-token", 120, 60))], response_model=MediaToken
+)
 def issue_token(current_user: User = Depends(get_current_user)) -> MediaToken:
     return MediaToken(
         token=create_media_token(current_user.id), expires_in=MEDIA_TOKEN_MINUTES * 60
@@ -197,7 +200,7 @@ def _frame(file_id: uuid.UUID, status: int, payload: bytes = b"") -> bytes:
     return file_id.bytes + struct.pack(">BI", status, len(payload)) + payload
 
 
-@router.post("/thumbs")
+@router.post("/thumbs", dependencies=[Depends(rate_limit("thumbs-batch", 240, 60))])
 def thumbnail_batch(
     body: ThumbBatch,
     user: User = Depends(get_current_user),
