@@ -1,6 +1,7 @@
 package cloud.personal.sync
 
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -14,7 +15,10 @@ class BackupTab(private val host: Host) : Tab {
     private val ui = host.ui
     private val palette = ui.palette
 
-    private val titleView = ui.heading("")
+    private val titleView = ui.text("", 20f, bold = true)
+    private val tileDone = ui.text("0", 22f, bold = true)
+    private val tileWaiting = ui.text("0", 22f, bold = true)
+    private val tileFailed = ui.text("0", 22f, bold = true)
     private val subtitleView = ui.muted("", 13f)
     private val problemView = ui.text("", 13f, palette.danger)
     private val overallBar = ui.bar()
@@ -70,11 +74,33 @@ class BackupTab(private val host: Host) : Tab {
     override val view: View = ScrollView(ui.context).apply {
         val column = ui.vertical().apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(24)) }
 
+        fun tile(value: TextView, label: String): LinearLayout = ui.vertical().apply {
+            setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
+            background = ui.box(palette.surface, palette.line)
+            addView(value)
+            addView(ui.muted(if (palette.retro) label.uppercase() else label, 11f))
+        }
         val summary = ui.card().apply {
-            addView(titleView)
-            addView(subtitleView, ui.matchWidth(2))
-            addView(overallBar, ui.matchWidth(10))
-            addView(overallText, ui.matchWidth(4))
+            setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(14))
+            addView(
+                ui.horizontal().apply {
+                    addView(ui.icon(R.drawable.ic_nav_backup, 26, palette.ink))
+                    addView(titleView, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = ui.dp(12) })
+                },
+            )
+            addView(subtitleView, ui.matchWidth(4))
+            addView(
+                ui.horizontal().apply {
+                    addView(tile(tileDone, "Backed up"), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                    addView(View(ui.context), LinearLayout.LayoutParams(ui.dp(8), 1))
+                    addView(tile(tileWaiting, "Waiting"), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                    addView(View(ui.context), LinearLayout.LayoutParams(ui.dp(8), 1))
+                    addView(tile(tileFailed, "Failed"), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                },
+                ui.matchWidth(14),
+            )
+            addView(overallBar, ui.matchWidth(14))
+            addView(overallText, ui.matchWidth(6))
             addView(filesText, ui.matchWidth(0))
             addView(problemView, ui.matchWidth(6))
             addView(jobView, ui.matchWidth(2))
@@ -82,13 +108,11 @@ class BackupTab(private val host: Host) : Tab {
         column.addView(summary, ui.matchWidth())
 
         val buttons = ui.horizontal().apply {
-            addView(startButton)
-            addView(View(ui.context), LinearLayout.LayoutParams(ui.dp(8), 1))
-            addView(stopButton)
-            addView(View(ui.context), LinearLayout.LayoutParams(ui.dp(8), 1))
-            addView(retryButton)
+            addView(startButton, LinearLayout.LayoutParams(0, ui.dp(50), 1f))
+            addView(stopButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ui.dp(50)).apply { leftMargin = ui.dp(8) })
+            addView(retryButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ui.dp(50)).apply { leftMargin = ui.dp(8) })
         }
-        column.addView(buttons, ui.matchWidth(10))
+        column.addView(buttons, ui.matchWidth(12))
 
         column.addView(section("Uploading now"), ui.matchWidth(18))
         column.addView(nowBox, ui.matchWidth(6))
@@ -102,7 +126,7 @@ class BackupTab(private val host: Host) : Tab {
     }
 
     private fun section(title: String): TextView =
-        ui.text(if (palette.retro) title.uppercase() else title, 13f, palette.mute, bold = true)
+        ui.text(if (palette.retro) title.uppercase() else title, 12f, palette.mute, bold = true).apply { letterSpacing = 0.04f }
 
     override fun onShow() = onTick()
 
@@ -177,6 +201,9 @@ class BackupTab(private val host: Host) : Tab {
                 else -> ""
             }
         }
+        tileDone.text = (if (running) done else facts.done).toString()
+        tileWaiting.text = (if (running) waiting + LiveStatus.active.size else facts.pending).toString()
+        tileFailed.text = (if (running) failed else facts.failed).toString()
         problemView.visibility = if (facts.lastError.isNotEmpty() && !running) View.VISIBLE else View.GONE
         problemView.text = if (facts.lastError.isNotEmpty()) "Problem: ${facts.lastError}" else ""
         jobView.text = if (!running && facts.jobNow.isNotEmpty()) "Job: ${facts.jobNow}" else ""

@@ -17,6 +17,9 @@ interface Host {
     fun onThemeChanged()
     fun requestMediaPermissions()
     fun runOnUi(block: () -> Unit)
+
+    /** A message pill at the bottom of the screen, with an optional action such as "Undo". */
+    fun toast(text: String, actionLabel: String? = null, onAction: (() -> Unit)? = null)
 }
 
 interface Tab {

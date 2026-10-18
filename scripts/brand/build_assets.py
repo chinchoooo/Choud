@@ -250,7 +250,9 @@ def build_android(r: Rasteriser) -> list[Path]:
     ty = 54 - ART_CENTER[1] * ADAPTIVE_SCALE
     foreground = RES / "drawable" / "ic_choud_foreground.xml"
     foreground.write_text(
-        svg_to_vector_drawable(icon_dark, scale=ADAPTIVE_SCALE, translate=(tx, ty), size_dp=108, viewport=108),
+        # Dot-free: the 1.6-unit dither specks turn to noise at launcher sizes, so the home-screen icon
+        # uses the same simplified artwork as the status-bar icon.
+        svg_to_vector_drawable(strip_details(icon_dark), scale=ADAPTIVE_SCALE, translate=(tx, ty), size_dp=108, viewport=108),
         encoding="utf-8",
     )
     produced.append(foreground)

@@ -422,6 +422,52 @@ class ApiClient(
         return reply.has("modified_at")
     }
 
+    fun moveFile(id: String, folderId: String?) {
+        val body = JSONObject().put("folder_id", folderId ?: JSONObject.NULL)
+        send("/api/files/$id") { it.patch(json(body)) }.close()
+    }
+
+    fun moveFolder(id: String, parentId: String?) {
+        val body = JSONObject().put("parent_id", parentId ?: JSONObject.NULL)
+        send("/api/folders/$id") { it.patch(json(body)) }.close()
+    }
+
+    fun deleteFile(id: String) {
+        send("/api/files/$id") { it.delete() }.close()
+    }
+
+    fun deleteFolder(id: String) {
+        send("/api/folders/$id") { it.delete() }.close()
+    }
+
+    fun restoreFile(id: String) {
+        send("/api/trash/$id/restore") { it.post(ByteArray(0).toRequestBody(null)) }.close()
+    }
+
+    /** Several files and folders as one .zip, streamed to `dest`. Returns the size. */
+    fun downloadZip(fileIds: List<String>, folderIds: List<String>, dest: java.io.File): Long {
+        val body = JSONObject()
+            .put("file_ids", org.json.JSONArray(fileIds))
+            .put("folder_ids", org.json.JSONArray(folderIds))
+        val response = send("/api/archive/zip") { it.post(json(body)) }
+        response.use {
+            dest.parentFile?.mkdirs()
+            var done = 0L
+            it.body!!.byteStream().use { input ->
+                dest.outputStream().use { out ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        out.write(buffer, 0, read)
+                        done += read
+                    }
+                }
+            }
+            return done
+        }
+    }
+
     fun setFavorite(fileId: String, on: Boolean) {
         val path = "/api/library/favorites/$fileId"
         send(path) { if (on) it.put(ByteArray(0).toRequestBody(null)) else it.delete() }.close()
@@ -454,7 +500,8 @@ class ApiClient(
         expiresInHours?.let { request.put("expires_in_hours", it) }
         maxDownloads?.let { request.put("max_downloads", it) }
         val body = send("/api/shares") { it.post(json(request)) }.jsonBody()
-        return base + body.getString("url_path")
+        // A configured public address (PUBLIC_BASE_URL) is what outsiders can reach.
+        return body.optString("public_url").ifEmpty { base + body.getString("url_path") }
     }
 
     fun contentUrl(fileId: String): String = "$base/api/media/${mediaToken()}/$fileId/content"

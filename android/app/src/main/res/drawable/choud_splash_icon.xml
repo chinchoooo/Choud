@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:width="160dp" android:height="160dp" android:gravity="center">
+        <inset android:insetLeft="46dp" android:insetTop="46dp" android:insetRight="46dp" android:insetBottom="46dp"
+            android:drawable="@drawable/ic_choud_mark" />
+    </item>
+</layer-list>

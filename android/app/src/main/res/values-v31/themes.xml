@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ shows its own launch screen: a black page with the Choud mark, nothing else. -->
+    <style name="Theme.Choud" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowSplashScreenBackground">@color/choud_black</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/choud_splash_icon</item>
+        <item name="android:windowBackground">@drawable/choud_splash</item>
+    </style>
+</resources>
