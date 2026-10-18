@@ -261,6 +261,7 @@ scripts/enable-public-links.sh --cloudflare links.example.com   # a Cloudflare T
 scripts/enable-public-links.sh --status            # what is on right now; changes nothing
 scripts/enable-public-links.sh --off               # back to private-only links
 scripts/enable-public-links.sh --dry-run           # show what it would do (works with any option)
+scripts/enable-public-links.sh --no-verify         # switch it on without the outside check (see below)
 ```
 
 It checks the public door on this machine, starts the tunnel, checks the public address answers,
@@ -268,6 +269,14 @@ writes `PUBLIC_BASE_URL` into `.env` (keeping `.env.bak`) and restarts **only th
 seconds; the proxy and engine stay up). If something outside the script has to be done first (turn on
 HTTPS certificates or Funnel in the Tailscale admin console, run `cloudflared tunnel login`), it says
 exactly what and stops with exit code 2 without changing anything.
+
+The outside check asks a public DNS resolver where your address points and connects to *that*
+address, the way a stranger's phone would. (A machine usually cannot reach its own Tailscale address
+through the tunnel, so opening the address normally from the server itself fails even when links work
+for everyone else.) If the check cannot confirm it, the script prints `tailscale funnel status`; when
+that lists your address with `Funnel on`, open `https://<your address>/s/_health` from a phone on
+mobile data and, if it shows `{"ok":true,"door":"public",...}`, run the script again with
+`--no-verify`.
 
 What is reachable from the internet: **only `/s/*`**, the share pages. The stack runs a second,
 **public door**: Caddy listens on `127.0.0.1:8081` (this machine only) and the app, the API and login

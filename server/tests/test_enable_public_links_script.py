@@ -35,6 +35,7 @@ echo "docker $*" >> "$FAKE_OUT/calls"
 # according to FAKE_PUBLIC (up | down).
 FAKE_CURL = """#!/usr/bin/env bash
 url="${@: -1}"
+echo "curl $*" >> "$FAKE_OUT/curl_calls"
 want_code=0
 for a in "$@"; do [ "$a" = "%{http_code}" ] && want_code=1; done
 code=404
@@ -43,6 +44,8 @@ case "$url" in
   http://127.0.0.1:*/s/_health)
     code=200; body='{"ok":true,"door":"private","client_ip":"127.0.0.1"}' ;;
   http://127.0.0.1:*/api/health) code=${FAKE_LOCAL_API:-404} ;;
+  https://1.1.1.1/dns-query*)
+    code=200; body='{"Status":0,"Answer":[{"name":"x","type":1,"data":"203.0.113.7"}]}' ;;
   https://*/s/_health)
     if [ "${FAKE_PUBLIC:-up}" = up ]; then
       code=200; body='{"ok":true,"door":"public","client_ip":"203.0.113.5"}'
@@ -176,3 +179,26 @@ def test_cloudflare_needs_a_hostname(box):
     result = _run(box, "--cloudflare")
     assert result.returncode == 1
     assert "needs a hostname" in result.stderr
+
+
+def test_verification_asks_public_dns_and_connects_to_that_address(box):
+    """A machine cannot loop back to its own tailnet address: the check must go the public way."""
+    result = _run(box)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "resolves arvismint.tail1234.ts.net to 203.0.113.7" in result.stdout
+    calls = (box[1] / "curl_calls").read_text()
+    assert "--resolve arvismint.tail1234.ts.net:443:203.0.113.7" in calls
+
+
+def test_no_verify_switches_links_on_without_the_outside_check(box):
+    result = _run(box, "--no-verify", FAKE_PUBLIC="down")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "PUBLIC_BASE_URL=https://arvismint.tail1234.ts.net" in (box[0] / ".env").read_text()
+    assert "skipping the outside check" in result.stdout
+
+
+def test_failed_check_explains_what_to_do_next(box):
+    result = _run(box, FAKE_PUBLIC="down")
+    assert result.returncode == 1
+    assert "--no-verify" in result.stdout
+    assert "mobile data" in result.stdout

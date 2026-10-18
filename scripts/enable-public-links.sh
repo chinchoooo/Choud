@@ -7,6 +7,7 @@
 #   scripts/enable-public-links.sh --status              show what is on, change nothing
 #   scripts/enable-public-links.sh --off                 turn it off again (links fall back to private)
 #   add --dry-run to any of them to print what would happen without doing it
+#   add --no-verify to switch it on without the outside check (see the note on that check below)
 #
 # What becomes reachable from the internet: ONLY /s/* (the share pages). The app, the API and the login
 # stay private (the "public door" answers 404 for everything else; see docs/deployment.md).
@@ -19,6 +20,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 MODE=tailscale
 HOST=""
 DRY=0
+VERIFY=1
 ACTION=enable
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -28,10 +30,17 @@ while [ $# -gt 0 ]; do
         --off) ACTION=off ;;
         --status) ACTION=status ;;
         --dry-run) DRY=1 ;;
+        --no-verify) VERIFY=0 ;;
         -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1 (try --help)" >&2; exit 1 ;;
     esac
     shift
+done
+
+# A python that actually runs (some systems have a python3 that is only a stub).
+PY=""
+for candidate in python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import json' >/dev/null 2>&1; then PY="$candidate"; break; fi
 done
 
 say()  { printf '%s\n' "$*"; }
@@ -60,12 +69,6 @@ command -v docker >/dev/null 2>&1 || die "docker is not installed."
 PUBLIC_PORT="$(grep -E '^PUBLIC_PORT=' .env | tail -n1 | cut -d= -f2- | tr -d '"' || true)"
 PUBLIC_PORT="${PUBLIC_PORT:-8081}"
 LOCAL="http://127.0.0.1:${PUBLIC_PORT}"
-
-# A python that actually runs (some systems have a python3 that is only a stub).
-PY=""
-for candidate in python3 python; do
-    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import json' >/dev/null 2>&1; then PY="$candidate"; break; fi
-done
 
 # env_set KEY VALUE: set or replace one line in .env, keeping a private backup.
 env_set() {
@@ -103,25 +106,68 @@ check_local_door() {
     say "   ok: share pages are served, everything else is 404"
 }
 
+# The public address of a host as the INTERNET sees it, asked of a public resolver (DNS over HTTPS).
+# Needed because this machine's own resolver (Tailscale's MagicDNS) answers with its tailnet address,
+# and a machine cannot reach its own tailnet address through the tunnel: asking it that way would
+# fail even when the link works perfectly for everyone else.
+resolve_public() {
+    local body
+    body="$(curl -s --max-time 10 -H 'accept: application/dns-json' "https://1.1.1.1/dns-query?name=$1&type=A" 2>/dev/null || true)"
+    [ -n "$PY" ] || return 0
+    printf '%s' "$body" | "$PY" -c 'import json,sys
+try:
+    d = json.load(sys.stdin)
+    print(next((a["data"] for a in d.get("Answer", []) if a.get("type") == 1), ""))
+except Exception:
+    print("")' 2>/dev/null
+}
+
 verify_public() {
     local url="$1"
-    step "Checking $url from this machine"
-    local ok=0 i
+    if [ "$VERIFY" = 0 ]; then
+        say "   skipping the outside check (--no-verify). Test a link from a phone on mobile data."
+        return 0
+    fi
+    local host="${url#https://}" ip=""
+    step "Checking $url the way the internet reaches it"
+    ip="$(resolve_public "$host")"
+    local resolve=()
+    if [ -n "$ip" ]; then
+        resolve=(--resolve "${host}:443:${ip}")
+        say "   the internet resolves $host to $ip"
+    else
+        say "   could not ask a public resolver for $host (no answer yet, or no internet); trying this machine's own"
+    fi
+    local ok=0 i code=000
     for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
-        if [ "$(http_code "$url/s/_health")" = 200 ]; then ok=1; break; fi
-        say "   not reachable yet, waiting ($i/12; new addresses can take a minute)"
+        code="$(http_code "${resolve[@]}" "$url/s/_health")"
+        if [ "$code" = 200 ]; then ok=1; break; fi
+        say "   not answering yet ($i/12; a new address needs up to a minute for DNS and its certificate)"
         [ "$DRY" = 1 ] && { ok=1; break; }
+        if [ -z "$ip" ]; then ip="$(resolve_public "$host")"; [ -n "$ip" ] && resolve=(--resolve "${host}:443:${ip}"); fi
         sleep 5
     done
-    [ "$ok" = 1 ] || die "$url did not answer. The link was NOT switched on for the app; see docs/deployment.md 'Making share links public'."
-    local body; body="$(curl -s --max-time 10 "$url/s/_health" 2>/dev/null || true)"
+    if [ "$ok" != 1 ]; then
+        say
+        say "   Could not confirm $url from here (last answer: ${code:0:3}, public DNS: ${ip:-none})."
+        if command -v tailscale >/dev/null 2>&1; then
+            say "   tailscale funnel status:"
+            tailscale funnel status 2>&1 | sed 's/^/      /'
+        fi
+        say "   If the status above lists $url with 'Funnel on', it is most likely working and only this check"
+        say "   failed (some networks do not allow a machine to loop back to its own public address)."
+        say "   Open a link from a phone on mobile data. If it opens, switch links on with:"
+        say "       scripts/enable-public-links.sh --no-verify"
+        die "$url did not answer from here, so the app was NOT switched to it."
+    fi
+    local body; body="$(curl -s --max-time 10 "${resolve[@]}" "$url/s/_health" 2>/dev/null || true)"
     case "$body" in *'"door":"public"'*) say "   ok: the request came in through the public door" ;; *) say "   note: it answered, but not marked as the public door yet" ;; esac
     case "$body" in
         *'"client_ip":"127.'*|*'"client_ip":"172.'*|*'"client_ip":"10.'*)
             say "   warning: the server sees visitors as a local address, so per-visitor rate limits would share one bucket." ;;
     esac
-    if [ "$(http_code "$url/api/health")" = 404 ]; then say "   ok: the app and the API are NOT reachable from there"; else say "   warning: $url/api/health did not answer 404, check PUBLIC_DOOR_MODE=shares"; fi
-    say "   This check ran on this machine. Also open a link from a phone on mobile data to be sure."
+    if [ "$(http_code "${resolve[@]}" "$url/api/health")" = 404 ]; then say "   ok: the app and the API are NOT reachable from there"; else say "   warning: $url/api/health did not answer 404, check PUBLIC_DOOR_MODE=shares"; fi
+    say "   Also open a share link from a phone on mobile data to be sure."
 }
 
 # --------------------------------------------------------------------------------------- status
@@ -132,7 +178,15 @@ if [ "$ACTION" = status ]; then
     code="$(http_code "$LOCAL/s/_health")"
     say "public door on this machine: $code (200 is good)"
     if command -v tailscale >/dev/null 2>&1; then say "--- tailscale funnel ---"; tailscale funnel status 2>&1 | sed 's/^/   /' || true; fi
-    if [ -n "$(current_url)" ]; then say "from here: $(http_code "$(current_url)/s/_health") at $(current_url)/s/_health"; fi
+    if [ -n "$(current_url)" ]; then
+        status_host="$(current_url)"; status_host="${status_host#https://}"
+        status_ip="$(resolve_public "$status_host")"
+        if [ -n "$status_ip" ]; then
+            say "from the internet ($status_ip): $(http_code --resolve "${status_host}:443:${status_ip}" "$(current_url)/s/_health") at $(current_url)/s/_health"
+        else
+            say "from here: $(http_code "$(current_url)/s/_health") at $(current_url)/s/_health (no public DNS answer to test with)"
+        fi
+    fi
     exit 0
 fi
 
