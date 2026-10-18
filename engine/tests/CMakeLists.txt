@@ -6,6 +6,9 @@ add_executable(engine_tests
     hashing_tests.cpp
     storage_tests.cpp
     chunk_tests.cpp
+    util_tests.cpp
+    durability_tests.cpp
+    request_safety_tests.cpp
 )
 target_link_libraries(engine_tests PRIVATE engine_core GTest::gtest GTest::gtest_main)
 

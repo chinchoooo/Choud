@@ -39,22 +39,29 @@ class ObjectStore {
 
     bool exists(const std::string& hash) const;
 
-    // Adds `source`'s bytes to the store under `hash`. The caller is
-    // responsible for `hash` actually being the SHA-256 of `source`'s
-    // contents (see engine::hashing) — put() trusts it rather than
-    // re-hashing on every call, but validates its shape (64 lowercase hex
-    // characters) so an obviously wrong caller fails loudly, not silently.
+    // Adds `source`'s bytes to the store under `hash`.
+    //
+    // With `verify` (the default) the bytes are hashed first and a mismatch
+    // throws ObjectCorruptedError with the source left untouched: a name in
+    // objects/ is its content's checksum, so a wrong claim is refused rather
+    // than stored. Callers that have JUST computed the hash from these exact
+    // bytes (chunk finalize) pass verify=false to avoid reading them twice.
+    //
+    // Durable: the data is flushed to disk before the final name appears, and
+    // the directory entry is flushed after, so a power cut leaves either no
+    // object or a complete one, never a named file with missing contents.
     //
     // Idempotent: if an object already exists under `hash`, this is a
-    // no-op — that's what makes deduplication free
-    // (docs/storage.md#deduplication): two uploads with the same content
-    // hash never store the bytes twice.
+    // no-op: that is what makes deduplication free
+    // (docs/storage.md#deduplication). Safe to call concurrently, including
+    // for the same hash (each call writes its own temp file).
     //
     // Takes ownership of `source` (moves it into the store when possible,
-    // falling back to copy+remove across filesystems) — callers should
-    // treat `source` as consumed after this returns, whether or not the
-    // object already existed.
-    void put(const std::string& hash, const std::filesystem::path& source);
+    // falling back to copy+remove across filesystems) on success. Callers
+    // should treat `source` as consumed after a successful return, whether
+    // or not the object already existed; after an exception it is left alone
+    // (except for a rename that already happened).
+    void put(const std::string& hash, const std::filesystem::path& source, bool verify = true);
 
     // Copies the stored object for `hash` to `destination`.
     // Throws ObjectNotFoundError if `hash` isn't stored, ObjectCorruptedError

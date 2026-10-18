@@ -6,6 +6,8 @@
 #include <sstream>
 #include <system_error>
 
+#include "util/durability.hpp"
+
 namespace engine::chunks {
 
 namespace {
@@ -59,10 +61,13 @@ void ChunkStore::write_chunk(const std::string& upload_id, int index,
 
     std::filesystem::create_directories(target.parent_path());
 
-    // Same atomic temp-file + rename pattern as ObjectStore::put (Rule 5:
-    // never leave a partial chunk under its final name).
-    const auto tmp_target = target.parent_path() / (std::to_string(index) + ".tmp");
+    // Same durable temp-file + rename pattern as ObjectStore::put (Rule 5: never
+    // leave a partial chunk under its final name). The temp name is unique per
+    // call, so a retried or duplicated chunk write cannot clash with another.
+    const auto tmp_target = target.parent_path() /
+                            (std::to_string(index) + "." + engine::util::unique_suffix() + ".tmp");
 
+    bool copied = false;
     std::error_code rename_ec;
     std::filesystem::rename(source, tmp_target, rename_ec);
     if (rename_ec) {
@@ -73,16 +78,28 @@ void ChunkStore::write_chunk(const std::string& upload_id, int index,
             throw std::runtime_error("failed to store chunk " + std::to_string(index) + " for " +
                                       upload_id + ": " + copy_ec.message());
         }
-        std::filesystem::remove(source);
+        copied = true;
     }
 
-    std::error_code final_rename_ec;
-    std::filesystem::rename(tmp_target, target,
-                             final_rename_ec);  // overwrite: rename() replaces an existing target
-    if (final_rename_ec) {
-        std::filesystem::remove(tmp_target);
-        throw std::runtime_error("failed to finalize chunk " + std::to_string(index) + " for " +
-                                  upload_id + ": " + final_rename_ec.message());
+    try {
+        engine::util::fsync_file(tmp_target);
+        engine::util::fault_point("chunk:before-rename");
+        std::error_code final_rename_ec;
+        std::filesystem::rename(tmp_target, target,
+                                 final_rename_ec);  // overwrite: rename() replaces an existing target
+        if (final_rename_ec) {
+            throw std::runtime_error("failed to finalize chunk " + std::to_string(index) +
+                                      " for " + upload_id + ": " + final_rename_ec.message());
+        }
+    } catch (...) {
+        std::error_code ignored;
+        std::filesystem::remove(tmp_target, ignored);
+        throw;
+    }
+    engine::util::fsync_dir(target.parent_path());
+    if (copied) {
+        std::error_code ignored;
+        std::filesystem::remove(source, ignored);
     }
 }
 

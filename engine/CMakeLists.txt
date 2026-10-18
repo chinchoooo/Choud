@@ -9,6 +9,13 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Optional sanitizers for testing: -DENGINE_SANITIZE=address,undefined  or  -DENGINE_SANITIZE=thread
+set(ENGINE_SANITIZE "" CACHE STRING "Sanitizers to build with (address,undefined | thread)")
+if(ENGINE_SANITIZE)
+    add_compile_options(-fsanitize=${ENGINE_SANITIZE} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${ENGINE_SANITIZE})
+endif()
+
 find_package(Boost REQUIRED)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
@@ -20,6 +27,9 @@ add_library(engine_core
     src/storage/storage_manager.cpp
     src/chunks/chunk_store.cpp
     src/chunks/chunk_manager.cpp
+    src/util/durability.cpp
+    src/util/json.cpp
+    src/util/paths.cpp
 )
 target_include_directories(engine_core PUBLIC include)
 target_link_libraries(engine_core PUBLIC Boost::boost Threads::Threads OpenSSL::Crypto)
@@ -29,3 +39,8 @@ target_link_libraries(personal_cloud_engine PRIVATE engine_core)
 
 enable_testing()
 add_subdirectory(tests)
+
+option(ENGINE_FUZZ "Build the libFuzzer targets (needs clang)" OFF)
+if(ENGINE_FUZZ)
+    add_subdirectory(fuzz)
+endif()

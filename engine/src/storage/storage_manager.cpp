@@ -11,8 +11,9 @@ bool StorageManager::object_exists(const std::string& hash) const {
     return store_.exists(hash);
 }
 
-void StorageManager::store_object(const std::string& hash, const std::filesystem::path& source) {
-    store_.put(hash, source);
+void StorageManager::store_object(const std::string& hash, const std::filesystem::path& source,
+                                  bool verify) {
+    store_.put(hash, source, verify);
 }
 
 void StorageManager::retrieve_object(const std::string& hash,

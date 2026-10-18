@@ -26,7 +26,9 @@ class StorageManager {
     explicit StorageManager(std::filesystem::path storage_root);
 
     bool object_exists(const std::string& hash) const;
-    void store_object(const std::string& hash, const std::filesystem::path& source);
+    // `verify` as in ObjectStore::put (default true).
+    void store_object(const std::string& hash, const std::filesystem::path& source,
+                      bool verify = true);
     void retrieve_object(const std::string& hash, const std::filesystem::path& destination) const;
     void remove_object(const std::string& hash);
     std::uint64_t object_size(const std::string& hash) const;

@@ -5,6 +5,7 @@
 #include <fstream>
 
 #include "hashing/hasher.hpp"
+#include "util/durability.hpp"
 
 namespace engine::chunks {
 
@@ -65,6 +66,9 @@ ChunkManager::FinalizeResult ChunkManager::finalize(
         }
     }  // `out` closed here, before the reconstructed file is moved/removed below
 
+    // The reconstructed bytes must be durable before they are given a name.
+    engine::util::fsync_file(reconstructed_path);
+
     const auto computed_hash = hasher.hex_digest();
 
     if (expected_hash.has_value() && *expected_hash != computed_hash) {
@@ -78,7 +82,9 @@ ChunkManager::FinalizeResult ChunkManager::finalize(
     // store_object() takes ownership of reconstructed_path (moves it into
     // objects/, or discards it if that hash is already stored — dedup
     // applies to chunked uploads too).
-    storage_manager_.store_object(computed_hash, reconstructed_path);
+    // The hash was just computed from exactly these bytes, so the store need not
+    // read them a second time to verify it.
+    storage_manager_.store_object(computed_hash, reconstructed_path, /*verify=*/false);
 
     chunk_store_.remove_upload(upload_id);
 

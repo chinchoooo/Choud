@@ -1,16 +1,22 @@
 #include "api/engine_server.hpp"
 
+#include <atomic>
 #include <boost/asio.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
+#include <chrono>
+#include <condition_variable>
 #include <iostream>
+#include <mutex>
 #include <optional>
-#include <regex>
 #include <string>
+#include <thread>
 
 #include "chunks/chunk_manager.hpp"
 #include "storage/object_store.hpp"
 #include "storage/storage_manager.hpp"
+#include "util/json.hpp"
+#include "util/paths.hpp"
 
 namespace asio = boost::asio;
 namespace beast = boost::beast;
@@ -21,47 +27,23 @@ namespace engine::api {
 
 namespace {
 
-// --- tiny JSON helpers ----------------------------------------------------
-//
-// Request/response bodies here are small, flat objects with string/bool/
-// number fields (see docs/api.md's internal API table) exchanged only
-// between our own two trusted, Docker-internal processes — never
-// user-facing. A regex-based extractor is enough; pulling in a JSON
-// library for this would be exactly the unnecessary dependency Rule 2
-// warns against.
+using engine::util::JsonError;
+using engine::util::JsonObject;
+using engine::util::PathError;
 
-std::optional<std::string> json_string(const std::string& body, const std::string& key) {
-    std::regex pattern("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
-    std::smatch match;
-    if (std::regex_search(body, match, pattern)) {
-        return match[1].str();
-    }
-    return std::nullopt;
-}
+// How many requests may run at once. A large finalize (hashing gigabytes) must
+// not make every other upload wait, but the cap keeps a flood of connections
+// from exhausting memory or threads.
+constexpr std::size_t kMaxConcurrentRequests = 32;
 
-// Extracts an unsigned integer field (chunk index, total_chunks — never
-// negative in any request this engine handles) without quotes, e.g.
-// `"index":3`.
-std::optional<long long> json_int(const std::string& body, const std::string& key) {
-    std::regex pattern("\"" + key + "\"\\s*:\\s*(-?[0-9]+)");
-    std::smatch match;
-    if (std::regex_search(body, match, pattern)) {
-        return std::stoll(match[1].str());
-    }
-    return std::nullopt;
-}
+// A client that connects and sends nothing is dropped after this long.
+constexpr std::chrono::seconds kReadTimeout{60};
 
-std::string json_escape(const std::string& value) {
-    std::string out;
-    out.reserve(value.size());
-    for (char c : value) {
-        if (c == '"' || c == '\\') {
-            out.push_back('\\');
-        }
-        out.push_back(c);
-    }
-    return out;
-}
+struct Context {
+    engine::storage::StorageManager& manager;
+    engine::chunks::ChunkManager& chunks;
+    std::filesystem::path root;
+};
 
 http::response<http::string_body> json_response(http::status status, unsigned version,
                                                   const std::string& json_body) {
@@ -74,212 +56,278 @@ http::response<http::string_body> json_response(http::status status, unsigned ve
 
 http::response<http::string_body> error_response(http::status status, unsigned version,
                                                    const std::string& message) {
-    return json_response(status, version, R"({"error":")" + json_escape(message) + R"("})");
+    return json_response(status, version,
+                          R"({"error":")" + engine::util::json_escape(message) + R"("})");
 }
 
 // --- routing ---------------------------------------------------------------
 
-http::response<http::string_body> handle_hash(const http::request<http::string_body>& req,
-                                                engine::storage::StorageManager& manager) {
-    auto path = json_string(req.body(), "path");
+http::response<http::string_body> handle_hash(unsigned version, const JsonObject& body,
+                                                const Context& ctx) {
+    auto path = body.string("path");
     if (!path) {
-        return error_response(http::status::bad_request, req.version(), "missing \"path\"");
+        return error_response(http::status::bad_request, version, "missing \"path\"");
     }
     try {
-        auto hash = manager.hash_file(*path);
-        return json_response(http::status::ok, req.version(), R"({"hash":")" + hash + R"("})");
+        // Hashing may read stored objects (a scrub), but only inside the storage root.
+        const auto safe = engine::util::confine(ctx.root, *path, /*allow_objects=*/true);
+        auto hash = ctx.manager.hash_file(safe);
+        return json_response(http::status::ok, version, R"({"hash":")" + hash + R"("})");
+    } catch (const PathError& ex) {
+        return error_response(http::status::bad_request, version, ex.what());
     } catch (const std::exception& ex) {
-        return error_response(http::status::bad_request, req.version(), ex.what());
+        return error_response(http::status::bad_request, version, ex.what());
     }
 }
 
-http::response<http::string_body> handle_objects_exists(
-    const http::request<http::string_body>& req, engine::storage::StorageManager& manager) {
-    auto hash = json_string(req.body(), "hash");
+http::response<http::string_body> handle_objects_exists(unsigned version, const JsonObject& body,
+                                                          const Context& ctx) {
+    auto hash = body.string("hash");
     if (!hash) {
-        return error_response(http::status::bad_request, req.version(), "missing \"hash\"");
+        return error_response(http::status::bad_request, version, "missing \"hash\"");
     }
     try {
-        bool exists = manager.object_exists(*hash);
-        return json_response(http::status::ok, req.version(),
+        bool exists = ctx.manager.object_exists(*hash);
+        return json_response(http::status::ok, version,
                               std::string(R"({"exists":)") + (exists ? "true" : "false") + "}");
     } catch (const engine::storage::InvalidHashError& ex) {
-        return error_response(http::status::bad_request, req.version(), ex.what());
+        return error_response(http::status::bad_request, version, ex.what());
     }
 }
 
-http::response<http::string_body> handle_objects_put(const http::request<http::string_body>& req,
-                                                       engine::storage::StorageManager& manager) {
-    auto hash = json_string(req.body(), "hash");
-    auto source_path = json_string(req.body(), "source_path");
+http::response<http::string_body> handle_objects_put(unsigned version, const JsonObject& body,
+                                                       const Context& ctx) {
+    auto hash = body.string("hash");
+    auto source_path = body.string("source_path");
     if (!hash || !source_path) {
-        return error_response(http::status::bad_request, req.version(),
+        return error_response(http::status::bad_request, version,
                                "missing \"hash\" or \"source_path\"");
     }
     try {
-        manager.store_object(*hash, *source_path);
-        auto size = manager.object_size(*hash);
-        return json_response(http::status::created, req.version(),
+        const auto safe = engine::util::confine(ctx.root, *source_path, /*allow_objects=*/false);
+        ctx.manager.store_object(*hash, safe);
+        auto size = ctx.manager.object_size(*hash);
+        return json_response(http::status::created, version,
                               R"({"stored":true,"size":)" + std::to_string(size) + "}");
     } catch (const engine::storage::InvalidHashError& ex) {
-        return error_response(http::status::bad_request, req.version(), ex.what());
+        return error_response(http::status::bad_request, version, ex.what());
+    } catch (const PathError& ex) {
+        return error_response(http::status::bad_request, version, ex.what());
+    } catch (const engine::storage::ObjectCorruptedError& ex) {
+        return error_response(http::status::conflict, version, ex.what());
     } catch (const std::exception& ex) {
-        return error_response(http::status::internal_server_error, req.version(), ex.what());
+        return error_response(http::status::internal_server_error, version, ex.what());
     }
 }
 
-http::response<http::string_body> handle_objects_get(const http::request<http::string_body>& req,
-                                                       engine::storage::StorageManager& manager) {
-    auto hash = json_string(req.body(), "hash");
-    auto destination_path = json_string(req.body(), "destination_path");
+http::response<http::string_body> handle_objects_get(unsigned version, const JsonObject& body,
+                                                       const Context& ctx) {
+    auto hash = body.string("hash");
+    auto destination_path = body.string("destination_path");
     if (!hash || !destination_path) {
-        return error_response(http::status::bad_request, req.version(),
+        return error_response(http::status::bad_request, version,
                                "missing \"hash\" or \"destination_path\"");
     }
     try {
-        manager.retrieve_object(*hash, *destination_path);
-        auto size = manager.object_size(*hash);
-        return json_response(http::status::ok, req.version(),
-                              R"({"size":)" + std::to_string(size) + "}");
+        const auto safe =
+            engine::util::confine(ctx.root, *destination_path, /*allow_objects=*/false);
+        ctx.manager.retrieve_object(*hash, safe);
+        auto size = ctx.manager.object_size(*hash);
+        return json_response(http::status::ok, version, R"({"size":)" + std::to_string(size) + "}");
     } catch (const engine::storage::ObjectNotFoundError& ex) {
-        return error_response(http::status::not_found, req.version(), ex.what());
+        return error_response(http::status::not_found, version, ex.what());
     } catch (const engine::storage::ObjectCorruptedError& ex) {
-        return error_response(http::status::conflict, req.version(), ex.what());
+        return error_response(http::status::conflict, version, ex.what());
     } catch (const engine::storage::InvalidHashError& ex) {
-        return error_response(http::status::bad_request, req.version(), ex.what());
+        return error_response(http::status::bad_request, version, ex.what());
+    } catch (const PathError& ex) {
+        return error_response(http::status::bad_request, version, ex.what());
     } catch (const std::exception& ex) {
-        return error_response(http::status::internal_server_error, req.version(), ex.what());
+        return error_response(http::status::internal_server_error, version, ex.what());
     }
 }
 
-http::response<http::string_body> handle_objects_delete(
-    const http::request<http::string_body>& req, engine::storage::StorageManager& manager) {
-    auto hash = json_string(req.body(), "hash");
+http::response<http::string_body> handle_objects_delete(unsigned version, const JsonObject& body,
+                                                          const Context& ctx) {
+    auto hash = body.string("hash");
     if (!hash) {
-        return error_response(http::status::bad_request, req.version(), "missing \"hash\"");
+        return error_response(http::status::bad_request, version, "missing \"hash\"");
     }
     try {
-        bool existed = manager.object_exists(*hash);
-        manager.remove_object(*hash);
-        return json_response(http::status::ok, req.version(),
+        bool existed = ctx.manager.object_exists(*hash);
+        ctx.manager.remove_object(*hash);
+        return json_response(http::status::ok, version,
                               std::string(R"({"deleted":)") + (existed ? "true" : "false") + "}");
     } catch (const engine::storage::InvalidHashError& ex) {
-        return error_response(http::status::bad_request, req.version(), ex.what());
+        return error_response(http::status::bad_request, version, ex.what());
     }
 }
 
-http::response<http::string_body> handle_chunks_write(
-    const http::request<http::string_body>& req, engine::chunks::ChunkManager& chunk_manager) {
-    auto upload_id = json_string(req.body(), "upload_id");
-    auto index = json_int(req.body(), "index");
-    auto source_path = json_string(req.body(), "source_path");
+http::response<http::string_body> handle_chunks_write(unsigned version, const JsonObject& body,
+                                                        const Context& ctx) {
+    auto upload_id = body.string("upload_id");
+    auto index = body.integer("index");
+    auto source_path = body.string("source_path");
     if (!upload_id || !index || !source_path) {
-        return error_response(http::status::bad_request, req.version(),
+        return error_response(http::status::bad_request, version,
                                "missing \"upload_id\", \"index\", or \"source_path\"");
     }
+    if (*index < 0 || *index > 1'000'000) {
+        return error_response(http::status::bad_request, version, "\"index\" is out of range");
+    }
     try {
-        chunk_manager.write(*upload_id, static_cast<int>(*index), *source_path);
-        return json_response(http::status::created, req.version(), R"({"received":true})");
+        const auto safe = engine::util::confine(ctx.root, *source_path, /*allow_objects=*/false);
+        ctx.chunks.write(*upload_id, static_cast<int>(*index), safe);
+        return json_response(http::status::created, version, R"({"received":true})");
     } catch (const engine::chunks::InvalidUploadIdError& ex) {
-        return error_response(http::status::bad_request, req.version(), ex.what());
+        return error_response(http::status::bad_request, version, ex.what());
+    } catch (const PathError& ex) {
+        return error_response(http::status::bad_request, version, ex.what());
     } catch (const std::exception& ex) {
-        return error_response(http::status::internal_server_error, req.version(), ex.what());
+        return error_response(http::status::internal_server_error, version, ex.what());
     }
 }
 
-http::response<http::string_body> handle_chunks_finalize(
-    const http::request<http::string_body>& req, engine::chunks::ChunkManager& chunk_manager) {
-    auto upload_id = json_string(req.body(), "upload_id");
-    auto total_chunks = json_int(req.body(), "total_chunks");
+http::response<http::string_body> handle_chunks_finalize(unsigned version, const JsonObject& body,
+                                                           const Context& ctx) {
+    auto upload_id = body.string("upload_id");
+    auto total_chunks = body.integer("total_chunks");
     if (!upload_id || !total_chunks) {
-        return error_response(http::status::bad_request, req.version(),
+        return error_response(http::status::bad_request, version,
                                "missing \"upload_id\" or \"total_chunks\"");
     }
-    auto expected_hash = json_string(req.body(), "expected_hash");  // optional
+    if (*total_chunks <= 0 || *total_chunks > 1'000'000) {
+        return error_response(http::status::bad_request, version,
+                               "\"total_chunks\" is out of range");
+    }
+    auto expected_hash = body.string("expected_hash");  // optional
     try {
         auto result =
-            chunk_manager.finalize(*upload_id, static_cast<int>(*total_chunks), expected_hash);
-        return json_response(http::status::ok, req.version(),
+            ctx.chunks.finalize(*upload_id, static_cast<int>(*total_chunks), expected_hash);
+        return json_response(http::status::ok, version,
                               R"({"hash":")" + result.hash + R"(","size":)" +
                                   std::to_string(result.size) + "}");
     } catch (const engine::chunks::MissingChunkError& ex) {
-        return error_response(http::status::conflict, req.version(), ex.what());
+        return error_response(http::status::conflict, version, ex.what());
     } catch (const engine::chunks::HashMismatchError& ex) {
-        return error_response(http::status::conflict, req.version(), ex.what());
+        return error_response(http::status::conflict, version, ex.what());
     } catch (const engine::chunks::InvalidUploadIdError& ex) {
-        return error_response(http::status::bad_request, req.version(), ex.what());
+        return error_response(http::status::bad_request, version, ex.what());
     } catch (const std::invalid_argument& ex) {
-        return error_response(http::status::bad_request, req.version(), ex.what());
+        return error_response(http::status::bad_request, version, ex.what());
     } catch (const std::exception& ex) {
-        return error_response(http::status::internal_server_error, req.version(), ex.what());
+        return error_response(http::status::internal_server_error, version, ex.what());
     }
 }
 
-http::response<http::string_body> handle_chunks_abandon(
-    const http::request<http::string_body>& req, engine::chunks::ChunkManager& chunk_manager) {
-    auto upload_id = json_string(req.body(), "upload_id");
+http::response<http::string_body> handle_chunks_abandon(unsigned version, const JsonObject& body,
+                                                          const Context& ctx) {
+    auto upload_id = body.string("upload_id");
     if (!upload_id) {
-        return error_response(http::status::bad_request, req.version(), "missing \"upload_id\"");
+        return error_response(http::status::bad_request, version, "missing \"upload_id\"");
     }
     try {
-        bool removed = chunk_manager.abandon(*upload_id);
-        return json_response(http::status::ok, req.version(),
+        bool removed = ctx.chunks.abandon(*upload_id);
+        return json_response(http::status::ok, version,
                               std::string(R"({"removed":)") + (removed ? "true" : "false") + "}");
     } catch (const engine::chunks::InvalidUploadIdError& ex) {
-        return error_response(http::status::bad_request, req.version(), ex.what());
+        return error_response(http::status::bad_request, version, ex.what());
     }
 }
 
 http::response<http::string_body> route(const http::request<http::string_body>& req,
-                                         engine::storage::StorageManager& manager,
-                                         engine::chunks::ChunkManager& chunk_manager) {
+                                         const Context& ctx) {
+    const unsigned version = req.version();
     if (req.method() == http::verb::get && req.target() == "/health") {
-        return json_response(http::status::ok, req.version(), R"({"status":"healthy"})");
+        return json_response(http::status::ok, version, R"({"status":"healthy"})");
     }
-    if (req.method() == http::verb::post && req.target() == "/hash") {
-        return handle_hash(req, manager);
-    }
-    if (req.method() == http::verb::post && req.target() == "/objects/exists") {
-        return handle_objects_exists(req, manager);
-    }
-    if (req.method() == http::verb::post && req.target() == "/objects/put") {
-        return handle_objects_put(req, manager);
-    }
-    if (req.method() == http::verb::post && req.target() == "/objects/get") {
-        return handle_objects_get(req, manager);
-    }
-    if (req.method() == http::verb::post && req.target() == "/objects/delete") {
-        return handle_objects_delete(req, manager);
-    }
-    if (req.method() == http::verb::post && req.target() == "/chunks/write") {
-        return handle_chunks_write(req, chunk_manager);
-    }
-    if (req.method() == http::verb::post && req.target() == "/chunks/finalize") {
-        return handle_chunks_finalize(req, chunk_manager);
-    }
-    if (req.method() == http::verb::post && req.target() == "/chunks/abandon") {
-        return handle_chunks_abandon(req, chunk_manager);
+    if (req.method() != http::verb::post) {
+        return error_response(http::status::not_found, version, "not found");
     }
 
-    return error_response(http::status::not_found, req.version(), "not found");
+    using Handler = http::response<http::string_body> (*)(unsigned, const JsonObject&,
+                                                           const Context&);
+    Handler handler = nullptr;
+    if (req.target() == "/hash") {
+        handler = handle_hash;
+    } else if (req.target() == "/objects/exists") {
+        handler = handle_objects_exists;
+    } else if (req.target() == "/objects/put") {
+        handler = handle_objects_put;
+    } else if (req.target() == "/objects/get") {
+        handler = handle_objects_get;
+    } else if (req.target() == "/objects/delete") {
+        handler = handle_objects_delete;
+    } else if (req.target() == "/chunks/write") {
+        handler = handle_chunks_write;
+    } else if (req.target() == "/chunks/finalize") {
+        handler = handle_chunks_finalize;
+    } else if (req.target() == "/chunks/abandon") {
+        handler = handle_chunks_abandon;
+    }
+    if (handler == nullptr) {
+        return error_response(http::status::not_found, version, "not found");
+    }
+
+    try {
+        const auto body = engine::util::parse_flat_object(req.body());
+        return handler(version, body, ctx);
+    } catch (const JsonError& ex) {
+        return error_response(http::status::bad_request, version,
+                               std::string("invalid request body: ") + ex.what());
+    }
 }
 
-void handle_connection(tcp::socket socket, engine::storage::StorageManager& manager,
-                        engine::chunks::ChunkManager& chunk_manager) {
+// Counts requests in flight and makes the accept loop wait when too many are running.
+class ConcurrencyGate {
+   public:
+    void enter() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [this] { return active_ < kMaxConcurrentRequests; });
+        ++active_;
+    }
+    void leave() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            --active_;
+        }
+        cv_.notify_one();
+    }
+
+   private:
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    std::size_t active_ = 0;
+};
+
+void handle_connection(tcp::socket socket, const Context& ctx) {
     beast::error_code ec;
+    beast::tcp_stream stream(std::move(socket));
     beast::flat_buffer buffer;
 
     http::request<http::string_body> req;
-    http::read(socket, buffer, req, ec);
+    stream.expires_after(kReadTimeout);
+    http::read(stream, buffer, req, ec);
     if (ec) {
         return;
     }
+    stream.expires_never();  // the work below (hashing a large file) may take minutes
 
-    auto res = route(req, manager, chunk_manager);
+    http::response<http::string_body> res;
+    try {
+        res = route(req, ctx);
+    } catch (const std::exception& ex) {
+        // Nothing may take the whole engine down: one bad request answers 500 and the
+        // next one is served normally.
+        res = error_response(http::status::internal_server_error, req.version(), ex.what());
+    } catch (...) {
+        res = error_response(http::status::internal_server_error, req.version(),
+                              "unexpected error");
+    }
     res.keep_alive(false);
-    http::write(socket, res, ec);
+    http::write(stream, res, ec);
 
-    socket.shutdown(tcp::socket::shutdown_send, ec);
+    stream.socket().shutdown(tcp::socket::shutdown_send, ec);
 }
 
 }  // namespace
@@ -290,6 +338,7 @@ EngineServer::EngineServer(std::string host, uint16_t port, std::string storage_
 void EngineServer::run() {
     engine::storage::StorageManager manager(storage_root_);
     engine::chunks::ChunkManager chunk_manager(storage_root_, manager);
+    const Context ctx{manager, chunk_manager, std::filesystem::path(storage_root_)};
 
     asio::io_context ioc{1};
     tcp::acceptor acceptor{ioc, {asio::ip::make_address(host_), port_}};
@@ -297,10 +346,15 @@ void EngineServer::run() {
     std::cout << "engine listening on " << host_ << ":" << port_ << " (storage root "
               << storage_root_ << ")" << std::endl;
 
+    ConcurrencyGate gate;
     for (;;) {
         tcp::socket socket{ioc};
         acceptor.accept(socket);
-        handle_connection(std::move(socket), manager, chunk_manager);
+        gate.enter();
+        std::thread([&gate, &ctx, sock = std::move(socket)]() mutable {
+            handle_connection(std::move(sock), ctx);
+            gate.leave();
+        }).detach();
     }
 }
 

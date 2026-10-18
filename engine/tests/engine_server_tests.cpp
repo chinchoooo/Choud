@@ -53,8 +53,17 @@ http::response<http::string_body> post(const std::string& target, const std::str
     return res;
 }
 
+// The engine refuses any path outside its storage root, so test files live inside it.
+std::filesystem::path storage_root() {
+    return std::filesystem::temp_directory_path() / "engine_server_tests";
+}
+
+std::filesystem::path staging_dir() {
+    return storage_root() / "staging";
+}
+
 std::filesystem::path write_temp_file(const std::string& contents) {
-    auto dir = std::filesystem::temp_directory_path() / "engine_server_tests_staging";
+    auto dir = staging_dir();
     std::filesystem::create_directories(dir);
     auto path = dir / (std::string("upload-") + std::to_string(std::rand()) + ".bin");
     std::ofstream out(path, std::ios::binary);
@@ -66,9 +75,9 @@ std::filesystem::path write_temp_file(const std::string& contents) {
 class EngineServerTest : public ::testing::Test {
    protected:
     static void SetUpTestSuite() {
-        auto storage_root = std::filesystem::temp_directory_path() / "engine_server_tests";
-        std::thread([storage_root] {
-            engine::api::EngineServer server("127.0.0.1", kTestPort, storage_root.string());
+        const auto root = storage_root();
+        std::thread([root] {
+            engine::api::EngineServer server("127.0.0.1", kTestPort, root.string());
             server.run();
         }).detach();
         // Give the acceptor time to bind before tests connect. The
@@ -101,7 +110,8 @@ TEST_F(EngineServerTest, HashComputesSha256OfAFileOnDisk) {
 }
 
 TEST_F(EngineServerTest, HashOfMissingFileReturnsBadRequest) {
-    auto res = post("/hash", R"({"path":"/nonexistent/does-not-exist"})");
+    auto res =
+        post("/hash", R"({"path":")" + (staging_dir() / "does-not-exist").string() + R"("})");
     EXPECT_EQ(res.result(), http::status::bad_request);
 }
 
@@ -130,8 +140,7 @@ TEST_F(EngineServerTest, PutThenExistsThenGetRoundTrip) {
     EXPECT_EQ(exists_res.result(), http::status::ok);
     EXPECT_NE(exists_res.body().find("\"exists\":true"), std::string::npos);
 
-    auto dest = std::filesystem::temp_directory_path() / "engine_server_tests_staging" /
-                "downloaded.bin";
+    auto dest = staging_dir() / "downloaded.bin";
     auto get_res =
         post("/objects/get", R"({"hash":")" + hash + R"(","destination_path":")" + dest.string() +
                                   R"("})");
@@ -152,7 +161,8 @@ TEST_F(EngineServerTest, PutThenExistsThenGetRoundTrip) {
 TEST_F(EngineServerTest, GetOfMissingHashReturnsNotFound) {
     auto res = post("/objects/get",
                      R"({"hash":")" + std::string(64, 'a') + R"(",)"
-                     R"("destination_path":"/tmp/engine_server_tests_should_not_exist"})");
+                     R"("destination_path":")" + (staging_dir() / "should-not-exist").string() +
+                     R"("})");
     EXPECT_EQ(res.result(), http::status::not_found);
 }
 

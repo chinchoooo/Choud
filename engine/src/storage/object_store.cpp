@@ -5,6 +5,7 @@
 #include <system_error>
 
 #include "hashing/hasher.hpp"
+#include "util/durability.hpp"
 
 namespace engine::storage {
 
@@ -18,6 +19,28 @@ bool is_valid_hash(const std::string& hash) {
         return std::isxdigit(c) && (std::isdigit(c) || std::islower(c));
     });
 }
+
+// When a put() fails part-way the temp file must not linger, and the caller's
+// source file must not be lost: if the source was MOVED into the temp path it is
+// moved back, if it was copied the temp copy is simply removed.
+struct TempFileGuard {
+    std::filesystem::path path;
+    std::filesystem::path restore_to;  // set only when the source was moved, not copied
+    bool armed = true;
+    ~TempFileGuard() {
+        if (!armed) {
+            return;
+        }
+        std::error_code ec;
+        if (!restore_to.empty() && std::filesystem::exists(path, ec)) {
+            std::filesystem::rename(path, restore_to, ec);
+            if (!ec) {
+                return;
+            }
+        }
+        std::filesystem::remove(path, ec);
+    }
+};
 
 }  // namespace
 
@@ -36,7 +59,7 @@ bool ObjectStore::exists(const std::string& hash) const {
     return std::filesystem::is_regular_file(path_for(hash));
 }
 
-void ObjectStore::put(const std::string& hash, const std::filesystem::path& source) {
+void ObjectStore::put(const std::string& hash, const std::filesystem::path& source, bool verify) {
     const auto target = path_for(hash);  // validates hash shape first
 
     if (!std::filesystem::is_regular_file(source)) {
@@ -44,39 +67,73 @@ void ObjectStore::put(const std::string& hash, const std::filesystem::path& sour
     }
 
     if (exists(hash)) {
-        // Already stored under this hash — dedup means we don't need a
+        // Already stored under this hash: dedup means we do not need a
         // second copy. Still consume the source, per this method's
         // documented ownership contract.
         std::filesystem::remove(source);
         return;
     }
 
-    std::filesystem::create_directories(target.parent_path());
+    // A name is its content's checksum, so a wrong claim must never reach
+    // objects/. The check happens BEFORE anything is moved, so a refused
+    // source is left exactly where the caller put it.
+    if (verify && engine::hashing::hash_file(source) != hash) {
+        throw ObjectCorruptedError("the bytes do not match the hash they were to be stored under: " +
+                                   hash);
+    }
 
-    // Write to a sibling temp path first, then atomically rename into
-    // place, so a crash mid-copy can never leave a partial object under
-    // its final name (Rule 5: never silently corrupt data).
-    const auto tmp_target = target.parent_path() / (hash + ".tmp");
+    const auto shard = target.parent_path();
+    const bool new_shard = !std::filesystem::exists(shard);
+    std::filesystem::create_directories(shard);
 
+    // Write to a sibling temp path first, then atomically rename into place,
+    // so a crash mid-copy can never leave a partial object under its final
+    // name (Rule 5: never silently corrupt data). The name is unique per
+    // call, so two writers of the same object never share a temp file.
+    const auto tmp_target = shard / (hash + "." + engine::util::unique_suffix() + ".tmp");
+    TempFileGuard guard{tmp_target};
+
+    bool copied = false;
     std::error_code rename_ec;
     std::filesystem::rename(source, tmp_target, rename_ec);
     if (rename_ec) {
-        // Cross-filesystem (EXDEV) or similar — fall back to copy+remove.
+        // Cross-filesystem (EXDEV) or similar: copy, and remove the source
+        // only once the object is safely in place.
         std::error_code copy_ec;
-        std::filesystem::copy_file(
-            source, tmp_target, std::filesystem::copy_options::overwrite_existing, copy_ec);
+        std::filesystem::copy_file(source, tmp_target,
+                                   std::filesystem::copy_options::overwrite_existing, copy_ec);
         if (copy_ec) {
             throw std::runtime_error("failed to store object " + hash + ": " + copy_ec.message());
         }
-        std::filesystem::remove(source);
+        copied = true;
+    } else {
+        guard.restore_to = source;
     }
+    engine::util::fault_point("put:after-copy");
+
+    // The data must be on disk BEFORE the final name exists, or a power cut
+    // can leave that name pointing at an empty or truncated file.
+    engine::util::fsync_file(tmp_target);
+    engine::util::fault_point("put:before-rename");
 
     std::error_code final_rename_ec;
     std::filesystem::rename(tmp_target, target, final_rename_ec);
     if (final_rename_ec) {
-        std::filesystem::remove(tmp_target);
         throw std::runtime_error("failed to finalize object " + hash + ": " +
-                                  final_rename_ec.message());
+                                 final_rename_ec.message());
+    }
+    guard.armed = false;
+    engine::util::fault_point("put:after-rename");
+
+    // ...and the directory entry itself must be durable too.
+    engine::util::fsync_dir(shard);
+    if (new_shard) {
+        engine::util::fsync_dir(root_ / "objects");
+    }
+
+    if (copied) {
+        std::error_code remove_ec;
+        std::filesystem::remove(source, remove_ec);
     }
 }
 
@@ -92,8 +149,8 @@ void ObjectStore::get(const std::string& hash, const std::filesystem::path& dest
     }
 
     std::filesystem::create_directories(destination.parent_path());
-    std::filesystem::copy_file(
-        source, destination, std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::copy_file(source, destination,
+                               std::filesystem::copy_options::overwrite_existing);
 }
 
 void ObjectStore::remove(const std::string& hash) {
