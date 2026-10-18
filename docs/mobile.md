@@ -4,7 +4,12 @@
 Documents, …), and have them sync with the server **in the background**, without
 the app being open — the same thing the desktop client does, on a phone.
 
-**Status:** the *server* side is ready. **Platform decided: Android (Kotlin).**
+**Status (0.5.0):** the Android app now has its own look (no stock dialogs), a settings hub, a viewer
+with a real action bar, a Photos tab that keeps the whole library on the phone (see
+[`mobile-perf.md`](mobile-perf.md)) merged with photos not yet backed up, search, upload and
+share-into-Choud, new folder and rename, and screens for trash, shared links, storage and sign-in
+history. Two-way folder sync is still not built; the rest of this page remains the spec. The
+*server* side is ready. **Platform decided: Android (Kotlin).**
 Build-order steps 1-5 (login, status screen, camera-roll backup, WorkManager
 scheduling, resumable chunked uploads) exist in [`android/`](../android/README.md)
 — unit-tested, and verified on an emulator against the real stack (incl. a 30 MB chunked upload), but **not yet on a physical phone**. Steps

@@ -111,3 +111,19 @@ class LogicTest {
         assertEquals(2, chunkCount(6, 5))
     }
 }
+
+class CleanAddressTest {
+    @org.junit.Test
+    fun `adds a scheme and drops the trailing slash`() {
+        org.junit.Assert.assertEquals("http://100.1.2.3", cleanAddress("100.1.2.3"))
+        org.junit.Assert.assertEquals("https://files.example.com", cleanAddress(" https://files.example.com/ "))
+        org.junit.Assert.assertEquals("http://10.0.2.2:8000", cleanAddress("10.0.2.2:8000"))
+    }
+
+    @org.junit.Test
+    fun `rejects things that cannot be an address`() {
+        org.junit.Assert.assertNull(cleanAddress(""))
+        org.junit.Assert.assertNull(cleanAddress("   "))
+        org.junit.Assert.assertNull(cleanAddress("not an address"))
+    }
+}

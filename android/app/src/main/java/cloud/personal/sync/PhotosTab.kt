@@ -32,7 +32,7 @@ class PhotosTab(private val host: Host) : Tab {
     private val countView = ui.muted("", 12f)
     private val list = RecyclerView(ui.context)
     private val adapter = Adapter()
-    private val spans = 3
+    private var spans = host.settings.photoColumns.coerceIn(2, 6)
     private val skeleton = Skeleton(ui, 10)
     private val stateHost = FrameLayout(ui.context)
     private val swipe = SwipeRefreshLayout(ui.context).apply {
@@ -58,7 +58,7 @@ class PhotosTab(private val host: Host) : Tab {
             onDelete = { bulk.delete(chosen(), emptyList()) { endSelection(); reload() } },
         ),
     )
-    private val filter = Segmented(ui, listOf("all" to "All", "image" to "Photos", "video" to "Videos"), "all") {
+    private val filter = Segmented(ui, listOf("all" to "All", "image" to "Photos", "video" to "Videos", "phone" to "On phone"), "all") {
         kind = it
         reload()
     }
@@ -82,6 +82,27 @@ class PhotosTab(private val host: Host) : Tab {
             }
         }
         list.layoutManager = grid
+        // Pinch to change how many photos fit across: 2 to 6.
+        val pinch = android.view.ScaleGestureDetector(ui.context, object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
+                val wanted = when {
+                    detector.scaleFactor > 1.12f && spans > 2 -> spans - 1
+                    detector.scaleFactor < 0.9f && spans < 6 -> spans + 1
+                    else -> return false
+                }
+                spans = wanted
+                host.settings.photoColumns = wanted
+                grid.spanCount = wanted
+                adapter.notifyDataSetChanged()
+                return true
+            }
+        })
+        list.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+            override fun onInterceptTouchEvent(rv: RecyclerView, e: android.view.MotionEvent): Boolean {
+                pinch.onTouchEvent(e)
+                return false
+            }
+        })
         list.adapter = adapter
         // Smooth scrolling: keep more rows ready, no change animations, fixed-size cells.
         list.setHasFixedSize(true)
@@ -96,7 +117,7 @@ class PhotosTab(private val host: Host) : Tab {
                 val range = if (dy > 0) (last + 1)..(last + 60) else (first - 60) until first
                 for (i in range) {
                     val row = rows.getOrNull(i) as? PhotoRow.Photo ?: continue
-                    ThumbLoader.prefetchPhoto(host.api, row.item.id, row.item.version)
+                    if (!row.item.isLocalOnly) ThumbLoader.prefetchPhoto(host.api, row.item.id, row.item.version)
                 }
             }
         })
@@ -147,6 +168,9 @@ class PhotosTab(private val host: Host) : Tab {
         refreshBar()
         adapter.notifyDataSetChanged()
     }
+
+    /** The photos that are on the server (selection actions never apply to phone-only ones). */
+    private fun serverItems() = items.filter { !it.isLocalOnly }
 
     /** Tapping a month heading while selecting adds the whole month (or removes it if all are in). */
     private fun toggleMonth(headerPosition: Int) {
@@ -209,14 +233,14 @@ class PhotosTab(private val host: Host) : Tab {
         refreshStatus()
         thread {
             try {
-                val local = db.load(wantedKind)
+                val local = withPhone(db.load(serverKind(wantedKind)), wantedKind)
                 host.runOnUi { if (gen == generation) applyItems(local) }
             } catch (e: Exception) {
                 EventLog.log("photos: local database unreadable: ${e.javaClass.simpleName}: ${e.message}")
             }
             try {
                 val changed = Library.sync(db, host.api)
-                val fresh = if (changed) db.load(wantedKind) else null
+                val fresh = if (changed) withPhone(db.load(serverKind(wantedKind)), wantedKind) else null
                 host.runOnUi {
                     if (gen != generation) return@runOnUi
                     loading = false
@@ -235,6 +259,25 @@ class PhotosTab(private val host: Host) : Tab {
         }
     }
 
+    /** The server's kinds are all/image/video; "phone" shows only what is not on the server. */
+    private fun serverKind(kind: String) = if (kind == "phone") "all" else kind
+
+    /**
+     * Adds the photos that are only on this phone, in date order, so the timeline shows everything.
+     * Offline, or before the first sync, this is what makes Photos useful at all.
+     */
+    private fun withPhone(server: List<RemoteItem>, wantedKind: String): List<RemoteItem> {
+        val onPhone = LocalMedia.notOnServer(LocalMedia.scan(ui.context, host.settings.backupFolders), db.load("all").ifEmpty { server })
+        val wanted = when (wantedKind) {
+            "image" -> onPhone.filter { it.mime.startsWith("image/") }
+            "video" -> onPhone.filter { it.mime.startsWith("video/") }
+            else -> onPhone
+        }
+        if (wantedKind == "phone") return wanted.sortedByDescending { it.sortMillis }
+        if (wanted.isEmpty()) return server
+        return (server + wanted).sortedByDescending { it.sortMillis }
+    }
+
     private fun applyItems(list: List<RemoteItem>) {
         items.clear()
         items.addAll(list)
@@ -243,7 +286,7 @@ class PhotosTab(private val host: Host) : Tab {
         adapter.notifyDataSetChanged()
         refreshStatus()
         // Read ahead: the first screens' worth of thumbnails come in one batched request each.
-        items.take(72).forEach { ThumbLoader.prefetchPhoto(host.api, it.id, it.version) }
+        items.filter { !it.isLocalOnly }.take(72).forEach { ThumbLoader.prefetchPhoto(host.api, it.id, it.version) }
     }
 
     private fun showState(content: View?) {
@@ -329,21 +372,32 @@ class PhotosTab(private val host: Host) : Tab {
                     val h = holder as PhotoHolder
                     val file = row.item
                     val isVideo = viewerKind(file.name, file.mime) == ViewerKind.VIDEO
-                    h.marker.visibility = if (isVideo || file.favorite) View.VISIBLE else View.GONE
+                    h.marker.visibility = if (isVideo || file.favorite || file.isLocalOnly) View.VISIBLE else View.GONE
                     h.marker.text = when {
+                        file.isLocalOnly && isVideo -> "PHONE  VIDEO"
+                        file.isLocalOnly -> "PHONE"
                         isVideo && file.favorite -> "VIDEO  ★"
                         isVideo -> "VIDEO"
                         else -> "★"
                     }
-                    ThumbLoader.loadPhoto(h.image, host.api, file.id, file.version, file.thumbhash)
+                    if (file.isLocalOnly) ThumbLoader.loadLocal(h.image, ui.context, file.localUri)
+                    else ThumbLoader.loadPhoto(h.image, host.api, file.id, file.version, file.thumbhash)
                     val picked = file.id in selected
                     h.check.visibility = if (picked) View.VISIBLE else View.GONE
                     h.image.alpha = if (picked) 0.5f else 1f
                     h.itemView.setOnClickListener {
-                        if (selecting) toggle(file.id) else host.openViewer(items.toList(), row.indexInAll)
+                        if (selecting) {
+                            if (!file.isLocalOnly) toggle(file.id)
+                        } else {
+                            host.openViewer(items.toList(), row.indexInAll)
+                        }
                     }
                     h.itemView.setOnLongClickListener {
                         it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        if (file.isLocalOnly) {
+                            host.toast("Not backed up yet. Back it up from the Backup tab to share or organise it.")
+                            return@setOnLongClickListener true
+                        }
                         startSelection()
                         toggle(file.id)
                         true

@@ -153,6 +153,15 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
         )
 
         rows.addView(ui.sectionHeader("Your library"))
+        rows.addView(
+            ui.group(
+                ui.switchRow(R.drawable.ic_refresh, "Keep photos ready", "Refresh the library and thumbnails daily on Wi-Fi while charging, so Photos opens instantly anywhere", settings.keepFresh) { on ->
+                    settings.keepFresh = on
+                    WarmCacheWorker.schedule(context, settings)
+                },
+            ),
+            full().apply { bottomMargin = ui.dp(10) },
+        )
         val panels = Panels(host)
         rows.addView(
             ui.group(
@@ -340,14 +349,58 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
     private fun showAddresses() = push("Server addresses") { column ->
         column.addView(ui.muted(
             "The app tries the first address, then the second if the first does not answer. " +
-                "Log out and in again to change them.",
+                "Tap the away address to change it.",
             12f,
         ).apply { setPadding(ui.dp(20), ui.dp(14), ui.dp(20), ui.dp(4)) })
         val rows = mutableListOf<View>(ui.listRow(R.drawable.ic_wifi, "Main address", settings.serverUrl, chevron = false))
-        if (settings.altServerUrl.isNotBlank()) {
-            rows.add(ui.listRow(R.drawable.ic_link, "Away address", settings.altServerUrl, chevron = false))
-        }
+        rows.add(
+            ui.listRow(
+                R.drawable.ic_link,
+                "Away address",
+                settings.altServerUrl.ifBlank { "Not set. Add one to reach your server from anywhere." },
+            ) { editAwayAddress() },
+        )
         column.addView(ui.group(*rows.toTypedArray()), full())
+    }
+
+    private fun editAwayAddress() {
+        host.sheets.show("Away address") { sheet ->
+            val field = android.widget.EditText(ui.context).apply {
+                hint = "https://my-server.example.com"
+                setText(settings.altServerUrl)
+                typeface = ui.typeface
+                setTextColor(palette.ink)
+                setHintTextColor(palette.mute)
+                textSize = 15f
+                setSingleLine()
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+                setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14))
+                background = ui.box(palette.surface, palette.line)
+            }
+            sheet.body.addView(
+                ui.muted("Used when the main address does not answer. Leave empty to turn it off.", 12f).apply { setPadding(ui.dp(20), 0, ui.dp(20), ui.dp(10)) },
+            )
+            sheet.body.addView(
+                field,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(ui.dp(16), 0, ui.dp(16), ui.dp(12)) },
+            )
+            sheet.body.addView(
+                host.sheets.buttons(sheet, "Save") {
+                    val raw = field.text.toString().trim()
+                    val cleaned = if (raw.isEmpty()) "" else cleanAddress(raw)
+                    if (cleaned == null) {
+                        host.toast("That does not look like an address.")
+                    } else {
+                        settings.altServerUrl = cleaned
+                        settings.activeUrl = ""
+                        EventLog.log("setting: away address = ${cleaned.ifEmpty { "(none)" }}")
+                        host.toast(if (cleaned.isEmpty()) "Away address removed." else "Away address saved.")
+                        pop()
+                        showAddresses()
+                    }
+                },
+            )
+        }
     }
 
     // ------------------------------------------------------------ diagnostics
@@ -422,11 +475,18 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
     private fun testConnection() {
         connectionResult = "Testing..."
         refreshHome()
-        val started = System.nanoTime()
         thread {
             val result = try {
-                host.api.health()
-                "OK in ${(System.nanoTime() - started) / 1_000_000} ms"
+                ServerPicker.pick(settings, force = true)
+                val times = ArrayList<Long>()
+                repeat(5) {
+                    val started = System.nanoTime()
+                    host.api.health()
+                    times.add((System.nanoTime() - started) / 1_000_000)
+                }
+                times.sort()
+                val where = if (ServerPicker.usingPublic(settings)) "away address" else "main address"
+                "${times[times.size / 2]} ms (fastest ${times.first()}, slowest ${times.last()}) via the $where"
             } catch (e: Exception) {
                 "Failed: ${e.javaClass.simpleName}: ${e.message}"
             }

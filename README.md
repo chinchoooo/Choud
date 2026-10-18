@@ -19,8 +19,8 @@ tracking and no storage limit beyond the drive you give it.
 | **Never lose anything** | Every overwrite is a new version you can restore, deleted files wait in a trash, nothing is destroyed on a doubt |
 | **Find anything** | Search by file name and by what is written *inside* documents (text, code, PDF, Word, OpenDocument) |
 | **View anywhere** | Built-in viewers for images, video, audio, PDF and text, with thumbnails; no other app needed |
-| **Share** | Public links with an expiry and a password, either view-only or "add and edit" (deletes go to your trash, replaced files keep their old version); no accounts needed for the people you share with |
-| **Phone** | An Android app backs up photos and videos in the background with the phone's real dates, browses everything, and resumes if the connection drops |
+| **Share** | Public links with an expiry and a password, either view-only or "add and edit" (deletes go to your trash, replaced files keep their old version); no accounts needed for the people you share with. One command (`scripts/enable-public-links.sh`) makes links work from anywhere without exposing the rest of your drive, with an instant pause switch |
+| **Phone** | An Android app backs up photos and videos in the background with the phone's real dates and resumes if the connection drops. Its Photos tab is built for slow links: the whole library lives on the phone, blurry placeholders paint instantly, thumbnails arrive a screenful at a time. It also searches, uploads, shares, and manages trash and links (see [`docs/mobile-perf.md`](docs/mobile-perf.md)) |
 | **Laptops** | A desktop client either mirrors a folder both ways (with conflict copies, never silent overwrites) or quietly backs up chosen folders whenever the laptop can reach your server |
 | **Time travel** | Rewind: see any folder as it was at an earlier moment and put it back, one file or the whole drive, with a preview first (an undo for ransomware and bad syncs) |
 | **Vault** | An encrypted vault whose files are sealed in your browser: the server never sees the contents or even the file names |

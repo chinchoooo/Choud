@@ -392,6 +392,18 @@ about a minute. On PostgreSQL the match is whole-word and ranked; trashed files 
 people's files are never returned. `python -m app.cli index [--all]` indexes everything now or
 rebuilds from scratch (`INDEX_INTERVAL_SECONDS=0` turns the background pass off).
 
+### Fast photo access (thumbnails and the library index)
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /api/thumbs/{id}?size=256&format=webp&v=<hash>` | A thumbnail by a **stable URL**, authorised with the normal `Authorization` header. `size` is 128, 256, 512 or 1024; `format` is `webp` (default, about a third smaller) or `jpg`. The response is `Cache-Control: private, max-age=31536000, immutable` with an `ETag`, so a client can keep it forever and revalidate with `If-None-Match` (`304`). `v` is any string (the phone sends the start of the content hash) that only changes when the picture does. `415` if the file has no thumbnail |
+| `POST /api/media/thumbs` | **Batch**: `{"ids": [up to 48], "size": 256, "format": "webp"}`. The answer is a run of binary frames `[16-byte file id][1 byte status][4 byte big-endian length][bytes]`; status `0` = the thumbnail, `1` = pending (ask for it on its own), `2` = none (unknown, not yours, or not an image/video). Only thumbnails that already exist are sent, plus at most four made on the spot |
+| `GET /api/library/index[?since=<cursor>]` | The whole photo and video library as compact rows (`columns` + `rows`, plus `cursor`, `full`, `removed`, `favorites`). With `since` it is only what changed after that cursor, and trashed ids come back in `removed`. The `ETag` names the library's state, so an unchanged library answers a bodyless `304` |
+| `GET /api/media/{token}/{id}/thumbnail` | The older token route (still used by the web app). Accepts only `size`; JPEG |
+
+Every file response also carries `thumbhash`: a ~25-byte base64 blurry stand-in a client can draw
+instantly while the real thumbnail loads (empty until the server has made the thumbnail).
+
 ### Sharing: public links (Phase 12)
 
 | Endpoint | What it does |

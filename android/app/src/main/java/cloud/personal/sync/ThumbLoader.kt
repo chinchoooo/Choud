@@ -107,6 +107,77 @@ object ThumbLoader {
         pool.prestartAllCoreThreads()
     }
 
+    /** Fetches (in batches) every thumbnail in `items` that is not on disk yet. Returns how many arrived. Blocking. */
+    fun warm(api: ApiClient, items: List<RemoteItem>, px: Int = 256): Int {
+        var got = 0
+        val wanted = items.filter { !it.isLocalOnly }.filter { item ->
+            val file = diskFile("w:${item.id}:${item.version}:$px")
+            file == null || !file.exists()
+        }
+        for (group in wanted.chunked(BATCH_SIZE)) {
+            val frames = try {
+                api.thumbBatch(group.map { it.id }, px)
+            } catch (e: Exception) {
+                break
+            }
+            val byId = group.associateBy { it.id }
+            for (frame in frames) {
+                if (frame.status != 0) continue
+                val item = byId[frame.id] ?: continue
+                val target = diskFile("w:${item.id}:${item.version}:$px") ?: continue
+                try {
+                    val part = File(target.parentFile, target.name + ".part")
+                    part.writeBytes(frame.bytes)
+                    if (!part.renameTo(target)) part.delete() else got++
+                } catch (_: IOException) {
+                }
+            }
+        }
+        if (got > 0) trimDisk()
+        return got
+    }
+
+    /** Thumbnails of photos that are only on the phone: read from the phone, never from the network. */
+    fun loadLocal(view: ImageView, context: Context, uri: String, px: Int = 256) {
+        val key = "l:$uri:$px"
+        view.tag = key
+        cache.get(key)?.let {
+            view.setImageBitmap(it)
+            return
+        }
+        view.setImageDrawable(null)
+        queue.offerFirst(
+            Runnable {
+                if (view.tag != key) return@Runnable
+                val bitmap = try {
+                    val parsed = android.net.Uri.parse(uri)
+                    if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        context.contentResolver.loadThumbnail(parsed, android.util.Size(px, px), null)
+                    } else {
+                        context.contentResolver.openInputStream(parsed)?.use { decodeStreamSampled(it, px) }
+                    }
+                } catch (e: Exception) {
+                    null
+                } ?: return@Runnable
+                cache.put(key, bitmap)
+                main.post { if (view.tag == key) view.setImageBitmap(bitmap) }
+            },
+        )
+        pool.prestartAllCoreThreads()
+    }
+
+    private fun decodeStreamSampled(stream: java.io.InputStream, px: Int): Bitmap? {
+        val bytes = stream.readBytes()
+        return decodeBytes(bytes, px)
+    }
+
+    /** A screen-sized bitmap of a phone photo (for the viewer). */
+    fun fetchLocal(context: Context, uri: String, maxPx: Int): Bitmap? = try {
+        context.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use { decodeStreamSampled(it, maxPx) }
+    } catch (e: Exception) {
+        null
+    }
+
     // ------------------------------------------------------------------------------------------
     // Photos: placeholder at once, thumbnails fetched a screenful at a time in ONE request.
 

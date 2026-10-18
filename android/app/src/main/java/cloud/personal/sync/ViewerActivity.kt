@@ -207,6 +207,17 @@ class ViewerActivity : Activity() {
         val loading = message("Loading...")
         stage.addView(loading)
         val screen = maxOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
+        if (file.isLocalOnly) {
+            thread {
+                val local = ThumbLoader.fetchLocal(this, file.localUri, minOf(screen * 2, 4096))
+                runOnUiThread {
+                    if (gen != generation) return@runOnUiThread
+                    stage.removeView(loading)
+                    if (local != null) view.setImageBitmap(local) else stage.addView(message("This photo could not be shown here."))
+                }
+            }
+            return
+        }
         val kept = OfflineStore.file(this, file.id)
         if (kept != null) {
             thread {
@@ -348,7 +359,7 @@ class ViewerActivity : Activity() {
         val loading = message("Loading...")
         stage.addView(loading)
         thread {
-            val url = try { api.contentUrl(file.id) } catch (e: Exception) { null }
+            val url = if (file.isLocalOnly) file.localUri else try { api.contentUrl(file.id) } catch (e: Exception) { null }
             runOnUiThread {
                 if (gen != generation) return@runOnUiThread
                 if (url == null) {
@@ -549,6 +560,14 @@ class ViewerActivity : Activity() {
     /** Downloads the file to the cache and hands it to whichever app the user picks. */
     private fun openWithOtherApp() {
         val file = current()
+        if (file.isLocalOnly) {
+            val view = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(Uri.parse(file.localUri), file.mime.ifEmpty { "*/*" })
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            try { startActivity(Intent.createChooser(view, "Open ${file.name} with")) } catch (e: Exception) { say("No app can open this.") }
+            return
+        }
         val notice = message("Preparing ${file.name}...")
         stage.addView(notice)
         thread {
@@ -583,6 +602,10 @@ class ViewerActivity : Activity() {
     // ---------------------------------------------------------------- actions
 
     private fun toggleFavorite() {
+        if (current().isLocalOnly) {
+            say("Not backed up yet. Back it up from the Backup tab first.")
+            return
+        }
         val file = current()
         val wanted = !file.favorite
         items[index] = file.copy(favorite = wanted)
@@ -656,6 +679,10 @@ class ViewerActivity : Activity() {
     }
 
     private fun toggleOffline(file: RemoteItem, kept: Boolean) {
+        if (file.isLocalOnly) {
+            say("Not backed up yet. Back it up from the Backup tab first.")
+            return
+        }
         if (kept) {
             OfflineStore.remove(this, file.id)
             updateOfflineButton()
@@ -679,6 +706,10 @@ class ViewerActivity : Activity() {
     }
 
     private fun saveCurrent() {
+        if (current().isLocalOnly) {
+            say("Not backed up yet. Back it up from the Backup tab first.")
+            return
+        }
         val file = current()
         say("Saving ${file.name}...")
         thread {
@@ -697,6 +728,10 @@ class ViewerActivity : Activity() {
     }
 
     private fun confirmDelete() {
+        if (current().isLocalOnly) {
+            say("Not backed up yet. Back it up from the Backup tab first.")
+            return
+        }
         val file = current()
         sheets.confirm("Delete ${file.name}?", "It goes to the trash, where you can restore it.", "Delete", danger = true) {
             thread {
@@ -722,6 +757,16 @@ class ViewerActivity : Activity() {
     }
 
     private fun chooseShare(file: RemoteItem) {
+        if (file.isLocalOnly) {
+            // Not on the server, so there is no link to make: hand the photo itself to another app.
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = file.mime.ifEmpty { "image/*" }
+                putExtra(Intent.EXTRA_STREAM, Uri.parse(file.localUri))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(send, "Send"))
+            return
+        }
         val sendFile = { FileSender.send(this, api, listOf(file), ::runOnUiThread) { text -> say(text) } }
         sheets.linkChoices("Share ${file.name}", api.cachedInstance(), sendFile) { hours, limit ->
             thread {

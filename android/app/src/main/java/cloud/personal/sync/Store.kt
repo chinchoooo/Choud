@@ -8,15 +8,45 @@ import android.database.sqlite.SQLiteOpenHelper
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
-/** Settings and tokens. Tokens live in EncryptedSharedPreferences (Android Keystore-backed). */
-class Settings(context: Context) : TokenStore {
-    private val prefs: SharedPreferences = EncryptedSharedPreferences.create(
-        context,
-        "secure_settings",
-        MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-    )
+/**
+ * Settings and tokens. Everything that is not a secret lives in ordinary preferences, which open in
+ * a millisecond. Only the two login tokens live in EncryptedSharedPreferences (Android Keystore), and
+ * that store is opened lazily, off the start-up path, the first time a token is actually needed.
+ */
+class Settings(private val context: Context) : TokenStore {
+    private val plain: SharedPreferences = context.getSharedPreferences("choud_plain", Context.MODE_PRIVATE)
+
+    private val secure: SharedPreferences by lazy {
+        EncryptedSharedPreferences.create(
+            context,
+            "secure_settings",
+            MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+    }
+
+    init {
+        migrateOnce()
+    }
+
+    /** One time, after an update from a version that kept everything encrypted: copy the plain values out. */
+    private fun migrateOnce() {
+        if (plain.getBoolean("migrated", false)) return
+        val old = secure
+        val edit = plain.edit()
+        for (key in listOf("server_url", "alt_server_url", "device_name", "wifi_only", "charging_only", "backup_folders", "theme", "last_run", "last_error", "photo_columns", "keep_fresh")) {
+            when (val value = old.all[key]) {
+                is String -> edit.putString(key, value)
+                is Boolean -> edit.putBoolean(key, value)
+                is Int -> edit.putInt(key, value)
+            }
+        }
+        edit.putBoolean("logged_in", !old.getString("refresh", "").isNullOrEmpty())
+        edit.putBoolean("migrated", true).apply()
+    }
+
+    private val prefs: SharedPreferences get() = plain
 
     var serverUrl: String
         get() = prefs.getString("server_url", "") ?: ""
@@ -25,6 +55,16 @@ class Settings(context: Context) : TokenStore {
     var altServerUrl: String
         get() = prefs.getString("alt_server_url", "") ?: ""
         set(v) = prefs.edit().putString("alt_server_url", v).apply()
+
+    /** Whether to refresh the library and its thumbnails daily while charging on Wi-Fi. */
+    var keepFresh: Boolean
+        get() = prefs.getBoolean("keep_fresh", true)
+        set(value) = prefs.edit().putBoolean("keep_fresh", value).apply()
+
+    /** How many photos fit across the grid (pinch to change). */
+    var photoColumns: Int
+        get() = prefs.getInt("photo_columns", 3)
+        set(value) = prefs.edit().putInt("photo_columns", value).apply()
 
     /** The address that answered most recently (private first, then the public one); not saved. */
     @Volatile
@@ -37,11 +77,14 @@ class Settings(context: Context) : TokenStore {
         get() = prefs.getString("device_name", "") ?: ""
         set(v) = prefs.edit().putString("device_name", v).apply()
     override var access: String
-        get() = prefs.getString("access", "") ?: ""
-        set(v) = prefs.edit().putString("access", v).apply()
+        get() = secure.getString("access", "") ?: ""
+        set(v) = secure.edit().putString("access", v).apply()
     override var refresh: String
-        get() = prefs.getString("refresh", "") ?: ""
-        set(v) = prefs.edit().putString("refresh", v).apply()
+        get() = secure.getString("refresh", "") ?: ""
+        set(v) {
+            secure.edit().putString("refresh", v).apply()
+            plain.edit().putBoolean("logged_in", v.isNotEmpty()).apply()
+        }
     var wifiOnly: Boolean
         get() = prefs.getBoolean("wifi_only", true)
         set(v) = prefs.edit().putBoolean("wifi_only", v).apply()
@@ -65,7 +108,7 @@ class Settings(context: Context) : TokenStore {
         get() = prefs.getString("last_error", "") ?: ""
         set(v) = prefs.edit().putString("last_error", v).apply()
 
-    val loggedIn: Boolean get() = serverUrl.isNotEmpty() && refresh.isNotEmpty()
+    val loggedIn: Boolean get() = serverUrl.isNotEmpty() && plain.getBoolean("logged_in", false)
 
     fun logout() {
         access = ""

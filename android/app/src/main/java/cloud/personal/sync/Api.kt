@@ -52,7 +52,11 @@ data class RemoteItem(
     val thumbhash: String = "",
     /** The start of the content hash: part of the thumbnail's cache key, so an edited photo reloads. */
     val version: String = "",
+    /** A content:// address when this photo is only on the phone (not backed up yet); empty for server files. */
+    val localUri: String = "",
 ) {
+    val isLocalOnly: Boolean get() = localUri.isNotEmpty()
+
     /** For the photo timeline: when it was taken, else the file's own date, else the upload time. */
     val sortMillis: Long get() = takenAtMillis ?: modifiedAtMillis ?: createdAtMillis ?: 0L
 

@@ -87,6 +87,7 @@ class MainActivity : Activity(), Host {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val t0 = System.nanoTime()
         super.onCreate(savedInstanceState)
         EventLog.init(this)
         ThumbLoader.init(this)
@@ -97,15 +98,7 @@ class MainActivity : Activity(), Host {
         ui = Ui(this, palette)
         applySystemBars(palette)
         if (settings.loggedIn) startApp() else showLogin()
-    }
-
-    /** Adds a missing http://, drops a trailing slash, and rejects things that cannot be an address. */
-    private fun cleanAddress(raw: String): String? {
-        var text = raw.trim().trimEnd('/')
-        if (text.isEmpty()) return null
-        if (!text.contains("://")) text = "http://$text"
-        val parsed = text.toHttpUrlOrNull() ?: return null
-        return parsed.toString().trimEnd('/')
+        android.util.Log.i("ChoudPerf", "onCreate took ${(System.nanoTime() - t0) / 1_000_000} ms")
     }
 
     private fun applySystemBars(palette: Palette) = applyWindowTheme(this, palette)
@@ -210,6 +203,7 @@ class MainActivity : Activity(), Host {
                     if (error == null) {
                         requestMediaPermissions()
                         SyncWorker.schedule(this, settings)
+                        WarmCacheWorker.schedule(this, settings)
                         showMain()
                     } else {
                         if (needsCode) otp.visibility = View.VISIBLE
@@ -237,6 +231,7 @@ class MainActivity : Activity(), Host {
      */
     private fun startApp() {
         showMain()
+        WarmCacheWorker.schedule(this, settings)
         checkServer()
     }
 
@@ -268,10 +263,11 @@ class MainActivity : Activity(), Host {
         tabLabels.clear()
         tabIndicators.clear()
         tabGlyphs.clear()
-        tabs += "Backup" to BackupTab(this)
-        tabs += "Files" to FilesTab(this)
-        tabs += "Photos" to PhotosTab(this)
-        tabs += "More" to MoreTab(this) { logout() }
+        // A tab is built the first time it is shown, so start-up only pays for the one on screen.
+        tabs += "Backup" to LazyTab { BackupTab(this) }
+        tabs += "Files" to LazyTab { FilesTab(this) }
+        tabs += "Photos" to LazyTab { PhotosTab(this) }
+        tabs += "More" to LazyTab { MoreTab(this) { logout() } }
         val icons = listOf(R.drawable.ic_nav_backup, R.drawable.ic_nav_files, R.drawable.ic_nav_photos, R.drawable.ic_nav_more)
 
         // Top bar: the mark, the name, and what the backup is doing right now.
@@ -465,7 +461,7 @@ class MainActivity : Activity(), Host {
         val index = tabs.indexOfFirst { it.first == "Files" }
         if (index < 0) return
         select(index)
-        (tabs[index].second as? FilesTab)?.open(id, name)
+        ((tabs[index].second as? LazyTab)?.real as? FilesTab)?.open(id, name)
     }
 
     /** Files shared into Choud from another app: ask where to put them, then upload. */
@@ -613,4 +609,14 @@ private const val REQUEST_PICK = 4101
 object ViewerSession {
     @Volatile
     var items: List<RemoteItem> = emptyList()
+}
+
+/** A tab whose views are only built when it is first needed. */
+class LazyTab(private val build: () -> Tab) : Tab {
+    private var made: Tab? = null
+    val real: Tab get() = made ?: build().also { made = it }
+    override val view: View get() = real.view
+    override fun onShow() = real.onShow()
+    override fun onTick() { made?.onTick() }
+    override fun onBack(): Boolean = made?.onBack() ?: false
 }

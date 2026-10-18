@@ -1,5 +1,7 @@
 package cloud.personal.sync
 
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
 /** Pure decisions, kept free of Android types so they run as plain JVM unit tests. */
 
 const val CHUNKED_THRESHOLD = 20L * 1024 * 1024
@@ -114,4 +116,13 @@ fun dateFromFileName(
     val earliest = java.time.LocalDate.of(1990, 1, 1).atStartOfDay(zone).toInstant().toEpochMilli()
     val latest = nowMillis + 24L * 3600 * 1000
     return candidates.filterNotNull().firstOrNull { it in earliest..latest }
+}
+
+/** Adds a missing http://, drops a trailing slash, and rejects things that cannot be an address. */
+fun cleanAddress(raw: String): String? {
+    var text = raw.trim().trimEnd('/')
+    if (text.isEmpty()) return null
+    if (!text.contains("://")) text = "http://$text"
+    val parsed = text.toHttpUrlOrNull() ?: return null
+    return parsed.toString().trimEnd('/')
 }
