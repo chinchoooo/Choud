@@ -84,10 +84,9 @@ where the truth is, so it does not guess.
 > - For anything touching deployment, run the stack with Docker Compose and check
 >   `GET /api/health`.
 >
-> **Where to start (highest value first)** Bulk multi-select actions in the web app (move, delete,
-> download as zip); offline-available files and a "share link" action in the Android app; a branded
-> loading screen driven by real startup state; encrypted backups; security headers on the main app;
-> an independent security review. Ask me which one before you begin, propose a short plan, and wait
+> **Where to start (highest value first)** WebDAV so the drive can be mounted as a normal folder; the
+> Vault in the Android app and desktop client; recording renames/moves so Rewind can restore names;
+> passkeys; an independent security review. Ask me which one before you begin, propose a short plan, and wait
 > for my go-ahead on anything destructive or outward-facing.
 
 ---

@@ -19,7 +19,7 @@ on one area each:
 | Brand assets | [`branding.md`](branding.md) |
 | A prompt to learn it, or to keep building it | [`ai-prompt.md`](ai-prompt.md) |
 
-Numbers in this guide (test counts, limits) describe version 0.3.0.
+Numbers in this guide (test counts, limits) describe version 0.4.0.
 
 ---
 
@@ -114,14 +114,14 @@ server/        Python backend (FastAPI + SQLAlchemy + Alembic)
   app/main.py            builds the app, registers routers, error handlers, background loops
   app/api/               HTTP layer: one file per feature (auth, files, folders, uploads, versions,
                          trash, library, media, shares, public_shares, invites, two_factor, search,
-                         sync, health)
+                         sync, health, rewind, insights, archive, admin)
   app/services/          business logic (the real work lives here, not in api/)
   app/models/            SQLAlchemy tables
   app/schemas/           Pydantic request/response shapes
   app/core/              config, DB session, security (JWT, Argon2), TOTP, rate limiting, logging,
                          maintenance loop, custom GUID column type
   app/cli.py             `python -m app.cli gc | index`
-  migrations/versions/   Alembic migrations 0001-0013
+  migrations/versions/   Alembic migrations 0001-0015
   tests/                 pytest suite (uses an in-memory SQLite DB and a fake engine)
 engine/        C++ storage engine (CMake, Boost.Beast HTTP, OpenSSL, GoogleTest)
   src/hashing  streaming SHA-256         src/storage  object store + manager
@@ -130,7 +130,8 @@ engine/        C++ storage engine (CMake, Boost.Beast HTTP, OpenSSL, GoogleTest)
 web/           React + TypeScript + Vite + Tailwind + TanStack Query
   src/api/               typed fetch wrappers, one per backend area
   src/pages/             Files, Photos, Collections (favorites/recent/activity), Trash, Shares,
-                         Invites, Security, Login, Register, Dashboard
+                         Invites, Security, Login, Register, Dashboard, Rewind, Space, Server, Vault
+  src/vault/             client-side encryption (WebCrypto) and the vault's storage layer
   src/components/        AppShell, FileCollection, FileViewer, ShareDialog, UploadPanel, Logo, ...
   src/uploads/           upload queue (context + chunking/resume logic)
   src/theme/             4 themes via CSS variables (retro is the default)
@@ -162,10 +163,11 @@ All primary keys are UUIDs, created through a custom `GUID` column type that wor
 | `uploads` | resumable chunked upload sessions | `file_name`, `file_size`, `chunk_size`, `total_chunks`, `received_chunks` (comma-separated indexes), `expected_hash`, `base_version_id`, `status`, `expires_at`, `folder_id`, dates |
 | `favorites` | a user's starred files | `(user_id, file_id)` |
 | `activity` | audit trail shown in the UI | `user_id`, `action`, `file_name`, `detail` |
-| `shares` | public links | `token` (256-bit, unique), `file_id` xor `folder_id`, `permission` (`view`/`edit`), `password_hash`, `expires_at`, `revoked_at`, `download_count` |
+| `shares` | public links | `token` (256-bit, unique), `file_id` xor `folder_id`, `permission` (`view`/`edit`/`drop`), `max_downloads`, `password_hash`, `expires_at`, `revoked_at`, `download_count` |
 | `invites` | single-use sign-up codes | `code`, `created_by`, `storage_quota`, `expires_at`, `used_by`, `used_at` |
 | `recovery_codes` | two-factor recovery | `user_id`, `code_hash` (SHA-256), `used_at` |
 | `file_text` | extracted text for content search | `file_id`, `content_hash`, `status` (`ok`/`skipped`/`failed`), `text` |
+| `login_events` | an account's sign-in history | `user_id`, `at`, `ip`, `user_agent`, `success`, `new_device` |
 
 Invariants worth knowing (each is enforced by code and covered by a test):
 
@@ -181,9 +183,9 @@ Invariants worth knowing (each is enforced by code and covered by a test):
 - Folder delete is a hard delete and only for **empty** folders; files only go to trash.
 - A share has exactly one target (a check constraint).
 
-Migrations are Alembic files `0001`..`0013` (users, folders+files, uploads, versions, upload base
+Migrations are Alembic files `0001`..`0015` (users, folders+files, uploads, versions, upload base
 version, library features, quota raise, `modified_at`, shares, share permission, invites, two-factor,
-file text). They run **automatically when the backend container starts** (`entrypoint.sh`). On a brand
+file text, drop links + download limits, login events). They run **automatically when the backend container starts** (`entrypoint.sh`). On a brand
 new PostgreSQL use `scripts/migrate.sh` by hand (it pre-creates a wide `alembic_version` table; see
 `errors.md` for why).
 
@@ -369,6 +371,39 @@ fixes files that were uploaded before dates were stored. WorkManager schedules p
 
 ---
 
+### 6.11 The features that set Choud apart (0.4.0)
+
+- **Rewind** (`rewind_service.py`). Every change is already a timestamped version and deletes wait in
+  the trash, so the past can be read back. *Browse* shows a folder as it was at time T (files that
+  existed, with the content they had); *restore* puts one file, a folder tree, or everything back by
+  appending **new versions** (the version you rewind away from stays in history), un-trashing files, and
+  **never touching files created after T**. Tree restores preview by default. Use case: a bad sync, an
+  accidental mass delete, or ransomware. Limits: names and locations are the current ones, and purged
+  files or pruned versions cannot return.
+- **File requests and one-time links** (`share_service`, `public_shares`). A `drop` link is an upload-only
+  page: the visitor cannot list, preview, download, rename or delete anything, and a clashing name
+  becomes `name (2).ext` (never an overwrite). `max_downloads` makes any link die for everyone after N
+  downloads (1 = one-time).
+- **Space insights** (`insights_service`). What deduplication saved (logical vs stored bytes), what old
+  versions cost, a breakdown by type, the biggest files, same-content duplicates, and an explicit
+  version pruning (keep the newest N; preview first; the current version always stays; an object leaves
+  the disk only when nothing else references it).
+- **On this day** (`/api/library/memories`) and a **sign-in history** with new-device flags
+  (`security_service`), plus an **administrator server view** (`/api/admin/server`).
+- **Vault** (`web/src/vault/`). Client-side encryption: PBKDF2-SHA256 (600k) to AES-256-GCM, 1 MiB
+  chunks each sealed under its own IV with the chunk number and a last-chunk flag authenticated;
+  names, types and sizes live in an encrypted index (a new *version* on every change). The server holds
+  `<random>.cvault` files and cannot read them. No recovery if the passphrase is lost.
+- **Bulk actions and zip.** Select several files/folders in the web app to move, delete or download
+  as one zip (`archive_service`: built one file at a time on the storage volume, 4 GiB / 5,000 file
+  caps). Whole folders can be uploaded by drag-and-drop or the "Upload folder" button.
+- **Startup screen.** Steps reflect real events (server reachable, login checked). A server outage no
+  longer signs you out: the saved login is kept and a retry is offered.
+- **Phone extras.** From the viewer: make a share link (1 day, 7 days, one-time, never expires) and
+  keep a file on the phone so it opens without the server (the Files tab then lists kept files when
+  the server is unreachable).
+- **Desktop client.** An upload speed limit (`cloudsync limit KBPS`).
+
 ## 7. The API surface (summary)
 
 Full detail and request/response shapes are in [`api.md`](api.md). Grouped by router:
@@ -390,6 +425,12 @@ Full detail and request/response shapes are in [`api.md`](api.md). Grouped by ro
 | `/api/invites` | administrator: create/list/delete sign-up codes |
 | `/api/sync` | `snapshot` (the whole tree with versions) and `folders` (ensure a path exists) |
 | `/api/health` | database, engine and storage status |
+| `/api/rewind` | browse a folder as it was at a past time; restore a file or a whole tree (preview first) |
+| `/api/insights` | space report (dedup savings, history cost, duplicates) and version pruning (preview first) |
+| `/api/archive/zip` | download a selection of files and folders as one zip |
+| `/api/admin/server` | administrator only: disk, counts, search backlog, settings |
+| `/api/auth/security-log` | your recent sign-in attempts, with new-device flags |
+| `/api/library/memories` | photos and videos from this day in earlier years |
 
 Conditional writes: upload, chunked-upload sessions and delete accept `base_version_id`; if the file is
 no longer on that version the server answers **409 with a `version_conflict` code**. Do not weaken
@@ -417,11 +458,14 @@ Assume the network is hostile, uploaders may be hostile (edit links), and the op
 | Rate limits | per client IP: login 10/min, register 10/h, refresh 60/min, 2fa 20/min, share-view 300/min, share-unlock 10/min, share-edit 60/min |
 | Engine | never reachable from outside |
 | Secrets | `.env` is git-ignored; `deploy.sh` refuses placeholder secrets; Android signing key lives outside the repo |
-| Backups | nightly, checksummed, retention, verified by restoring; **not encrypted** |
+| Backups | nightly, checksummed, retention, verified by restoring; **encrypted** (AES-256 + PBKDF2) when `BACKUP_PASSPHRASE_FILE` is set |
+| Browser headers | strict CSP on the app, `nosniff`, no-referrer, frame denial, permissions policy; baseline headers on API responses |
+| Vault | files sealed in the browser (AES-256-GCM, PBKDF2 600k); the server never sees the key, contents or names |
+| Sign-in history | attempts on real accounts recorded for a year; new devices flagged |
 
 Honest limits: rate limiting is in memory (one backend process); the TOTP secret is stored as readable
-text in the database; there are no security headers beyond the share pages and media routes; backups are
-unencrypted; no independent penetration test has been run. See `security.md` for the full list.
+text in the database; encrypted backups protect confidentiality, not authenticity; the Vault cannot
+protect against malware on the device you unlock it from; no independent penetration test has been run. See `security.md` for the full list.
 
 ---
 
@@ -555,10 +599,10 @@ scripts/deploy.sh    # preflight checks, build, start, wait until healthy
 
 | Suite | Where | Count (0.3.0) | Notes |
 | --- | --- | --- | --- |
-| Server | `server/tests` | 288 pass, 1 skipped | in-memory SQLite + `FakeEngineClient`; `TEST_DATABASE_URL=postgresql+psycopg2://...` runs the **whole suite on real PostgreSQL** (do this when adding constraints, FKs or deletes, since SQLite does not enforce foreign keys) |
+| Server | `server/tests` | 320+ pass, 1 skipped | in-memory SQLite + `FakeEngineClient`; `TEST_DATABASE_URL=postgresql+psycopg2://...` runs the **whole suite on real PostgreSQL** (do this when adding constraints, FKs or deletes, since SQLite does not enforce foreign keys) |
 | Engine | `engine/tests` | 47 (last run before the later features; the engine was not changed since) | GoogleTest via `ctest`: known SHA-256 vectors, put/get/exists/remove, corruption, dedup, chunks, HTTP layer |
-| Desktop client | `client/tests` | 150 pass, 3 skipped | unit tests plus integration against the real server app |
-| Web | `web/tests` | 68 | Vitest + Testing Library |
+| Desktop client | `client/tests` | 153 pass, 3 skipped | unit tests plus integration against the real server app |
+| Web | `web/tests` | 100 | Vitest + Testing Library |
 | Android | `android/app/src/test` | 28 | pure logic and the API client; the UI was checked by hand on an emulator |
 
 Test-isolation traps (real ones that bit): any module that does
@@ -597,12 +641,11 @@ Commands: `cd server && pytest`; `cd client && pytest`; `cd web && npm run build
 
 ## 16. Known gaps and what to build next
 
-Not built: iOS app; passkeys; comments; per-user sharing (by decision); bulk multi-select actions in
-the web app; offline-available files and a "share link" action in the Android app; real-lifecycle
-loading screen; folder upload and video transcoding; renames/moves in sync are delete+create; the
-desktop client has no bandwidth limit, tray icon or selective sync; security headers on the main app;
-encrypted backups; an independent security test; the engine's `include/sync/*` headers are empty
-placeholders (all sync logic is in Python on purpose).
+Not built: iOS app; passkeys; comments; per-user sharing (by decision); WebDAV (mounting the drive as
+a normal folder); Vault in the Android app and desktop client (it is web-only); video transcoding;
+renames/moves in sync are delete+create; the desktop client has no tray icon or selective sync;
+Rewind does not record renames/moves; an independent security test; the engine's `include/sync/*`
+headers are empty placeholders (all sync logic is in Python on purpose).
 
 Operational to-dos on your own machine: set `REGISTRATION_MODE`, `DEFAULT_STORAGE_QUOTA_BYTES`,
 optionally `ALERT_WEBHOOK_URL`; back up `~/.personal-cloud-signing/`; run `python -m app.cli index --all`

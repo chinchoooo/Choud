@@ -339,6 +339,12 @@ Limits: a single-request upload is at most 128 MiB (`413` beyond that; use the c
 a chunk is at most 64 MiB and **must be exactly the size the session promised**, a session has at
 most 20,000 chunks, and an upload that would exceed the user's quota is a `413`.
 
+### Zip download
+
+`POST /api/archive/zip` `{file_ids, folder_ids}` returns one `application/zip` of the chosen files and
+whole folders (structure kept, duplicate names made unique). Only live files you own are included;
+at most 5,000 files and 4 GiB per archive (`413` beyond that), rate limited to 20 per minute.
+
 ### Rewind (browse and restore the past)
 
 `GET /api/rewind/browse?at=<ISO time>&folder_id=` shows a folder as it was at that time: its folders

@@ -18,6 +18,9 @@ tracking and no storage limit beyond the drive you give it.
 | **Share** | Public links with an expiry and a password, either view-only or "add and edit" (deletes go to your trash, replaced files keep their old version); no accounts needed for the people you share with |
 | **Phone** | An Android app backs up photos and videos in the background with the phone's real dates, browses everything, and resumes if the connection drops |
 | **Laptops** | A desktop client either mirrors a folder both ways (with conflict copies, never silent overwrites) or quietly backs up chosen folders whenever the laptop can reach your server |
+| **Time travel** | Rewind: see any folder as it was at an earlier moment and put it back, one file or the whole drive, with a preview first (an undo for ransomware and bad syncs) |
+| **Vault** | An encrypted vault whose files are sealed in your browser: the server never sees the contents or even the file names |
+| **Requests** | File-request links (people can send you files but see nothing), one-time links, and a storage report with duplicate and old-version clean-up |
 | **People** | Invite family and friends with one-time codes; each gets their own storage and quota |
 | **Safe by default** | Optional two-factor login, a registration lock, rate limiting, hash-checked uploads, scripts that can be audited, nightly verified backups and webhook alerts |
 
