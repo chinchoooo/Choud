@@ -135,6 +135,7 @@ The full index is [`docs/README.md`](docs/README.md). The main pages:
 - [`docs/security.md`](docs/security.md) — auth, authorization, and hardening notes
 - [`docs/deployment.md`](docs/deployment.md) — running this on real hardware (laptop server + Tailscale), and making share links public
 - [`docs/mobile-perf.md`](docs/mobile-perf.md) — why photos are fast on the phone, and how to measure
+- [`docs/benchmarks.md`](docs/benchmarks.md) — reproducible benchmark scripts, and how Choud compares with published Google Drive tests
 - [`docs/errors.md`](docs/errors.md) — real problems hit during setup, and their fixes
 
 ## Contributing
