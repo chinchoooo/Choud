@@ -45,6 +45,7 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
             ui.card().apply {
                 addView(ui.text(settings.deviceName.ifEmpty { "This phone" }, 14f, bold = true))
                 addView(ui.muted(settings.serverUrl, 12f), ui.matchWidth(2))
+                if (settings.altServerUrl.isNotBlank()) addView(ui.muted("Away: ${settings.altServerUrl}", 12f), ui.matchWidth(2))
                 addView(usageBar, ui.matchWidth(10))
                 addView(usageText, ui.matchWidth(4))
             },

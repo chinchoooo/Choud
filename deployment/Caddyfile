@@ -16,17 +16,12 @@
     }
 }
 
-# The PUBLIC door (docker-compose publishes it on 127.0.0.1 only; you point Tailscale Funnel, a
-# Cloudflare Tunnel or a port forward at it). It serves share pages and nothing else: no app, no API,
-# no login. Everything else answers 404, so exposing this port never exposes your drive.
-:8081 {
-    header {
-        ?X-Content-Type-Options "nosniff"
-        ?Referrer-Policy "no-referrer"
-        ?X-Frame-Options "DENY"
-        -Server
-    }
-
+# What the PUBLIC door serves, chosen by PUBLIC_DOOR_MODE in .env:
+#   shares (default)  only /s/* (share pages); the app, the API and login answer 404
+#   full              the whole app, so phones and browsers work from anywhere without a VPN.
+#                     Only turn this on with two-factor login, a strong password and registration
+#                     locked to invites (see docs/deployment.md "Using Choud from anywhere").
+(door_shares) {
     handle /s/* {
         request_body {
             max_size 160MB
@@ -41,6 +36,60 @@
     handle {
         respond "Not found" 404
     }
+}
+
+(door_full) {
+    @uploads path /api/files/upload /api/uploads/*
+    handle @uploads {
+        request_body {
+            max_size 160MB
+        }
+        reverse_proxy backend:8000 {
+            header_up X-Forwarded-For {client_ip}
+        }
+    }
+
+    handle /api/* {
+        request_body {
+            max_size 10MB
+        }
+        reverse_proxy backend:8000 {
+            header_up X-Forwarded-For {client_ip}
+        }
+    }
+
+    handle /s/* {
+        reverse_proxy backend:8000 {
+            header_up X-Forwarded-For {client_ip}
+        }
+    }
+
+    handle {
+        reverse_proxy frontend:80
+    }
+}
+
+# The PUBLIC door (docker-compose publishes it on 127.0.0.1 only; you point Tailscale Funnel, a
+# Cloudflare Tunnel or a port forward at it).
+:8081 {
+    encode zstd gzip {
+        minimum_length 512
+        match {
+            header Content-Type application/json*
+            header Content-Type text/*
+            header Content-Type application/javascript*
+            header Content-Type image/svg+xml*
+        }
+    }
+
+    header {
+        ?X-Content-Type-Options "nosniff"
+        ?Referrer-Policy "no-referrer"
+        ?X-Frame-Options "DENY"
+        -Server
+    }
+
+    import door_{$PUBLIC_DOOR_MODE:shares}
 }
 
 :80 {

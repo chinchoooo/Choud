@@ -108,6 +108,9 @@ services:
   reverse-proxy:
     image: caddy:2-alpine
     restart: unless-stopped
+    environment:
+      # What the public door serves: shares (share pages only, the default) or full (the whole app).
+      PUBLIC_DOOR_MODE: ${PUBLIC_DOOR_MODE:-shares}
     depends_on:
       backend:
         condition: service_healthy

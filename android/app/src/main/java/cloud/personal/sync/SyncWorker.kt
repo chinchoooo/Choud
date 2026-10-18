@@ -37,8 +37,8 @@ class SyncWorker(private val context: Context, params: WorkerParameters) :
         val db = BackupDb(context)
         try {
             runCatching { setForeground(foregroundInfo("Starting backup…", 0, 0)) }
-            val api = ApiClient(settings.serverUrl, settings, log = EventLog::log)
-            EventLog.log("worker: server ${settings.serverUrl}, device '${settings.deviceName}'")
+            val api = ApiClient(ServerPicker.pick(settings), settings, log = EventLog::log)
+            EventLog.log("worker: server ${settings.baseUrl}, device '${settings.deviceName}'")
             val summary = CameraBackup(context, settings, db, api, EventLog::log, shouldStop = { isStopped }).run { done, total, name ->
                 runCatching {
                     setForegroundAsync(foregroundInfo("Backing up: $done of $total done - last: $name", done, total))

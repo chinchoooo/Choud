@@ -21,6 +21,18 @@ class Settings(context: Context) : TokenStore {
     var serverUrl: String
         get() = prefs.getString("server_url", "") ?: ""
         set(v) = prefs.edit().putString("server_url", v).apply()
+    /** An optional second address (a public one) used when the private one does not answer. */
+    var altServerUrl: String
+        get() = prefs.getString("alt_server_url", "") ?: ""
+        set(v) = prefs.edit().putString("alt_server_url", v).apply()
+
+    /** The address that answered most recently (private first, then the public one); not saved. */
+    @Volatile
+    var activeUrl: String = ""
+
+    /** What to talk to right now. */
+    val baseUrl: String get() = activeUrl.ifEmpty { serverUrl }
+
     var deviceName: String
         get() = prefs.getString("device_name", "") ?: ""
         set(v) = prefs.edit().putString("device_name", v).apply()

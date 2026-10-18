@@ -45,7 +45,7 @@ class MainActivity : Activity(), Host {
 
     override val api: ApiClient
         @Synchronized get() {
-            val url = settings.serverUrl
+            val url = settings.baseUrl
             val existing = apiCache
             if (existing != null && apiUrl == url) return existing
             return ApiClient(url, settings, log = EventLog::log).also {
@@ -126,6 +126,8 @@ class MainActivity : Activity(), Host {
         val otp = field("Two-factor code", type = InputType.TYPE_CLASS_NUMBER).apply { visibility = View.GONE }
         val device = field("Name of this phone", settings.deviceName)
         device.visibility = View.GONE
+        val alt = field("Public address (optional, for when you are away)", settings.altServerUrl, InputType.TYPE_TEXT_VARIATION_URI)
+        alt.visibility = View.GONE
         val message = ui.text(notice ?: "", 13f, p.danger).apply { gravity = android.view.Gravity.CENTER }
 
         column.addView(
@@ -141,12 +143,14 @@ class MainActivity : Activity(), Host {
         column.addView(email, ui.matchWidth(10))
         column.addView(password, ui.matchWidth(10))
         column.addView(otp, ui.matchWidth(10))
+        column.addView(alt, ui.matchWidth(10))
         column.addView(device, ui.matchWidth(10))
-        val more = ui.text("Name this phone", 12f, p.mute).apply {
+        val more = ui.text("More options", 12f, p.mute).apply {
             setPadding(0, ui.dp(12), 0, ui.dp(4))
             setOnClickListener {
                 visibility = View.GONE
                 device.visibility = View.VISIBLE
+                alt.visibility = View.VISIBLE
             }
         }
         column.addView(more, ui.matchWidth(0))
@@ -161,9 +165,11 @@ class MainActivity : Activity(), Host {
                 var needsCode = false
                 val error = try {
                     settings.serverUrl = serverUrl
+                    settings.altServerUrl = alt.text.toString().trim()
+                    settings.activeUrl = ""
                     settings.deviceName = safeDeviceName(device.text.toString())
                     EventLog.log("login: $serverUrl as ${email.text.toString().trim()}, device '${settings.deviceName}'")
-                    ApiClient(serverUrl, settings, log = EventLog::log)
+                    ApiClient(ServerPicker.pick(settings, force = true), settings, log = EventLog::log)
                         .login(email.text.toString().trim(), password.text.toString(), otp.text.toString().trim())
                     null
                 } catch (e: Exception) {
@@ -278,8 +284,9 @@ class MainActivity : Activity(), Host {
         thread {
             mark(0, "active")
             try {
+                ServerPicker.pick(settings, force = true)
                 api.health()
-                mark(0, "done")
+                mark(0, "done", if (ServerPicker.usingPublic(settings)) "Using the public address" else "")
             } catch (e: Exception) {
                 EventLog.log("boot: server not reachable: ${e.javaClass.simpleName}: ${e.message}")
                 fail(0, "No answer. Is Tailscale on, and is the server running?")

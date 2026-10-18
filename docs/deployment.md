@@ -274,3 +274,19 @@ Check from a phone that is **not** on Tailscale: open a share link, and also ope
 `<public address>/api/health`, which must say "Not found". Use an expiry and a password on links to
 sensitive folders, and prefer view-only links; edit and file-request links accept uploads from the
 internet (limited by your quota and the rate limits).
+
+## Using Choud from anywhere (without Tailscale on every device)
+
+By default you need Tailscale on every device, and nothing at home is reachable from the internet.
+That is the safest setup. If you want the phone and browsers to work anywhere with no VPN:
+
+1. Put your public address in `.env` as `PUBLIC_BASE_URL` (see above) and point a tunnel at the public
+   door (`127.0.0.1:8081`).
+2. Set `PUBLIC_DOOR_MODE=full` in `.env` and redeploy. The public door then serves the whole app
+   instead of just share pages. **Do this only after:** turning on two-factor login for every
+   account, using strong passwords, and keeping `REGISTRATION_MODE=invite`.
+3. In the phone app, sign in with your private address as usual and, under "More options", add the
+   public address. The app tries the private address first (fast, at home or on Tailscale) and falls
+   back to the public one by itself, so there is nothing to switch.
+
+Back to share-pages-only at any time by setting `PUBLIC_DOOR_MODE=shares` and redeploying.

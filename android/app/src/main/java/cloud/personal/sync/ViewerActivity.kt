@@ -59,7 +59,7 @@ class ViewerActivity : Activity() {
         val palette = Themes.palette(AppTheme.fromId(settings.theme))
         ui = Ui(this, palette)
         applyWindowTheme(this, palette, barColor = palette.surface)
-        api = ApiClient(settings.serverUrl, settings, log = EventLog::log)
+        api = ApiClient(settings.baseUrl, settings, log = EventLog::log)
         items = ViewerSession.items.toMutableList()
         if (items.isEmpty()) {
             finish()
