@@ -57,6 +57,7 @@ class MainActivity : Activity(), Host {
 
     private lateinit var content: FrameLayout
     private var toaster: Toaster? = null
+    override lateinit var sheets: Sheets
     private lateinit var tabBar: LinearLayout
     private val tabs = ArrayList<Pair<String, Tab>>()
     private val tabLabels = ArrayList<TextView>()
@@ -143,6 +144,10 @@ class MainActivity : Activity(), Host {
         column.addView(
             android.widget.ImageView(this).apply {
                 setImageResource(R.drawable.ic_choud_mark)
+                if (!p.darkSystemBars) {
+                    background = ui.box(android.graphics.Color.BLACK, radiusDp = if (p.retro) 0 else 18)
+                    setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6))
+                }
                 contentDescription = "Choud"
             },
             LinearLayout.LayoutParams(ui.dp(84), ui.dp(84)),
@@ -351,6 +356,11 @@ class MainActivity : Activity(), Host {
             addView(
                 ImageView(this@MainActivity).apply {
                     setImageResource(R.drawable.ic_choud_mark)
+                    // The mark is white, so on light themes it sits on a black tile like an app icon.
+                    if (!p.darkSystemBars) {
+                        background = ui.box(android.graphics.Color.BLACK, radiusDp = if (p.retro) 0 else 8)
+                        setPadding(ui.dp(2), ui.dp(2), ui.dp(2), ui.dp(2))
+                    }
                     contentDescription = "Choud"
                 },
                 LinearLayout.LayoutParams(ui.dp(30), ui.dp(30)),
@@ -400,6 +410,7 @@ class MainActivity : Activity(), Host {
         }
         val stack = FrameLayout(this).apply { addView(root) }
         toaster = Toaster(ui, stack)
+        sheets = Sheets(ui, stack)
         setContentView(stack)
         select(selected.coerceIn(0, tabs.lastIndex))
         lastFactsAt = 0
@@ -458,6 +469,10 @@ class MainActivity : Activity(), Host {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        if (::sheets.isInitialized && sheets.isOpen) {
+            sheets.dismiss()
+            return
+        }
         if (settings.loggedIn && tabs.getOrNull(selected)?.second?.onBack() == true) return
         @Suppress("DEPRECATION")
         super.onBackPressed()

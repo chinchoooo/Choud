@@ -7,218 +7,227 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings as AndroidSettings
 import android.view.View
-import android.widget.CheckBox
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import kotlin.concurrent.thread
 
-/** Account, storage, theme, background settings, status details and the full activity log. */
+/**
+ * The settings hub. The home page is a short list of rows; each row opens a screen of its own
+ * (pushed on a small stack, popped by Back). Nothing here uses a stock widget.
+ */
 class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
     private val ui = host.ui
     private val palette = ui.palette
     private val settings = host.settings
 
+    private class Screen(val view: View, val onTick: () -> Unit = {})
+
+    private val stack = ArrayList<Screen>()
+    override val view = FrameLayout(ui.context).apply { setBackgroundColor(palette.bg) }
+
+    // Home page pieces that update from the network.
     private val usageText = ui.muted("", 12f)
     private val usageBar = ui.bar()
+    private var usageLoadedAt = 0L
+
+    // Diagnostics
     private val factsView = ui.text("", 12f).apply { typeface = android.graphics.Typeface.MONOSPACE }
-    private val messageView = ui.muted("", 12f)
-    private val keptView = ui.muted("", 12f)
     private val logView = ui.text("", 11f).apply {
         typeface = android.graphics.Typeface.MONOSPACE
         setTextIsSelectable(true)
     }
-    private val foldersCard = ui.card().apply { addView(ui.muted("Looking for folders...", 12f)) }
-    private var foldersLoadedAt = 0L
     private var shownLogVersion = -1
-    private var usageLoadedAt = 0L
 
-    override val view: View = ScrollView(ui.context).apply {
-        setBackgroundColor(palette.bg)
-        val column = ui.vertical().apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(28)) }
+    // Backup folders
+    private val foldersBox = ui.vertical()
+    private var foldersLoadedAt = 0L
 
-        // Account and storage
-        column.addView(section("Account"), ui.matchWidth())
-        column.addView(
-            ui.card().apply {
-                addView(ui.text(settings.deviceName.ifEmpty { "This phone" }, 14f, bold = true))
-                addView(ui.muted(settings.serverUrl, 12f), ui.matchWidth(2))
-                if (settings.altServerUrl.isNotBlank()) addView(ui.muted("Away: ${settings.altServerUrl}", 12f), ui.matchWidth(2))
-                addView(usageBar, ui.matchWidth(10))
-                addView(usageText, ui.matchWidth(4))
-            },
-            ui.matchWidth(6),
+    private var connectionResult: String? = null
+    private var datesResult: String? = null
+    private var homeRows: LinearLayout? = null
+
+    init {
+        showHome()
+    }
+
+    // ------------------------------------------------------------------ stack
+
+    private fun display(screen: Screen) {
+        view.removeAllViews()
+        view.addView(screen.view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    }
+
+    private fun setScreen(screen: Screen) {
+        stack.add(screen)
+        display(screen)
+    }
+
+    private fun push(title: String, onTick: () -> Unit = {}, build: (LinearLayout) -> Unit) {
+        val column = ui.vertical().apply { setPadding(0, 0, 0, ui.dp(32)) }
+        build(column)
+        val page = ui.vertical().apply {
+            addView(ui.topBar(title, onBack = { pop() }))
+            addView(ui.divider())
+            addView(ScrollView(ui.context).apply { addView(column) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        }
+        setScreen(Screen(page, onTick))
+    }
+
+    private fun pop() {
+        if (stack.size <= 1) return
+        stack.removeAt(stack.lastIndex)
+        display(stack.last())
+        stack.last().onTick()
+        if (stack.size == 1) refreshHome()
+    }
+
+    override fun onBack(): Boolean {
+        if (stack.size > 1) {
+            pop()
+            return true
+        }
+        return false
+    }
+
+    // ------------------------------------------------------------------- home
+
+    private fun showHome() {
+        stack.clear()
+        val column = ui.vertical().apply { setPadding(0, 0, 0, ui.dp(32)) }
+        column.addView(accountCard(), ui.matchWidth().apply { setMargins(ui.dp(16), ui.dp(16), ui.dp(16), 0) })
+        homeRows = ui.vertical().also { column.addView(it) }
+        buildHomeRows()
+        setScreen(Screen(ScrollView(ui.context).apply { addView(column) }))
+    }
+
+    private fun accountCard(): View = ui.card().apply {
+        addView(ui.text(settings.deviceName.ifEmpty { "This phone" }, 15f, bold = true))
+        addView(ui.muted(settings.serverUrl, 12f), ui.matchWidth(2))
+        addView(usageBar, ui.matchWidth(12))
+        addView(usageText, ui.matchWidth(6))
+    }
+
+    private fun refreshHome() = buildHomeRows()
+
+    private fun buildHomeRows() {
+        val rows = homeRows ?: return
+        rows.removeAllViews()
+        val context = host.ui.context
+        val theme = AppTheme.fromId(settings.theme)
+
+        rows.addView(ui.sectionHeader("Look"))
+        rows.addView(
+            ui.group(
+                ui.listRow(R.drawable.ic_palette, "Appearance", value = theme.label) { showAppearance() },
+            ),
+            full(),
         )
 
-        // Theme
-        column.addView(section("Theme"), ui.matchWidth(18))
-        val group = RadioGroup(ui.context).apply { orientation = RadioGroup.VERTICAL }
-        for (theme in AppTheme.entries) {
-            group.addView(
-                RadioButton(ui.context).apply {
-                    id = View.generateViewId()
-                    text = theme.label
-                    typeface = ui.typeface
-                    setTextColor(palette.ink)
-                    buttonTintList = android.content.res.ColorStateList.valueOf(palette.ink)
-                    isChecked = settings.theme == theme.id
-                    setOnClickListener {
-                        if (settings.theme != theme.id) {
-                            settings.theme = theme.id
-                            host.onThemeChanged()
-                        }
-                    }
-                },
-            )
-        }
-        column.addView(ui.card().apply { addView(group) }, ui.matchWidth(6))
-
-        // Which folders are backed up
-        column.addView(section("Folders to back up"), ui.matchWidth(18))
-        column.addView(foldersCard, ui.matchWidth(6))
-
-        // Background backup settings
-        column.addView(section("Background backup"), ui.matchWidth(18))
-        column.addView(
-            ui.card().apply {
-                addView(check("Wi-Fi only", settings.wifiOnly) { on ->
+        rows.addView(ui.sectionHeader("Backup"))
+        rows.addView(
+            ui.group(
+                ui.listRow(R.drawable.ic_folder, "Folders to back up", value = "${settings.backupFolders.size} chosen") { showFolders() },
+                ui.switchRow(R.drawable.ic_wifi, "Wi-Fi only", "Applies to the hourly automatic run", settings.wifiOnly) { on ->
                     settings.wifiOnly = on
                     EventLog.log("setting: Wi-Fi only = $on")
-                    SyncWorker.schedule(host.ui.context, settings)
-                })
-                addView(check("Only while charging", settings.chargingOnly) { on ->
+                    SyncWorker.schedule(context, settings)
+                },
+                ui.switchRow(R.drawable.ic_battery, "Only while charging", null, settings.chargingOnly) { on ->
                     settings.chargingOnly = on
                     EventLog.log("setting: charging only = $on")
-                    SyncWorker.schedule(host.ui.context, settings)
-                })
-                addView(ui.muted("Applies to the hourly automatic run. \"Back up now\" ignores these.", 11f), ui.matchWidth(4))
-            },
-            ui.matchWidth(6),
-        )
-
-        // Tools
-        column.addView(section("Tools"), ui.matchWidth(18))
-        val tools = ui.vertical().apply {
-            addView(ui.button("Test connection to the server") { testConnection() }, ui.matchWidth())
-            addView(
-                ui.button("Fix dates of photos already uploaded") { fixDates() },
-                ui.matchWidth(8),
-            )
-            addView(
-                ui.button("Allow background running (battery)") {
-                    host.ui.context.startActivity(
+                    SyncWorker.schedule(context, settings)
+                },
+                ui.listRow(R.drawable.ic_battery, "Allow background running", "Stops Android pausing the backup to save battery") {
+                    context.startActivity(
                         Intent(
                             AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                            Uri.parse("package:${host.ui.context.packageName}"),
+                            Uri.parse("package:${context.packageName}"),
                         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                     )
                 },
-                ui.matchWidth(8),
-            )
-            addView(ui.button("Log out") { onLogout() }, ui.matchWidth(8))
-            addView(messageView, ui.matchWidth(6))
-        }
-        column.addView(tools, ui.matchWidth(6))
-
-        // Files kept on this phone for offline use
-        column.addView(section("Kept on this phone"), ui.matchWidth(18))
-        column.addView(
-            ui.card().apply {
-                addView(keptView)
-                addView(ui.button("Remove all kept files") {
-                    OfflineStore.clear(host.ui.context)
-                    updateKept()
-                }, ui.matchWidth(8))
-            },
-            ui.matchWidth(6),
+            ),
+            full(),
         )
 
-        // Status details
-        column.addView(section("Status"), ui.matchWidth(18))
-        column.addView(ui.card().apply { addView(factsView) }, ui.matchWidth(6))
+        rows.addView(ui.sectionHeader("Photos and storage"))
+        val keptCount = OfflineStore.items(context).size
+        rows.addView(
+            ui.group(
+                ui.listRow(
+                    R.drawable.ic_offline,
+                    "Kept on this phone",
+                    if (keptCount == 0) "Open a file, then Keep, to read it without the server" else "Open without the server",
+                    value = if (keptCount == 0) "none" else "$keptCount, ${fmtBytes(OfflineStore.totalBytes(context))}",
+                ) { showKept() },
+                ui.listRow(
+                    R.drawable.ic_calendar,
+                    "Fix dates of uploaded photos",
+                    datesResult ?: "Gives undated photos the date in their name or EXIF",
+                ) { fixDates() },
+            ),
+            full(),
+        )
 
-        // Log
-        column.addView(section("Activity log (every call, newest at the bottom)"), ui.matchWidth(18))
-        val logButtons = ui.horizontal().apply {
-            addView(ui.button("Copy log") {
-                val clip = host.ui.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clip.setPrimaryClip(ClipData.newPlainText("Personal Cloud log", EventLog.tail(200_000)))
-                messageView.text = "Log copied."
-            })
-            addView(View(ui.context), LinearLayout.LayoutParams(ui.dp(8), 1))
-            addView(ui.button("Clear log") { EventLog.clear() })
-        }
-        column.addView(logButtons, ui.matchWidth(6))
-        column.addView(ui.card().apply { addView(logView) }, ui.matchWidth(8))
-        addView(column)
+        rows.addView(ui.sectionHeader("Connection"))
+        rows.addView(
+            ui.group(
+                ui.listRow(R.drawable.ic_link, "Server addresses", value = if (settings.altServerUrl.isBlank()) "one" else "two") { showAddresses() },
+                ui.listRow(R.drawable.ic_wifi, "Test connection", connectionResult ?: "Checks that the server answers, and how fast") { testConnection() },
+            ),
+            full(),
+        )
+
+        rows.addView(ui.sectionHeader("About"))
+        rows.addView(
+            ui.group(
+                ui.listRow(R.drawable.ic_activity, "Diagnostics", "Status, activity log, copy for support") { showDiagnostics() },
+                ui.listRow(R.drawable.ic_info, "Version", value = appVersion(context), chevron = false),
+                ui.listRow(R.drawable.ic_logout, "Log out", danger = true, chevron = false) {
+                    host.sheets.confirm("Log out?", "Backups stop until you log in again. Files already on the server stay there.", "Log out", danger = true) { onLogout() }
+                },
+            ),
+            full(),
+        )
     }
 
-    private fun updateKept() {
-        val context = host.ui.context
-        val count = OfflineStore.items(context).size
-        keptView.text = if (count == 0) {
-            "Nothing is kept on this phone. Open a file, tap More, then \"Keep on this phone\" to read it without the server."
-        } else {
-            "$count file(s), ${fmtBytes(OfflineStore.totalBytes(context))}. They open without the server."
-        }
-    }
+    private fun full() = ui.matchWidth().apply { setMargins(ui.dp(16), 0, ui.dp(16), 0) }
 
-    private fun section(title: String): TextView =
-        ui.text(if (palette.retro) title.uppercase() else title, 13f, palette.mute, bold = true)
+    private fun appVersion(context: Context): String =
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
 
-    private fun check(label: String, checked: Boolean, onChange: (Boolean) -> Unit) = CheckBox(ui.context).apply {
-        text = label
-        typeface = ui.typeface
-        setTextColor(palette.ink)
-        isChecked = checked
-        // Without this the box outline is invisible on the black retro background.
-        buttonTintList = android.content.res.ColorStateList.valueOf(palette.ink)
-        setOnCheckedChangeListener { _, on -> onChange(on) }
-    }
+    // ------------------------------------------------------------ appearance
 
-    /** Asks the server to give undated photos the date in their name or EXIF, then reports. */
-    private fun fixDates() {
-        messageView.text = "Reading dates from file names and EXIF..."
-        thread {
-            val result = try {
-                val (fixed, checked) = host.api.fixDates(apply = true)
-                if (checked == 0) "Every photo already has a date." else "Fixed the dates of $fixed of $checked undated photos."
-            } catch (e: Exception) {
-                EventLog.log("fix dates failed: ${e.javaClass.simpleName}: ${e.message}")
-                "Could not fix dates: ${e.message}"
+    private fun showAppearance() = push("Appearance") { column ->
+        column.addView(ui.sectionHeader("Theme"))
+        val rows = AppTheme.entries.map { theme ->
+            ui.choiceRow(theme.label, selected = settings.theme == theme.id) {
+                if (settings.theme != theme.id) {
+                    settings.theme = theme.id
+                    host.onThemeChanged()
+                }
             }
-            host.runOnUi {
-                messageView.text = result
-                host.toast(result)
-            }
         }
+        column.addView(ui.group(*rows.toTypedArray()), full())
     }
 
-    private fun testConnection() {
-        messageView.text = "Testing..."
-        val started = System.nanoTime()
-        thread {
-            val result = try {
-                val body = host.api.health()
-                "OK in ${(System.nanoTime() - started) / 1_000_000} ms: $body"
-            } catch (e: Exception) {
-                "FAILED: ${e.javaClass.simpleName}: ${e.message}"
-            }
-            EventLog.log("connection test -> $result")
-            host.runOnUi { messageView.text = "Connection test: $result" }
-        }
-    }
+    // --------------------------------------------------------------- folders
 
-    override fun onShow() {
-        loadUsage()
-        updateKept()
+    private fun showFolders() = push("Folders to back up") { column ->
+        column.addView(ui.muted("Changes apply to the next run. The camera roll is on by default.", 12f).apply {
+            setPadding(ui.dp(20), ui.dp(14), ui.dp(20), ui.dp(4))
+        })
+        foldersBox.removeAllViews()
+        (foldersBox.parent as? ViewGroup)?.removeView(foldersBox)
+        column.addView(foldersBox, full())
+        foldersBox.addView(ui.muted("Looking for folders...", 12f).apply { setPadding(ui.dp(16), ui.dp(16), ui.dp(16), ui.dp(16)) })
+        foldersLoadedAt = 0
         loadFolders()
-        onTick()
     }
 
-    /** Lists every folder holding photos or videos, as checkboxes. The camera roll is on by default. */
+    /** Lists every folder holding photos or videos as switches. */
     private fun loadFolders() {
         val now = System.currentTimeMillis()
         if (now - foldersLoadedAt < 30_000) return
@@ -238,42 +247,190 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
                 null
             }
             host.runOnUi {
-                foldersCard.removeAllViews()
+                foldersBox.removeAllViews()
                 if (found == null) {
-                    foldersCard.addView(ui.muted("Allow access to photos and videos to see your folders.", 12f))
+                    foldersBox.addView(emptyNote("Allow access to photos and videos to see your folders."))
                     return@runOnUi
                 }
                 if (found.isEmpty()) {
-                    foldersCard.addView(ui.muted("No photos or videos found on this phone.", 12f))
+                    foldersBox.addView(emptyNote("No photos or videos found on this phone."))
                     return@runOnUi
                 }
-                foldersCard.addView(ui.muted("Tick the folders to back up. Changes apply to the next run.", 11f))
-                for ((folder, count) in found) {
-                    foldersCard.addView(
-                        check("${folder.trimEnd('/')}  ($count)", isSelected(folder, settings.backupFolders)) { on ->
-                            val chosen = settings.backupFolders.toMutableSet()
-                            // A folder inside an already-chosen parent (e.g. DCIM/Camera under DCIM/)
-                            // is covered by the parent, so unticking it means narrowing the parent.
-                            chosen.removeAll { it.startsWith(folder) && it != folder }
-                            if (on) chosen.add(folder) else {
-                                chosen.remove(folder)
-                                val parents = chosen.filter { folder.startsWith(it) }
-                                if (parents.isNotEmpty()) {
-                                    chosen.removeAll(parents.toSet())
-                                    for ((other, _) in found) {
-                                        if (other != folder && parents.any { other.startsWith(it) }) chosen.add(other)
-                                    }
-                                }
-                            }
-                            settings.backupFolders = chosen
-                            EventLog.log("setting: backup folders = ${chosen.sorted()}")
-                            foldersLoadedAt = 0 // redraw so overlapping folders tick/untick together
-                            loadFolders()
-                        },
-                    )
+                val rows = found.map { (folder, count) ->
+                    ui.switchRow(
+                        R.drawable.ic_folder,
+                        folder.trimEnd('/'),
+                        "$count item${if (count == 1) "" else "s"}",
+                        isSelected(folder, settings.backupFolders),
+                    ) { on -> toggleFolder(folder, on, found.map { it.first }) }
+                }
+                foldersBox.addView(ui.group(*rows.toTypedArray()))
+            }
+        }
+    }
+
+    private fun emptyNote(text: String) = ui.muted(text, 13f).apply { setPadding(ui.dp(20), ui.dp(16), ui.dp(20), ui.dp(16)) }
+
+    private fun toggleFolder(folder: String, on: Boolean, all: List<String>) {
+        val chosen = settings.backupFolders.toMutableSet()
+        // A folder inside an already-chosen parent (e.g. DCIM/Camera under DCIM/) is covered by
+        // the parent, so unticking it means narrowing the parent.
+        chosen.removeAll { it.startsWith(folder) && it != folder }
+        if (on) {
+            chosen.add(folder)
+        } else {
+            chosen.remove(folder)
+            val parents = chosen.filter { folder.startsWith(it) }
+            if (parents.isNotEmpty()) {
+                chosen.removeAll(parents.toSet())
+                for (other in all) {
+                    if (other != folder && parents.any { other.startsWith(it) }) chosen.add(other)
                 }
             }
         }
+        settings.backupFolders = chosen
+        EventLog.log("setting: backup folders = ${chosen.sorted()}")
+        foldersLoadedAt = 0 // redraw so overlapping folders switch together
+        loadFolders()
+    }
+
+    // ------------------------------------------------------------------ kept
+
+    private fun showKept() {
+        val context = host.ui.context
+        val count = OfflineStore.items(context).size
+        if (count == 0) {
+            host.sheets.show("Kept on this phone") { sheet ->
+                sheet.body.addView(
+                    ui.muted(
+                        "Nothing is kept yet. Open a file and choose Keep to read it without the server.",
+                        13f,
+                    ).apply { setPadding(ui.dp(20), 0, ui.dp(20), ui.dp(12)) },
+                )
+            }
+            return
+        }
+        host.sheets.actions(
+            "Kept on this phone",
+            "$count file${if (count == 1) "" else "s"}, ${fmtBytes(OfflineStore.totalBytes(context))}",
+            listOf(
+                SheetItem(R.drawable.ic_delete, "Remove all kept files", danger = true) {
+                    OfflineStore.clear(context)
+                    host.toast("Removed.")
+                    refreshHome()
+                },
+            ),
+        )
+    }
+
+    // ----------------------------------------------------------- addresses
+
+    private fun showAddresses() = push("Server addresses") { column ->
+        column.addView(ui.muted(
+            "The app tries the first address, then the second if the first does not answer. " +
+                "Log out and in again to change them.",
+            12f,
+        ).apply { setPadding(ui.dp(20), ui.dp(14), ui.dp(20), ui.dp(4)) })
+        val rows = mutableListOf<View>(ui.listRow(R.drawable.ic_wifi, "Main address", settings.serverUrl, chevron = false))
+        if (settings.altServerUrl.isNotBlank()) {
+            rows.add(ui.listRow(R.drawable.ic_link, "Away address", settings.altServerUrl, chevron = false))
+        }
+        column.addView(ui.group(*rows.toTypedArray()), full())
+    }
+
+    // ------------------------------------------------------------ diagnostics
+
+    private fun showDiagnostics() {
+        shownLogVersion = -1
+        push("Diagnostics", onTick = { updateDiagnostics() }) { column ->
+            column.addView(ui.sectionHeader("Status"))
+            column.addView(ui.card().apply { addView(factsView) }, full())
+            column.addView(ui.sectionHeader("Activity log"))
+            column.addView(
+                ui.horizontal().apply {
+                    addView(ui.button("Copy log") {
+                        val clip = host.ui.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clip.setPrimaryClip(ClipData.newPlainText("Choud log", EventLog.tail(200_000)))
+                        host.toast("Log copied.")
+                    })
+                    addView(View(ui.context), LinearLayout.LayoutParams(ui.dp(8), 1))
+                    addView(ui.button("Clear log") {
+                        EventLog.clear()
+                        updateDiagnostics()
+                    })
+                },
+                full(),
+            )
+            column.addView(ui.card().apply { addView(logView) }, full().apply { topMargin = ui.dp(8) })
+        }
+        updateDiagnostics()
+    }
+
+    private fun updateDiagnostics() {
+        val f = host.facts
+        factsView.text = buildString {
+            appendLine("Photos     ${f.visible} visible | ${f.done} backed up | ${f.failed} failed")
+            appendLine("Network    ${f.network}")
+            appendLine("Power      ${f.power}")
+            appendLine("Battery    exemption ${if (f.batteryExempt) "granted" else "NOT granted"}")
+            appendLine("Perms      ${f.permissions}")
+            appendLine("Job now    ${f.jobNow}")
+            appendLine("Job hourly ${f.jobHourly}")
+            appendLine("Last run   ${f.lastRun}")
+            if (f.lastError.isNotEmpty()) appendLine("PROBLEM    ${f.lastError}")
+        }.trimEnd()
+        if (EventLog.version != shownLogVersion) {
+            shownLogVersion = EventLog.version
+            logView.text = EventLog.tail(8000)
+        }
+    }
+
+    // ---------------------------------------------------------------- actions
+
+    /** Asks the server to give undated photos the date in their name or EXIF, then reports. */
+    private fun fixDates() {
+        datesResult = "Reading dates from file names and EXIF..."
+        refreshHome()
+        thread {
+            val result = try {
+                val (fixed, checked) = host.api.fixDates(apply = true)
+                if (checked == 0) "Every photo already has a date." else "Fixed the dates of $fixed of $checked undated photos."
+            } catch (e: Exception) {
+                EventLog.log("fix dates failed: ${e.javaClass.simpleName}: ${e.message}")
+                "Could not fix dates: ${e.message}"
+            }
+            host.runOnUi {
+                datesResult = result
+                host.toast(result)
+                if (stack.size == 1) refreshHome()
+            }
+        }
+    }
+
+    private fun testConnection() {
+        connectionResult = "Testing..."
+        refreshHome()
+        val started = System.nanoTime()
+        thread {
+            val result = try {
+                host.api.health()
+                "OK in ${(System.nanoTime() - started) / 1_000_000} ms"
+            } catch (e: Exception) {
+                "Failed: ${e.javaClass.simpleName}: ${e.message}"
+            }
+            EventLog.log("connection test -> $result")
+            host.runOnUi {
+                connectionResult = result
+                if (stack.size == 1) refreshHome()
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ usage
+
+    override fun onShow() {
+        loadUsage()
+        if (stack.size == 1) refreshHome()
     }
 
     private fun loadUsage() {
@@ -294,21 +451,6 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
     }
 
     override fun onTick() {
-        val f = host.facts
-        factsView.text = buildString {
-            appendLine("Photos    ${f.visible} visible | ${f.done} backed up | ${f.failed} failed")
-            appendLine("Network   ${f.network}")
-            appendLine("Power     ${f.power}")
-            appendLine("Battery   exemption ${if (f.batteryExempt) "granted" else "NOT granted"}")
-            appendLine("Perms     ${f.permissions}")
-            appendLine("Job now   ${f.jobNow}")
-            appendLine("Job hourly ${f.jobHourly}")
-            appendLine("Last run  ${f.lastRun}")
-            if (f.lastError.isNotEmpty()) appendLine("PROBLEM   ${f.lastError}")
-        }.trimEnd()
-        if (EventLog.version != shownLogVersion) {
-            shownLogVersion = EventLog.version
-            logView.text = EventLog.tail(8000)
-        }
+        stack.lastOrNull()?.onTick?.invoke()
     }
 }

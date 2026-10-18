@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- The app theme. Before Android 12 the window background is the launch screen. -->
-    <style name="Theme.Choud" parent="@android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.Choud" parent="@android:style/Theme.DeviceDefault.NoActionBar">
         <item name="android:windowBackground">@drawable/choud_splash</item>
     </style>
 </resources>

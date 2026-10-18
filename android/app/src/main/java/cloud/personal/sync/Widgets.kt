@@ -26,6 +26,7 @@ class Segmented(
         options.forEach { (id, label) ->
             val cell = ui.text(if (p.retro) label.uppercase() else label, 12.5f, bold = true).apply {
                 gravity = Gravity.CENTER
+                maxLines = 1
                 setPadding(ui.dp(14), ui.dp(8), ui.dp(14), ui.dp(8))
                 setOnClickListener {
                     if (selected != id) {
@@ -36,7 +37,7 @@ class Segmented(
                 }
             }
             cells[id] = cell
-            addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(cell, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         paint()
     }

@@ -1,7 +1,6 @@
 package cloud.personal.sync
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
@@ -40,7 +39,9 @@ class ViewerActivity : Activity() {
 
     private lateinit var title: TextView
     private lateinit var subtitle: TextView
-    private lateinit var star: TextView
+    private lateinit var star: ImageView
+    private lateinit var sheets: Sheets
+    private lateinit var offlineButton: LinearLayout
     private lateinit var stage: FrameLayout
     private lateinit var prevButton: View
     private lateinit var nextButton: View
@@ -69,40 +70,30 @@ class ViewerActivity : Activity() {
 
         title = ui.text("", 14f, bold = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.MIDDLE }
         subtitle = ui.muted("", 11f)
-        star = ui.text("", 22f, palette.ink).apply {
-            gravity = Gravity.CENTER
-            setPadding(ui.dp(12), 0, ui.dp(12), 0)
-            setOnClickListener { toggleFavorite() }
-        }
-        val back = ui.text("<", 22f, palette.ink, bold = true).apply {
-            setPadding(ui.dp(14), 0, ui.dp(14), 0)
-            setOnClickListener { finish() }
-        }
-        val info = ui.text("i", 18f, palette.ink, bold = true).apply {
-            gravity = Gravity.CENTER
-            setPadding(ui.dp(12), 0, ui.dp(12), 0)
-            setOnClickListener { showInfo() }
-        }
-        val openWith = ui.text("Open with", 12f, palette.mute).apply {
-            setPadding(ui.dp(10), 0, ui.dp(12), 0)
-            setOnClickListener { openWithOtherApp() }
-        }
-        val more = ui.text("More", 12f, palette.mute).apply {
-            setPadding(ui.dp(8), 0, ui.dp(12), 0)
-            setOnClickListener { showMore() }
-        }
+        star = ui.iconOnly(R.drawable.ic_star_outline, "Star", palette.ink) { toggleFavorite() }
+        val back = ui.iconOnly(R.drawable.ic_back, "Back", palette.ink) { finish() }
+        val more = ui.iconOnly(R.drawable.ic_more_h, "More", palette.ink) { showMore() }
         val bar = ui.horizontal().apply {
             setBackgroundColor(palette.surface)
-            minimumHeight = ui.dp(52)
+            minimumHeight = ui.dp(56)
             addView(back)
             addView(
                 ui.vertical().apply { addView(title); addView(subtitle) },
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = ui.dp(4) },
             )
             addView(star)
-            addView(info)
             addView(more)
-            addView(openWith)
+        }
+        offlineButton = ui.iconButton(R.drawable.ic_offline, "Keep") { toggleOffline(current(), OfflineStore.has(this, current().id)) }
+        val actions = ui.horizontal().apply {
+            setBackgroundColor(palette.surface)
+            gravity = Gravity.CENTER
+            val slot = { LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) }
+            addView(ui.iconButton(R.drawable.ic_share, "Share") { chooseShare(current()) }, slot())
+            addView(ui.iconButton(R.drawable.ic_download, "Save") { saveCurrent() }, slot())
+            addView(offlineButton, slot())
+            addView(ui.iconButton(R.drawable.ic_info, "Info") { showInfo() }, slot())
+            addView(ui.iconButton(R.drawable.ic_delete, "Delete", palette.danger) { confirmDelete() }, slot())
         }
 
         stage = FrameLayout(this).apply { setBackgroundColor(palette.bg) }
@@ -117,12 +108,15 @@ class ViewerActivity : Activity() {
                     addView(bar, ui.matchWidth())
                     addView(ui.divider())
                     addView(stage, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+                    addView(ui.divider())
+                    addView(actions, ui.matchWidth())
                 },
             )
             addView(prevButton, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.START or Gravity.CENTER_VERTICAL))
             addView(nextButton, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.END or Gravity.CENTER_VERTICAL))
         }
         setContentView(root)
+        sheets = Sheets(ui, root)
         show()
     }
 
@@ -170,8 +164,8 @@ class ViewerActivity : Activity() {
         val file = current()
         title.text = file.name
         subtitle.text = "${index + 1} of ${items.size}  |  ${fmtBytes(file.size)}"
-        star.text = if (file.favorite) "★" else "☆"
-        star.setTextColor(if (file.favorite) ui.palette.ink else ui.palette.mute)
+        setStar(file.favorite)
+        updateOfflineButton()
         prevButton.visibility = if (index > 0) View.VISIBLE else View.GONE
         nextButton.visibility = if (index < items.lastIndex) View.VISIBLE else View.GONE
         stage.removeAllViews()
@@ -592,8 +586,7 @@ class ViewerActivity : Activity() {
         val file = current()
         val wanted = !file.favorite
         items[index] = file.copy(favorite = wanted)
-        star.text = if (wanted) "★" else "☆"
-        star.setTextColor(if (wanted) ui.palette.ink else ui.palette.mute)
+        setStar(wanted)
         thread {
             try {
                 api.setFavorite(file.id, wanted)
@@ -601,7 +594,7 @@ class ViewerActivity : Activity() {
                 EventLog.log("favorite failed: ${e.message}")
                 runOnUiThread {
                     items[index] = file
-                    star.text = if (file.favorite) "★" else "☆"
+                    setStar(file.favorite)
                 }
             }
         }
@@ -629,25 +622,47 @@ class ViewerActivity : Activity() {
         }
     }
 
+    private fun setStar(on: Boolean) {
+        star.setImageResource(if (on) R.drawable.ic_star else R.drawable.ic_star_outline)
+        star.contentDescription = if (on) "Unstar" else "Star"
+    }
+
+    private fun updateOfflineButton() {
+        val kept = OfflineStore.has(this, current().id)
+        val label = offlineButton.getChildAt(1) as TextView
+        label.text = if (kept) "On phone" else "Keep"
+        offlineButton.contentDescription = if (kept) "Remove from this phone" else "Keep on this phone"
+    }
+
+    private fun say(text: String) {
+        android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
     private fun showMore() {
         val file = current()
         val kept = OfflineStore.has(this, file.id)
-        val options = arrayOf(
-            "Share a link...",
-            if (kept) "Remove from this phone" else "Keep on this phone (offline)",
+        sheets.actions(
+            file.name,
+            fmtBytes(file.size),
+            listOf(
+                SheetItem(R.drawable.ic_share, "Share a link") { chooseShare(file) },
+                SheetItem(R.drawable.ic_download, "Save to Downloads") { saveCurrent() },
+                SheetItem(R.drawable.ic_offline, if (kept) "Remove from this phone" else "Keep on this phone (offline)") { toggleOffline(file, kept) },
+                SheetItem(R.drawable.ic_info, "Details") { showInfo() },
+                SheetItem(R.drawable.ic_move, "Open with another app") { openWithOtherApp() },
+                SheetItem(R.drawable.ic_delete, "Delete", danger = true) { confirmDelete() },
+            ),
         )
-        AlertDialog.Builder(this).setTitle(file.name).setItems(options) { _, which ->
-            if (which == 0) chooseShare(file) else toggleOffline(file, kept)
-        }.show()
     }
 
     private fun toggleOffline(file: RemoteItem, kept: Boolean) {
         if (kept) {
             OfflineStore.remove(this, file.id)
-            android.widget.Toast.makeText(this, "Removed from this phone.", android.widget.Toast.LENGTH_SHORT).show()
+            updateOfflineButton()
+            say("Removed from this phone.")
             return
         }
-        android.widget.Toast.makeText(this, "Saving ${file.name} to this phone...", android.widget.Toast.LENGTH_SHORT).show()
+        say("Saving ${file.name} to this phone...")
         thread {
             val message = try {
                 OfflineStore.keep(this, api, file)
@@ -656,56 +671,130 @@ class ViewerActivity : Activity() {
                 EventLog.log("keep offline failed: ${e.message}")
                 "Could not save it: ${e.message}"
             }
-            runOnUiThread { android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show() }
+            runOnUiThread {
+                updateOfflineButton()
+                say(message)
+            }
+        }
+    }
+
+    private fun saveCurrent() {
+        val file = current()
+        say("Saving ${file.name}...")
+        thread {
+            val temp = File(cacheDir, "save/${System.nanoTime()}").apply { parentFile?.mkdirs() }
+            val message = try {
+                fetchTo(file, temp)
+                "Saved ${file.name} to ${Saver.save(this, temp, file.name, file.mime.ifEmpty { "application/octet-stream" })}."
+            } catch (e: Exception) {
+                EventLog.log("save failed: ${e.javaClass.simpleName}: ${e.message}")
+                "Could not save: ${e.message}"
+            } finally {
+                temp.delete()
+            }
+            runOnUiThread { say(message) }
+        }
+    }
+
+    private fun confirmDelete() {
+        val file = current()
+        sheets.confirm("Delete ${file.name}?", "It goes to the trash, where you can restore it.", "Delete", danger = true) {
+            thread {
+                try {
+                    api.deleteFile(file.id)
+                    runOnUiThread {
+                        say("Moved to the trash.")
+                        items.removeAt(index)
+                        ViewerSession.items = items.toList()
+                        if (items.isEmpty()) {
+                            finish()
+                        } else {
+                            index = index.coerceAtMost(items.lastIndex)
+                            show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    EventLog.log("delete failed: ${e.message}")
+                    runOnUiThread { say("Could not delete: ${e.message}") }
+                }
+            }
         }
     }
 
     private fun chooseShare(file: RemoteItem) {
-        val choices = arrayOf("Link for 1 day", "Link for 7 days", "One-time link (works once)", "Link that never expires")
-        AlertDialog.Builder(this).setTitle("Share ${file.name}").setItems(choices) { _, which ->
-            val hours = when (which) { 0 -> 24; 1 -> 24 * 7; 2 -> 24 * 7; else -> null }
-            val limit = if (which == 2) 1 else null
+        sheets.linkChoices("Share ${file.name}") { hours, limit ->
             thread {
                 try {
                     val link = api.createShareLink(file.id, hours, limit)
                     runOnUiThread { offerLink(link) }
                 } catch (e: Exception) {
                     EventLog.log("share failed: ${e.message}")
-                    runOnUiThread { android.widget.Toast.makeText(this, "Could not make a link: ${e.message}", android.widget.Toast.LENGTH_LONG).show() }
+                    runOnUiThread { say("Could not make a link: ${e.message}") }
                 }
             }
-        }.show()
+        }
     }
 
     private fun offerLink(link: String) {
         val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Choud link", link))
-        AlertDialog.Builder(this)
-            .setTitle("Link copied")
-            .setMessage("$link\n\nAnyone who has this link can open the file until it expires.")
-            .setPositiveButton("Send...") { _, _ ->
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, link)
-                }
-                startActivity(Intent.createChooser(send, "Send link"))
-            }
-            .setNegativeButton("Done", null)
-            .show()
+        sheets.show("Link copied", null) { sheet ->
+            sheet.body.addView(
+                ui.text(link, 13f).apply {
+                    setTextIsSelectable(true)
+                    setPadding(ui.dp(20), 0, ui.dp(20), ui.dp(6))
+                },
+            )
+            sheet.body.addView(
+                ui.muted("Anyone who has this link can open the file until it stops working.", 12f).apply {
+                    setPadding(ui.dp(20), 0, ui.dp(20), ui.dp(12))
+                },
+            )
+            sheet.body.addView(
+                ui.horizontal().apply {
+                    setPadding(ui.dp(16), 0, ui.dp(16), ui.dp(4))
+                    addView(ui.button("Done") { sheet.dismiss() }, LinearLayout.LayoutParams(0, ui.dp(48), 1f))
+                    addView(View(ui.context), LinearLayout.LayoutParams(ui.dp(10), 1))
+                    addView(
+                        ui.button("Send...", primary = true) {
+                            sheet.dismiss()
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, link)
+                            }
+                            startActivity(Intent.createChooser(send, "Send link"))
+                        },
+                        LinearLayout.LayoutParams(0, ui.dp(48), 1f),
+                    )
+                },
+            )
+        }
     }
 
     private fun showInfo() {
         val file = current()
-        val text = buildString {
-            appendLine("Name: ${file.name}")
-            appendLine("Type: ${file.mime.ifEmpty { "unknown" }}")
-            appendLine("Size: ${fmtBytes(file.size)}")
-            file.takenAtMillis?.let { appendLine("Taken: ${fmtDate(it)}") }
-            file.modifiedAtMillis?.let { appendLine("Modified: ${fmtDate(it)}") }
-            appendLine("Uploaded: ${fmtDate(file.createdAtMillis)}")
-            append("Folder: ${file.folderPath.ifEmpty { "My files" }}")
+        sheets.show("Details", file.name) { sheet ->
+            fun line(label: String, value: String) = sheet.body.addView(
+                ui.listRow(title = label, value = value, chevron = false),
+            )
+            line("Type", file.mime.ifEmpty { "unknown" })
+            line("Size", fmtBytes(file.size))
+            file.takenAtMillis?.let { line("Taken", fmtDate(it)) }
+            file.modifiedAtMillis?.let { line("Modified", fmtDate(it)) }
+            line("Uploaded", fmtDate(file.createdAtMillis))
+            line("Folder", file.folderPath.ifEmpty { "My files" })
+            line("On this phone", if (OfflineStore.has(this, file.id)) "Yes" else "No")
         }
-        AlertDialog.Builder(this).setTitle("Details").setMessage(text).setPositiveButton("OK", null).show()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (sheets.isOpen) {
+            sheets.dismiss()
+        } else {
+            @Suppress("DEPRECATION")
+            super.onBackPressed()
+        }
     }
 
     override fun onDestroy() {

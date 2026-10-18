@@ -10,6 +10,9 @@ interface Host {
     /** One shared client for the screens (browsing, thumbnails, favorites). */
     val api: ApiClient
 
+    /** Our own bottom sheets and confirm dialogs (never the system AlertDialog). */
+    val sheets: Sheets
+
     /** The latest slow-to-compute facts (counts, network, job state), refreshed in the background. */
     val facts: Facts
 

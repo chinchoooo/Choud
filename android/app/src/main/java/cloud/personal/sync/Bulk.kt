@@ -1,6 +1,5 @@
 package cloud.personal.sync
 
-import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentValues
@@ -12,7 +11,6 @@ import android.provider.MediaStore
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import java.io.File
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicInteger
@@ -62,18 +60,17 @@ class FolderPickerDialog(
 ) {
     private val ui = host.ui
     private val trail = ArrayList<Pair<String?, String>>().apply { add(null to "My files") }
-    private lateinit var dialog: AlertDialog
+    private lateinit var sheet: SheetHandle
     private val body = ui.vertical()
 
     fun show() {
-        val scroll = ScrollView(context).apply { addView(body) }
-        dialog = AlertDialog.Builder(context)
-            .setTitle(title)
-            .setView(scroll)
-            .setPositiveButton("Move here") { _, _ -> onPick(trail.last().first, trail.last().second) }
-            .setNegativeButton("Cancel", null)
-            .create()
-        dialog.show()
+        sheet = host.sheets.show(title) { handle ->
+            handle.body.addView(body)
+            handle.body.addView(
+                host.sheets.buttons(handle, "Move here") { onPick(trail.last().first, trail.last().second) },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(8) },
+            )
+        }
         load()
     }
 
@@ -85,7 +82,7 @@ class FolderPickerDialog(
         thread {
             val folders = try { host.api.listDirectory(folder).folders } catch (e: Exception) { null }
             host.runOnUi {
-                if (!dialog.isShowing) return@runOnUi
+                if (!sheet.isShowing) return@runOnUi
                 body.removeViewAt(body.childCount - 1)
                 if (folders == null) {
                     body.addView(ui.text("Could not load folders.", 13f, ui.palette.danger).apply { setPadding(ui.dp(20), ui.dp(8), ui.dp(20), ui.dp(8)) })
@@ -142,10 +139,7 @@ class Bulk(private val host: Host, private val context: Context) {
 
     fun shareLinks(files: List<RemoteItem>) {
         if (files.isEmpty()) return
-        val choices = arrayOf("Link for 1 day", "Link for 7 days", "One-time links (work once)", "Links that never expire")
-        AlertDialog.Builder(context).setTitle("Share ${files.size} file${if (files.size == 1) "" else "s"}").setItems(choices) { _, which ->
-            val hours = when (which) { 0 -> 24; 1 -> 24 * 7; 2 -> 24 * 7; else -> null }
-            val limit = if (which == 2) 1 else null
+        host.sheets.linkChoices("Share ${files.size} file${if (files.size == 1) "" else "s"}") { hours, limit ->
             val lines = java.util.Collections.synchronizedList(ArrayList<String>())
             each("Making link", files, { ok, failed ->
                 if (lines.isEmpty()) {
@@ -163,7 +157,7 @@ class Bulk(private val host: Host, private val context: Context) {
                     context.startActivity(Intent.createChooser(send, "Send links").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }
             }) { file -> lines.add("${file.name}: ${api.createShareLink(file.id, hours, limit)}") }
-        }.show()
+        }
     }
 
     // --------------------------------------------------------------- download
@@ -240,26 +234,23 @@ class Bulk(private val host: Host, private val context: Context) {
             if (files.isNotEmpty()) append("${files.size} file${if (files.size == 1) "" else "s"} will go to the trash (you can undo).")
             if (folders.isNotEmpty()) append("${if (isNotEmpty()) " " else ""}${folders.size} folder${if (folders.size == 1) "" else "s"} are removed only if empty.")
         }
-        AlertDialog.Builder(context).setTitle("Delete the selection?").setMessage(detail)
-            .setPositiveButton("Delete") { _, _ ->
-                val removed = java.util.Collections.synchronizedList(ArrayList<String>())
-                val jobs: List<() -> Unit> = files.map { f -> { api.deleteFile(f.id); removed.add(f.id); Unit } } + folders.map { f -> { api.deleteFolder(f.id) } }
-                each("Deleting", jobs, { ok, failed ->
-                    val text = if (failed == 0) "Deleted $ok." else "$ok deleted, $failed could not be (a folder that is not empty)."
-                    if (removed.isNotEmpty()) {
-                        host.toast(text, "Undo") {
-                            thread {
-                                removed.forEach { id -> runCatching { api.restoreFile(id) } }
-                                host.runOnUi { host.toast("Restored."); onDone() }
-                            }
+        host.sheets.confirm("Delete the selection?", detail, "Delete", danger = true) {
+            val removed = java.util.Collections.synchronizedList(ArrayList<String>())
+            val jobs: List<() -> Unit> = files.map { f -> { api.deleteFile(f.id); removed.add(f.id); Unit } } + folders.map { f -> { api.deleteFolder(f.id) } }
+            each("Deleting", jobs, { ok, failed ->
+                val text = if (failed == 0) "Deleted $ok." else "$ok deleted, $failed could not be (a folder that is not empty)."
+                if (removed.isNotEmpty()) {
+                    host.toast(text, "Undo") {
+                        thread {
+                            removed.forEach { id -> runCatching { api.restoreFile(id) } }
+                            host.runOnUi { host.toast("Restored."); onDone() }
                         }
-                    } else {
-                        host.toast(text)
                     }
-                    onDone()
-                }) { it() }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+                } else {
+                    host.toast(text)
+                }
+                onDone()
+            }) { it() }
+        }
     }
 }
