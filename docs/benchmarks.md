@@ -116,6 +116,8 @@ What this says, honestly:
   machine), but it is reported rather than hidden. Repeat runs would show the spread.
 - Choud's downloads are level with or ahead of Drive's published numbers in the mixed-folder test.
 
+Raw output for the 5 GB run: [`benchmark-results/`](benchmark-results/).
+
 API latency on the same machine (milliseconds, median / 95th percentile):
 
 | Call | p50 | p95 |
