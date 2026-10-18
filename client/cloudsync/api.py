@@ -21,6 +21,8 @@ from pathlib import Path
 
 import httpx
 
+from .throttle import Throttle
+
 DEFAULT_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=300.0, pool=10.0)
 
 
@@ -117,6 +119,7 @@ class ApiClient:
         refresh_token: str = "",
         on_tokens: Callable[[str, str], None] | None = None,
         remote_prefix: str = "",
+        throttle: Throttle | None = None,
     ) -> None:
         if http is None:
             if not server_url:
@@ -126,6 +129,7 @@ class ApiClient:
         self._access = access_token
         self._refresh = refresh_token
         self._on_tokens = on_tokens
+        self._throttle = throttle  # optional upload speed limit
         # Backup mode keeps everything under one server folder (e.g. Backups/laptop/Documents):
         # the client sees that folder as its root, so paths never carry the prefix.
         self._prefix = remote_prefix.strip("/")
@@ -317,6 +321,8 @@ class ApiClient:
         # no open handle is left behind, which on Windows would block a later
         # rename or delete of the file.
         content = local_path.read_bytes()
+        if self._throttle:
+            self._throttle.acquire(len(content))
 
         def build() -> dict:
             data = {"name": name}
@@ -374,6 +380,8 @@ class ApiClient:
             for index in session["missing_chunk_indices"]:
                 handle.seek(index * chunk_bytes)
                 block = handle.read(chunk_bytes)
+                if self._throttle:
+                    self._throttle.acquire(len(block))
                 self._send(
                     "POST",
                     f"/api/uploads/{upload_id}/chunks/{index}",

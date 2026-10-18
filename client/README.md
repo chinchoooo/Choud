@@ -65,6 +65,8 @@ cloudsync folders --add ~/Projects    # change what is backed up later
   checks once a minute without scanning your disk; when it is back it uploads what is new.
   Passes are 15 minutes apart (`backup_interval` in the settings file) and run at low CPU/disk
   priority, so it stays out of the way.
+- **Speed limit.** `cloudsync limit 500` caps uploads at 500 KiB/s (`cloudsync limit 0` removes the
+  cap), shared by every backed-up folder, so a backup never saturates a slow connection.
 - **Leaves your folders alone.** Its bookkeeping lives in the settings directory, never inside
   the folders it backs up.
 - **Windows:** `cloudsync install-service` creates a Task Scheduler task that runs at logon without a

@@ -231,3 +231,62 @@ def test_a_packaged_windows_exe_is_started_hidden_without_python() -> None:
     assert "-WindowStyle Hidden" in command
     assert r"'C:\Tools\cloudsync.exe' 'run'" in command
     assert "-m cloudsync.main" not in command
+
+
+# --- upload speed limit ------------------------------------------------------------------------
+
+
+def test_the_throttle_spreads_sends_out_to_the_limit() -> None:
+    from cloudsync.throttle import Throttle, from_kbps
+
+    now = [100.0]
+    slept: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        slept.append(seconds)
+        now[0] += seconds
+
+    throttle = Throttle(1000, clock=lambda: now[0], sleep=sleep)  # 1000 bytes per second
+    assert throttle.acquire(2000) == 0  # the first send is not delayed
+    assert throttle.acquire(1000) == 2.0  # it waits for the 2 s the first one "took"
+    now[0] += 5.0  # a long quiet period earns no extra burst
+    assert throttle.acquire(500) == 0
+    assert throttle.acquire(500) == 0.5
+    assert slept == [2.0, 0.5]
+    assert from_kbps(0) is None and from_kbps(-3) is None
+    assert from_kbps(10).rate == 10 * 1024
+
+
+def test_a_limited_backup_still_uploads_everything_but_waits_between_chunks(
+    server, tmp_path
+) -> None:
+    from cloudsync.throttle import Throttle
+
+    docs = tmp_path / "Documents"
+    _write(docs, "big.bin", bytes(range(256)) * 100)  # 25,600 bytes: chunked (threshold 10,000)
+    engine, _ = _engine(server, docs, tmp_path / "state", "Backups/laptop/Documents")
+    waits: list[float] = []
+    clock = [0.0]
+    engine.api._throttle = Throttle(
+        10_000,
+        clock=lambda: clock[0],
+        sleep=lambda s: (waits.append(s), clock.__setitem__(0, clock[0] + s)),
+    )
+
+    report = engine.sync_until_quiet()
+
+    assert report.uploaded == 1 and not report.errors
+    assert "Backups/laptop/Documents/big.bin" in server_files(server)
+    assert len(waits) >= 2 and all(w > 0 for w in waits)  # 7 chunks of 4,000 bytes, paced
+
+
+def test_the_limit_command_saves_and_shows_it(tmp_path, capsys) -> None:
+    cfg = tmp_path / "cfg"
+    assert main(["--config-dir", str(cfg), "limit"]) == EXIT_OK
+    assert "none" in capsys.readouterr().out
+    assert main(["--config-dir", str(cfg), "limit", "500"]) == EXIT_OK
+    assert load_config(cfg).max_upload_kbps == 500
+    assert "500 KiB/s" in capsys.readouterr().out
+    assert main(["--config-dir", str(cfg), "limit", "-1"]) != EXIT_OK
+    assert main(["--config-dir", str(cfg), "limit", "0"]) == EXIT_OK
+    assert load_config(cfg).max_upload_kbps == 0

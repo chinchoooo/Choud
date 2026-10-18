@@ -29,6 +29,7 @@ from .backup import backup_targets, lower_priority, run_backup_forever
 from .config import Config, default_config_dir, load_config, save_config
 from .database import StateDB
 from .syncer import SyncEngine, SyncReport
+from .throttle import from_kbps
 from .watcher import Debouncer, FolderWatcher
 
 log = logging.getLogger("cloudsync")
@@ -52,6 +53,7 @@ def build_engine(
         access_token=config.access_token,
         refresh_token=config.refresh_token,
         on_tokens=remember_tokens,
+        throttle=from_kbps(config.max_upload_kbps),
     )
     db = StateDB(config.state_dir / "state.db")
     return SyncEngine(
@@ -69,6 +71,7 @@ def build_backup_engines(
 ) -> list:
     """One upload-only engine per backup folder, each scoped to its own server folder."""
     engines = []
+    throttle = from_kbps(config.max_upload_kbps)  # one limit shared by every folder
     for target in backup_targets(config, config_dir or default_config_dir()):
 
         def remember_tokens(access: str, refresh: str) -> None:
@@ -82,6 +85,7 @@ def build_backup_engines(
             refresh_token=config.refresh_token,
             on_tokens=remember_tokens,
             remote_prefix=target.remote_prefix,
+            throttle=throttle,
         )
         target.state_dir.mkdir(parents=True, exist_ok=True)
         engine = SyncEngine(
@@ -324,6 +328,20 @@ def cmd_status(args: argparse.Namespace, config_dir: Path | None, http=None) -> 
     return EXIT_OK
 
 
+def cmd_limit(args: argparse.Namespace, config_dir: Path | None, http=None) -> int:
+    config = load_config(config_dir)
+    if args.kbps is not None:
+        if args.kbps < 0:
+            print("The limit cannot be negative (use 0 for no limit).", file=sys.stderr)
+            return EXIT_USAGE
+        config.max_upload_kbps = float(args.kbps)
+        save_config(config, config_dir)
+        print("Saved. Restart the background service to apply it.")
+    limit = config.max_upload_kbps
+    print(f"Upload limit: {limit:g} KiB/s" if limit > 0 else "Upload limit: none")
+    return EXIT_OK
+
+
 def cmd_folders(args: argparse.Namespace, config_dir: Path | None, http=None) -> int:
     config = load_config(config_dir)
     if config.mode != "backup":
@@ -428,6 +446,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("sync", help="sync once and exit").set_defaults(func=cmd_sync)
     sub.add_parser("run", help="keep syncing until stopped").set_defaults(func=cmd_run)
     sub.add_parser("status", help="show what is pending").set_defaults(func=cmd_status)
+    limit = sub.add_parser("limit", help="show or set the upload speed limit in KiB/s (0 = none)")
+    limit.add_argument("kbps", nargs="?", type=float)
+    limit.set_defaults(func=cmd_limit)
     folders = sub.add_parser("folders", help="backup mode: list, add or remove backed-up folders")
     folders.add_argument("--add", action="append")
     folders.add_argument("--remove", action="append")

@@ -50,6 +50,8 @@ class Config:
     device_name: str = ""
     # Seconds between backup passes (backup mode does not watch the disk: it stays light).
     backup_interval: float = 900.0
+    # Upload speed limit in KiB/s (0 = unlimited). Applies to sync and backup alike.
+    max_upload_kbps: float = 0.0
     extra: dict = field(default_factory=dict)
 
     @property
