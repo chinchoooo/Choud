@@ -69,6 +69,17 @@ object ThumbLoader {
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
     }
 
+    /** Decodes a local file (a copy kept offline) the same way `fetch` decodes a download. */
+    fun fetchFile(file: java.io.File, targetPx: Int): Bitmap? {
+        if (!file.isFile || file.length() > MAX_IMAGE_BYTES) return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= targetPx && bounds.outHeight / (sample * 2) >= targetPx) sample *= 2
+        return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+    }
+
     private fun download(url: String): ByteArray? {
         val request = Request.Builder().url(url).build()
         http.newCall(request).execute().use { response ->

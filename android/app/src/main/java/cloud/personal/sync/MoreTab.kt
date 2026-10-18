@@ -25,6 +25,7 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
     private val usageBar = ui.bar()
     private val factsView = ui.text("", 12f).apply { typeface = android.graphics.Typeface.MONOSPACE }
     private val messageView = ui.muted("", 12f)
+    private val keptView = ui.muted("", 12f)
     private val logView = ui.text("", 11f).apply {
         typeface = android.graphics.Typeface.MONOSPACE
         setTextIsSelectable(true)
@@ -116,6 +117,19 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
         }
         column.addView(tools, ui.matchWidth(6))
 
+        // Files kept on this phone for offline use
+        column.addView(section("Kept on this phone"), ui.matchWidth(18))
+        column.addView(
+            ui.card().apply {
+                addView(keptView)
+                addView(ui.button("Remove all kept files") {
+                    OfflineStore.clear(host.ui.context)
+                    updateKept()
+                }, ui.matchWidth(8))
+            },
+            ui.matchWidth(6),
+        )
+
         // Status details
         column.addView(section("Status"), ui.matchWidth(18))
         column.addView(ui.card().apply { addView(factsView) }, ui.matchWidth(6))
@@ -134,6 +148,16 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
         column.addView(logButtons, ui.matchWidth(6))
         column.addView(ui.card().apply { addView(logView) }, ui.matchWidth(8))
         addView(column)
+    }
+
+    private fun updateKept() {
+        val context = host.ui.context
+        val count = OfflineStore.items(context).size
+        keptView.text = if (count == 0) {
+            "Nothing is kept on this phone. Open a file, tap More, then \"Keep on this phone\" to read it without the server."
+        } else {
+            "$count file(s), ${fmtBytes(OfflineStore.totalBytes(context))}. They open without the server."
+        }
     }
 
     private fun section(title: String): TextView =
@@ -166,6 +190,7 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
 
     override fun onShow() {
         loadUsage()
+        updateKept()
         loadFolders()
         onTick()
     }

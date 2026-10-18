@@ -448,6 +448,15 @@ class ApiClient(
     fun thumbnailUrl(fileId: String, size: Int = 256): String =
         "$base/api/media/${mediaToken()}/$fileId/thumbnail?size=$size"
 
+    /** Makes a public link to one file and returns its full address. */
+    fun createShareLink(fileId: String, expiresInHours: Int?, maxDownloads: Int?): String {
+        val request = JSONObject().put("file_id", fileId)
+        expiresInHours?.let { request.put("expires_in_hours", it) }
+        maxDownloads?.let { request.put("max_downloads", it) }
+        val body = send("/api/shares") { it.post(json(request)) }.jsonBody()
+        return base + body.getString("url_path")
+    }
+
     fun contentUrl(fileId: String): String = "$base/api/media/${mediaToken()}/$fileId/content"
 
     /**

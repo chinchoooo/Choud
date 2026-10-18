@@ -87,6 +87,10 @@ class ViewerActivity : Activity() {
             setPadding(ui.dp(10), 0, ui.dp(12), 0)
             setOnClickListener { openWithOtherApp() }
         }
+        val more = ui.text("More", 12f, palette.mute).apply {
+            setPadding(ui.dp(8), 0, ui.dp(12), 0)
+            setOnClickListener { showMore() }
+        }
         val bar = ui.horizontal().apply {
             setBackgroundColor(palette.surface)
             minimumHeight = ui.dp(52)
@@ -97,6 +101,7 @@ class ViewerActivity : Activity() {
             )
             addView(star)
             addView(info)
+            addView(more)
             addView(openWith)
         }
 
@@ -208,6 +213,18 @@ class ViewerActivity : Activity() {
         val loading = message("Loading...")
         stage.addView(loading)
         val screen = maxOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
+        val kept = OfflineStore.file(this, file.id)
+        if (kept != null) {
+            thread {
+                val local = ThumbLoader.fetchFile(kept, minOf(screen * 2, 4096))
+                runOnUiThread {
+                    if (gen != generation) return@runOnUiThread
+                    stage.removeView(loading)
+                    if (local != null) view.setImageBitmap(local) else stage.addView(message("This kept copy could not be shown here."))
+                }
+            }
+            return
+        }
         thread {
             // A quick, small version first, then the sharp one.
             val preview = try { ThumbLoader.fetch(api.thumbnailUrl(file.id, 1024), 1024) } catch (e: Exception) { null }
@@ -241,7 +258,8 @@ class ViewerActivity : Activity() {
         val loading = message("Loading...")
         stage.addView(loading)
         thread {
-            val url = try { api.contentUrl(file.id) } catch (e: Exception) { null }
+            val kept = OfflineStore.file(this, file.id)
+            val url = if (kept != null) Uri.fromFile(kept).toString() else try { api.contentUrl(file.id) } catch (e: Exception) { null }
             runOnUiThread {
                 if (gen != generation) return@runOnUiThread
                 if (url == null) {
@@ -383,7 +401,7 @@ class ViewerActivity : Activity() {
             val limit = 2L * 1024 * 1024
             val target = File(cacheDir, "viewer/${file.id}.txt")
             val result = try {
-                api.downloadContent(file.id, target, maxBytes = limit)
+                fetchTo(file, target, maxBytes = limit)
                 target.readText(Charsets.UTF_8)
             } catch (e: Exception) {
                 null
@@ -454,7 +472,7 @@ class ViewerActivity : Activity() {
         thread {
             val target = File(cacheDir, "viewer/${file.id}.pdf")
             val ok = try {
-                api.downloadContent(file.id, target) { done, total ->
+                fetchTo(file, target) { done, total ->
                     if (total > 0) runOnUiThread { if (gen == generation) loading.text = "Loading PDF... ${done * 100 / total}%" }
                 }
                 true
@@ -542,7 +560,7 @@ class ViewerActivity : Activity() {
         thread {
             val target = File(cacheDir, "viewer/${file.id}-${file.name.replace('/', '_')}")
             val ok = try {
-                api.downloadContent(file.id, target)
+                fetchTo(file, target)
                 true
             } catch (e: Exception) {
                 EventLog.log("open-with download failed: ${e.message}")
@@ -587,6 +605,93 @@ class ViewerActivity : Activity() {
                 }
             }
         }
+    }
+
+    /** A kept copy if there is one, else the server's bytes (copied or downloaded to `target`). */
+    private fun fetchTo(file: RemoteItem, target: File, maxBytes: Long = Long.MAX_VALUE, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
+        val kept = OfflineStore.file(this, file.id)
+        if (kept == null) {
+            api.downloadContent(file.id, target, maxBytes, onProgress)
+            return
+        }
+        target.parentFile?.mkdirs()
+        kept.inputStream().use { input ->
+            target.outputStream().use { out ->
+                var left = maxBytes
+                val buffer = ByteArray(64 * 1024)
+                while (left > 0) {
+                    val read = input.read(buffer, 0, minOf(buffer.size.toLong(), left).toInt())
+                    if (read < 0) break
+                    out.write(buffer, 0, read)
+                    left -= read
+                }
+            }
+        }
+    }
+
+    private fun showMore() {
+        val file = current()
+        val kept = OfflineStore.has(this, file.id)
+        val options = arrayOf(
+            "Share a link...",
+            if (kept) "Remove from this phone" else "Keep on this phone (offline)",
+        )
+        AlertDialog.Builder(this).setTitle(file.name).setItems(options) { _, which ->
+            if (which == 0) chooseShare(file) else toggleOffline(file, kept)
+        }.show()
+    }
+
+    private fun toggleOffline(file: RemoteItem, kept: Boolean) {
+        if (kept) {
+            OfflineStore.remove(this, file.id)
+            android.widget.Toast.makeText(this, "Removed from this phone.", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        android.widget.Toast.makeText(this, "Saving ${file.name} to this phone...", android.widget.Toast.LENGTH_SHORT).show()
+        thread {
+            val message = try {
+                OfflineStore.keep(this, api, file)
+                "Kept on this phone: ${file.name}"
+            } catch (e: Exception) {
+                EventLog.log("keep offline failed: ${e.message}")
+                "Could not save it: ${e.message}"
+            }
+            runOnUiThread { android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show() }
+        }
+    }
+
+    private fun chooseShare(file: RemoteItem) {
+        val choices = arrayOf("Link for 1 day", "Link for 7 days", "One-time link (works once)", "Link that never expires")
+        AlertDialog.Builder(this).setTitle("Share ${file.name}").setItems(choices) { _, which ->
+            val hours = when (which) { 0 -> 24; 1 -> 24 * 7; 2 -> 24 * 7; else -> null }
+            val limit = if (which == 2) 1 else null
+            thread {
+                try {
+                    val link = api.createShareLink(file.id, hours, limit)
+                    runOnUiThread { offerLink(link) }
+                } catch (e: Exception) {
+                    EventLog.log("share failed: ${e.message}")
+                    runOnUiThread { android.widget.Toast.makeText(this, "Could not make a link: ${e.message}", android.widget.Toast.LENGTH_LONG).show() }
+                }
+            }
+        }.show()
+    }
+
+    private fun offerLink(link: String) {
+        val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Choud link", link))
+        AlertDialog.Builder(this)
+            .setTitle("Link copied")
+            .setMessage("$link\n\nAnyone who has this link can open the file until it expires.")
+            .setPositiveButton("Send...") { _, _ ->
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, link)
+                }
+                startActivity(Intent.createChooser(send, "Send link"))
+            }
+            .setNegativeButton("Done", null)
+            .show()
     }
 
     private fun showInfo() {

@@ -95,6 +95,12 @@ class FilesTab(private val host: Host) : Tab {
                 host.runOnUi {
                     loading = false
                     error = e.message ?: e.javaClass.simpleName
+                    // Offline: show what is kept on this phone so it can still be opened.
+                    val kept = OfflineStore.items(host.ui.context)
+                    if (kept.isNotEmpty()) {
+                        folders = emptyList()
+                        files = kept.toMutableList()
+                    }
                     render()
                 }
             }
@@ -120,6 +126,7 @@ class FilesTab(private val host: Host) : Tab {
         }
         statusView.text = when {
             loading -> "Loading..."
+            error != null && files.isNotEmpty() -> "Server not reachable. Showing the ${files.size} file(s) kept on this phone."
             error != null -> "Could not load: $error (tap Refresh)"
             folders.isEmpty() && files.isEmpty() -> "This folder is empty."
             else -> "${folders.size} folder${if (folders.size == 1) "" else "s"}, ${files.size} file${if (files.size == 1) "" else "s"}"
@@ -186,7 +193,8 @@ class FilesTab(private val host: Host) : Tab {
             val index = position - folders.size
             val file = files[index]
             holder.name.text = file.name
-            holder.sub.text = "${fmtBytes(file.size)}  |  ${fmtDate(file.displayMillis)}"
+            holder.sub.text = "${fmtBytes(file.size)}  |  ${fmtDate(file.displayMillis)}" +
+                if (OfflineStore.has(host.ui.context, file.id)) "  |  on this phone" else ""
             holder.badge.text = typeBadge(file.name)
             holder.badge.visibility = View.VISIBLE
             val kind = viewerKind(file.name, file.mime)
