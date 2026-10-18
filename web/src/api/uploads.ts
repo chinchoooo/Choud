@@ -15,6 +15,9 @@ import type { FileResponse } from "../types/files";
 // requests, small enough that a single chunk failure doesn't waste much
 // of an unreliable connection. Not tuned against anything beyond that —
 // revisit if real usage shows a better number.
+// Chunks in flight at once (scripts/benchmark.py uses the same number).
+const CHUNK_LANES = 3;
+
 export const DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024; // 5 MiB
 
 // Files smaller than this just use the plain POST /api/files/upload
@@ -139,23 +142,52 @@ export async function resumeUpload(
   let sentBytes = Math.min(file.size, doneCount * status.chunk_size);
   options.onBytes?.(sentBytes);
 
-  try {
-    for (const index of status.missing_chunk_indices) {
+  // A few chunks travel at once so the line is not idle while the server acknowledges one.
+  const inFlight = new Map<number, number>(); // chunk index -> bytes sent so far
+  const reportBytes = () => {
+    let live = 0;
+    for (const loaded of inFlight.values()) live += loaded;
+    options.onBytes?.(Math.min(file.size, sentBytes + live));
+  };
+  const queue = [...status.missing_chunk_indices];
+
+  async function lane(): Promise<void> {
+    for (let index = queue.shift(); index !== undefined; index = queue.shift()) {
       throwIfCancelled(options.signal);
       const start = index * status.chunk_size;
       const blob = file.slice(start, start + status.chunk_size);
-      const base = sentBytes;
-      await uploadChunkWithRetry(
-        uploadId,
-        index,
-        blob,
-        options.onBytes ? (loaded) => options.onBytes?.(Math.min(file.size, base + loaded)) : undefined,
-        options.signal,
-      );
-      sentBytes = Math.min(file.size, base + blob.size);
-      options.onBytes?.(sentBytes);
+      inFlight.set(index, 0);
+      try {
+        await uploadChunkWithRetry(
+          uploadId,
+          index,
+          blob,
+          options.onBytes
+            ? (loaded) => {
+                inFlight.set(index as number, loaded);
+                reportBytes();
+              }
+            : undefined,
+          options.signal,
+        );
+      } finally {
+        inFlight.delete(index);
+      }
+      sentBytes += blob.size;
+      reportBytes();
       doneCount += 1;
       onProgress?.(doneCount / status.total_chunks);
+    }
+  }
+
+  try {
+    const results = await Promise.allSettled(
+      Array.from({ length: Math.min(CHUNK_LANES, queue.length) }, () => lane()),
+    );
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (failed) {
+      queue.length = 0;
+      throw failed.reason;
     }
   } catch (err) {
     if (err instanceof UploadCancelled) {

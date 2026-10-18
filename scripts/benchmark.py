@@ -40,7 +40,6 @@ import math
 import os
 import platform
 import random
-import statistics
 import sys
 import threading
 import time
@@ -62,6 +61,7 @@ MIB = 1024 * 1024
 BLOCK = 64 * 1024
 SMALL_LIMIT = 20 * MIB  # the apps send anything larger in 5 MiB chunks
 CHUNK = 5 * MIB
+CHUNK_LANES = 3  # chunks in flight per large file; web/src/api/uploads.ts uses the same number
 
 # Published tests we compare against (see docs/benchmarks.md for the sources and caveats).
 PUBLISHED = {
@@ -257,19 +257,34 @@ def upload_file(api: Api, line: Line, folder_id: str, name: str, seed: int, size
     index, sent = 0, 0
     stream = blob(seed, size)
     buffer = b""
-    while sent < size:
-        want = min(CHUNK, size - sent)
-        while len(buffer) < want:
-            buffer += next(stream)
-        piece, buffer = buffer[:want], buffer[want:]
-        headers, body = multipart({}, "chunk", "chunk", len(piece), iter([piece]), line)
-        reply = api.call(
-            "POST", f"/api/uploads/{session}/chunks/{index}", headers=headers, content=body
-        )
-        if reply.status_code != 200:
-            raise RuntimeError(f"chunk {index} of {name}: {reply.status_code} {reply.text[:200]}")
-        sent += want
-        index += 1
+    lanes = threading.BoundedSemaphore(CHUNK_LANES)  # the apps send a few chunks at once
+    failures: list[str] = []
+
+    def send(i: int, piece: bytes) -> None:
+        try:
+            headers, body = multipart({}, "chunk", "chunk", len(piece), iter([piece]), line)
+            reply = api.call(
+                "POST", f"/api/uploads/{session}/chunks/{i}", headers=headers, content=body
+            )
+            if reply.status_code != 200:
+                failures.append(f"chunk {i} of {name}: {reply.status_code} {reply.text[:200]}")
+        except Exception as exc:  # noqa: BLE001 - reported below
+            failures.append(f"chunk {i} of {name}: {exc}")
+        finally:
+            lanes.release()
+
+    with ThreadPoolExecutor(CHUNK_LANES) as pool:
+        while sent < size and not failures:
+            want = min(CHUNK, size - sent)
+            while len(buffer) < want:
+                buffer += next(stream)
+            piece, buffer = buffer[:want], buffer[want:]
+            lanes.acquire()
+            pool.submit(send, index, piece)
+            sent += want
+            index += 1
+    if failures:
+        raise RuntimeError(failures[0])
     done = api.call("POST", f"/api/uploads/{session}/complete")
     if done.status_code not in (200, 201):
         raise RuntimeError(f"complete {name}: {done.status_code} {done.text[:200]}")

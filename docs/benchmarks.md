@@ -89,16 +89,38 @@ database and the storage share a disk, the Choud version, and whether the client
 
 ## Results
 
-Not yet published. Run the command above on the server and paste the two tables
-(`benchmark-results-<label>.md`) here with the date, the Choud version, and the hardware. A first sanity run
-on a Windows laptop with Docker Desktop (not representative, because its virtual disk makes each upload cost
-two to three hundred milliseconds) already shows the design effect on a local network: a screen of 24
-thumbnails took about 0.4 seconds as 24 separate requests and about 0.06 seconds as one batch request, before
-adding any network distance.
+Run on 2026-10-18 on the home server (Linux Mint, 4 logical CPUs), Choud 0.5.1, client on the same machine
+over `localhost` with the line speeds simulated by the script. One run each; Drive's numbers are other
+people's single runs on other networks, so read the comparison as indicative.
 
-| Test (line speed) | Google Drive, published | Choud |
+| Test (line speed) | Google Drive, published | Choud 0.5.1 |
 | --- | --- | --- |
-| 500 MB at 19.69 Mbps up | 3:33 (95% of the line) | |
-| 500 MB at 187.95 Mbps down | 0:24 | |
-| 5 GB mixed folder at 100 Mbps up | 7:15 (92% of the line) | |
-| 5 GB mixed folder at 100 Mbps down | 7:18 | |
+| 500 MB at 19.69 Mbps up | 3:33 (95% of the line) | 3:43 (90.7%) |
+| 500 MB at 187.95 Mbps down | 0:24 (89%) | 0:24 (85.6%) |
+| 5 GB mixed folder (1,045 files) at 100 Mbps up | 7:15 (92%) | 8:54 (74.9%) |
+| 5 GB mixed folder at 100 Mbps down | 7:18 (91%) | 6:41 (99.6%) |
+
+What this says, honestly:
+
+- Downloads keep up with the line. Uploads of one big file are within about five points of Drive.
+- Uploading about a thousand small files is the weak spot: each upload costs roughly 65 ms of server work
+  (a 100 KB upload takes 67 ms against 16 ms for a bare health check), which adds up over a thousand files.
+- Big uploads sent one 5 MiB chunk at a time leave the line idle between chunks. Clients now send up to
+  three chunks at once; the 500 MB number above is from before that change and will be re-measured.
+
+API latency on the same machine (milliseconds, median / 95th percentile):
+
+| Call | p50 | p95 |
+| --- | --- | --- |
+| health check | 15.9 | 30.7 |
+| upload 100 KB (new bytes) | 66.9 | 89.5 |
+| list a folder of about 500 files | 133.3 | 217.0 |
+| search by name | 23.3 | 36.3 |
+| photo library index, full (1,575 items) | 90.2 | 173.7 |
+| photo library index, nothing changed (304) | 13.1 | 15.8 |
+| one thumbnail (WebP, 256 px) | 6.2 | 6.4 |
+| a screen of 24 thumbnails, 24 separate requests | 150.9 | 166.5 |
+| a screen of 24 thumbnails, one batch request | 14.9 | 21.9 |
+
+The batch request makes a screen of thumbnails about ten times faster, because a page of photos is one round
+trip instead of 24. That gap grows with network distance (`--rtt-ms 80` models a phone far away).

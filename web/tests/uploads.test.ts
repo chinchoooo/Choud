@@ -72,6 +72,54 @@ describe("resumeUpload", () => {
     expect(progress[progress.length - 1]).toBe(1);
   });
 
+  it("sends several chunks at once, never more than three, and sends every one", async () => {
+    const chunks = 8;
+    const file = new File([new Uint8Array(chunks * 10)], "wide.bin");
+    let active = 0;
+    let peak = 0;
+    const sent = new Set<number>();
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/uploads/upload-3")) {
+        return jsonResponse({
+          id: "upload-3",
+          file_name: "wide.bin",
+          file_size: chunks * 10,
+          chunk_size: 10,
+          total_chunks: chunks,
+          status: "pending",
+          created_at: "2026-01-01T00:00:00Z",
+          expires_at: "2026-01-02T00:00:00Z",
+          received_chunk_indices: [],
+          missing_chunk_indices: Array.from({ length: chunks }, (_, i) => i),
+        });
+      }
+      if (url.includes("/chunks/")) {
+        const index = Number(url.split("/chunks/")[1]);
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        active -= 1;
+        sent.add(index);
+        return jsonResponse({ index, received: true, received_count: sent.size, total_chunks: chunks });
+      }
+      if (url.endsWith("/complete")) {
+        return jsonResponse({ id: "file-3", name: "wide.bin", size: chunks * 10 });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const progress: number[] = [];
+    await resumeUpload("upload-3", file, (fraction) => progress.push(fraction));
+
+    expect(sent.size).toBe(chunks);
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(3);
+    expect(progress[progress.length - 1]).toBe(1);
+  });
+
   it("throws a ResumableUploadError carrying the session id when a chunk keeps failing", async () => {
     const file = new File([new Uint8Array(10)], "small.bin");
 
