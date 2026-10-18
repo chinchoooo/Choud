@@ -3,24 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Choud: your own cloud</title>
-  <meta name="description" content="Choud is a self-hosted Google Drive alternative that runs on one spare Linux machine. Photos, files, versions, search inside documents, link sharing, Android and desktop backup. No subscription, no tracking.">
+  <title>Choud: a self-hosted Google Drive alternative</title>
+  <meta name="description" content="Choud is a free, open-source Google Drive alternative you run on one spare Linux machine at home. Photos, files, versions, search inside documents, link sharing, Android and desktop backup. Your files stay on a disk you own.">
+  <link rel="canonical" href="https://chinchoooo.github.io/Choud/">
   <meta property="og:title" content="Choud: your own cloud">
-  <meta property="og:description" content="A self-hosted Google Drive alternative for one spare Linux machine. Your files, your disk, nobody else's server.">
+  <meta property="og:description" content="A free, open-source Google Drive alternative for one spare Linux machine. Your own cloud. Your own server. Nobody else's.">
   <meta property="og:image" content="https://chinchoooo.github.io/Choud/assets/social-preview.png">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="assets/choud-logo-light.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=VT323&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="preload" href="assets/fonts/DepartureMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/site.css">
   <script>
     try {
-      document.documentElement.classList.add("js");
       var saved = localStorage.getItem("choud-theme");
       if (saved === "ink" || saved === "paper") document.documentElement.dataset.theme = saved;
     } catch (e) {}
+  </script>
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Choud","applicationCategory":"UtilitiesApplication","operatingSystem":"Linux, Android","license":"https://opensource.org/licenses/MIT","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"codeRepository":"https://github.com/chinchoooo/Choud","description":"A free, open-source, self-hosted Google Drive alternative."}
   </script>
 </head>
 <body>
@@ -28,16 +29,15 @@
 <header class="top">
   <div class="wrap">
     <a class="brand" href="#top" aria-label="Choud home">
-      <img class="logo-light" src="assets/choud-logo-light.png" alt="">
-      <img class="logo-dark" src="assets/choud-logo-dark.png" alt="">
+      <img class="mark logo-light" src="assets/choud-logo-light.png" alt="" width="36" height="36">
+      <img class="mark logo-dark" src="assets/choud-logo-dark.png" alt="" width="36" height="36">
       Choud
     </a>
     <nav class="top" aria-label="Sections">
-      <a href="#speed">Speed</a>
-      <a href="#plug">Pull the plug</a>
-      <a href="#features">Features</a>
-      <a href="#built">How it works</a>
-      <a href="#run">Run it</a>
+      <a class="opt" href="#store">How it works</a>
+      <a class="opt" href="#speed">Speed</a>
+      <a href="#self-host">Self-host</a>
+      <a class="opt" href="#download">Download</a>
       <a href="https://github.com/chinchoooo/Choud">GitHub</a>
       <button class="flip" id="flip" type="button" aria-label="Switch between black-on-white and white-on-black">[ ink / paper ]</button>
     </nav>
@@ -46,103 +46,88 @@
 
 <main id="top">
   <div class="wrap hero">
-    <div class="grid">
+    <div class="hero-grid">
       <div>
-        <h1 id="headline" data-text="Your own cloud. Your own server. Nobody else's.">Your own cloud. Your own server. Nobody else's.</h1>
-        <p class="lead">Choud is a self-hosted Google Drive alternative that runs on one spare Linux machine at home. Your files sit on your own disk, are stored once however often you upload them, and reach your phone and laptops over Tailscale or your home network. No subscription. No tracking.</p>
-        <div class="cta">
-          <a class="btn solid" href="https://github.com/chinchoooo/Choud/releases/latest">Get the Android app</a>
-          <a class="btn" href="#run">Run your own</a>
+        <h1>Your own cloud. Your own server. Nobody else's.</h1>
+        <p class="lead">Choud is a free, open-source Google Drive alternative you run on one spare Linux machine at home. Your phone backs up its photos to it, your laptop syncs folders with it, and every byte stays on a disk you own.</p>
+        <div class="row-btns">
+          <a class="btn solid" href="#self-host">Run your own</a>
+          <a class="btn" href="https://github.com/chinchoooo/Choud/releases/latest">Android app</a>
           <a class="btn" href="https://github.com/chinchoooo/Choud">Read the code</a>
         </div>
+        <p class="note"><b>Fun fact about this page:</b> the fonts are hosted right here. A privacy project that phoned Google just to draw its own headline would be a bit rich. Open your browser's Network tab. We'll wait.</p>
       </div>
-      <div class="scene" aria-hidden="true">
-        <div class="cloud">
-          <img class="logo-light" src="assets/choud-logo-light.png" alt="">
-          <img class="logo-dark" src="assets/choud-logo-dark.png" alt="">
+
+      <div data-store>
+        <div class="drop">
+          <div class="cloud-zone">
+            <img class="cloud logo-light" src="assets/choud-logo-light.png" alt="" width="200" height="180">
+            <img class="cloud logo-dark" src="assets/choud-logo-dark.png" alt="" width="200" height="180">
+            <p class="hint">Drop any file on the cloud.</p>
+          </div>
+          <div class="tools">
+            <label class="btn" for="file" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}">Pick a file</label>
+            <input class="sr" id="file" type="file">
+            <button class="btn" id="use-logo" type="button" data-src="assets/choud-logo-light.png">Use our logo</button>
+          </div>
+          <div class="receipt" id="receipt" data-hash="8aa8ec03cf5988a6609dfd2399c99777b553d13a19f3652798e5f610617fa64e">
+            <span class="title">RECEIPT ──────────────────</span>
+            <dl>
+              <dt>file</dt><dd>choud-logo-light.png · 14.1 KB</dd>
+              <dt>sha256</dt><dd>8aa8ec03cf5988a6…617fa64e</dd>
+              <dt>stored at</dt><dd>objects/8a/8aa8ec03cf59…</dd>
+              <dt>written</dt><dd>14,430 bytes · flushed, then renamed</dd>
+              <dt>hashed in</dt><dd>precomputed for this example</dd>
+            </dl>
+            <div class="fp-row">
+              <canvas width="16" height="16" role="img" aria-label="The logo's 256-bit hash drawn as a 16 by 16 pixel image"></canvas>
+              <span class="small">Its fingerprint: all 256 bits of the hash, one pixel each.</span>
+            </div>
+            <p class="verdict">Stored once. Same bytes under any other name cost nothing.</p>
+          </div>
         </div>
-        <i></i><i></i><i></i><i></i><i></i><i></i>
+        <p class="caption">A simulation of Choud's naming rule, run in your browser. Nothing is uploaded or saved: this page has no server to send it to. Try the same file twice.</p>
+        <div class="sr" id="live" aria-live="polite"></div>
       </div>
     </div>
   </div>
 
-  <div class="ticker" aria-hidden="true">
-    <div class="run" id="run-ticker">
-      <span>stored once, however often you upload it</span>
-      <span>storage tested by killing it mid-write</span>
-      <span>24 thumbnails in 15 ms</span>
-      <span>96.3% of the line on a 500 MB upload</span>
-      <span>no subscription</span>
-      <span>no tracking</span>
-      <span>every overwrite is a version you can restore</span>
-      <span>MIT licensed</span>
+  <img class="horizon" src="assets/horizon.png" alt="" width="1600" height="160">
+
+  <div class="wrap">
+    <div class="proof">
+      <a href="#speed"><b>3:31</b><span>500 MB upload on a 19.69 Mbps line. Google Drive's published run: 3:33.</span></a>
+      <a href="#speed"><b>15 ms</b><span>A screen of 24 thumbnails as one request, measured on the server.</span></a>
+      <a href="https://github.com/chinchoooo/Choud/actions/workflows/ci.yml"><b>91 + 384</b><span>Engine and server tests, run on every change.</span></a>
+      <a href="https://github.com/chinchoooo/Choud/blob/main/LICENSE"><b>MIT</b><span>Free to run, change and keep. No subscription.</span></a>
     </div>
   </div>
 
-  <section id="speed">
-    <div class="wrap">
-      <h2>Fast, measured the same way as the published tests</h2>
-      <p>The benchmark script reproduces the line speeds from Gizmodo's and Cloudwards' Google Drive tests and measures how much of the line each service actually uses. Same file size, same speeds, so the comparison is fair. Choud ran on a spare laptop at home.</p>
-
-      <div class="panel" id="panel">
-        <div class="bar-title"><span>upload 500 MB &middot; line 19.69 Mbps</span><span>share of the line used</span></div>
-        <div class="rows">
-          <div class="row">
-            <span class="who">Choud</span>
-            <div class="track"><div class="fill" data-to="96.3"></div><span class="mark" style="left:95%" title="Google Drive, published: 95%"></span></div>
-            <span class="num"><b data-count="96.3">0</b>% &middot; 3:31</span>
-          </div>
-          <div class="row">
-            <span class="who">Google Drive</span>
-            <div class="track"><div class="fill" data-to="95"></div></div>
-            <span class="num"><b data-count="95">0</b>% &middot; 3:33</span>
-          </div>
-        </div>
-        <div class="foot">Dashed line: Google Drive's published 95%. Drive's figure is Gizmodo's single run on their network; Choud's is one run on a home server. Read it as "level with", not "faster than".</div>
+  <section id="store">
+    <div class="wrap split">
+      <div>
+        <h2>What just happened when you dropped that file</h2>
+        <p>That was the real naming rule from Choud's storage engine, run on your own device. Here is what the engine does for every file you give it:</p>
+        <ol class="steps">
+          <li><span>It names the file by its SHA-256 hash, a fingerprint of the bytes. The name is the content.</span></li>
+          <li><span>It files it under the first two characters, so no folder ever grows without end.</span></li>
+          <li><span>It writes to a temporary name, flushes the bytes to the disk, renames, then flushes the folder entry.</span></li>
+          <li><span>Same bytes under any name: stored once.</span></li>
+        </ol>
+        <p style="margin-top:1rem" class="muted">Downloads re-hash the stored bytes first, so a damaged file is caught instead of served.</p>
       </div>
-
-      <div class="scroll" style="margin-top:1.6rem">
-        <table>
-          <thead><tr><th>Test</th><th>Google Drive (published)</th><th>Choud</th></tr></thead>
-          <tbody>
-            <tr><td>500 MB upload, 19.69 Mbps line</td><td>3:33</td><td class="win">3:31</td></tr>
-            <tr><td>500 MB download, 187.95 Mbps line</td><td>0:24</td><td class="win">0:24</td></tr>
-            <tr><td>5 GB mixed folder (1,045 files) up, 100 Mbps line</td><td>7:15</td><td>7:57</td></tr>
-            <tr><td>The same folder down</td><td>7:18</td><td class="win">7:01</td></tr>
-            <tr><td>A screen of 24 photo thumbnails, 24 requests</td><td>&mdash;</td><td>151 ms</td></tr>
-            <tr><td>The same screen, one batch request</td><td>&mdash;</td><td class="win">15 ms</td></tr>
-            <tr><td>Photo library check when nothing changed</td><td>&mdash;</td><td class="win">13 ms</td></tr>
-          </tbody>
-        </table>
+      <div>
+        <h3>See step three go wrong</h3>
+        <p>Most storage trouble happens when the power dies halfway through saving. The next section lets you cut it.</p>
+        <a class="btn" href="#plug">Pull the plug ↓</a>
       </div>
-      <p class="muted">The photo grid is fast because a screen of thumbnails is one round trip instead of 24, and a blurry placeholder paints instantly. The 5 GB folder is the honest weak spot: a thousand small files upload about 40 seconds slower than Drive's published run, partly because Choud flushes every file to disk before it counts as saved. Every test, and how to repeat all of them yourself: <a href="https://github.com/chinchoooo/Choud/blob/main/docs/benchmarks.md">docs/benchmarks.md</a>.</p>
     </div>
   </section>
 
-  <section id="landlord">
-    <div class="wrap">
-      <h2>The landlord problem</h2>
-      <p>Every big cloud drive works the same way: your memories sit in someone else's building, and you pay rent to keep them there. That is not a secret. It is just a deal worth reading twice.</p>
-      <div class="scroll">
-        <table class="case">
-          <thead><tr><th>The question</th><th>A rented cloud drive</th><th>Choud</th></tr></thead>
-          <tbody>
-            <tr><td>How much room do I get?</td><td>15 GB free, shared with your mail and photos. Then a monthly bill, for as long as you want your files.</td><td class="win">Your whole disk. Buy a bigger one once.</td></tr>
-            <tr><td>Whose computer holds my files?</td><td>The company's servers.</td><td class="win">The machine in your house.</td></tr>
-            <tr><td>Who can lock me out?</td><td>The company can suspend or close an account under its terms, and the files go with it.</td><td class="win">Nobody but you.</td></tr>
-            <tr><td>What if they drop the product?</td><td>Google has shut down a long list of products. It is their call, on their date.</td><td class="win">It is your server and your code. MIT licensed, so it keeps running.</td></tr>
-            <tr><td>What does it cost?</td><td>A subscription.</td><td class="win">Nothing. You bring the hardware.</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="stamp-row"><span class="stamp" id="stamp" aria-hidden="true">YOURS</span><p class="muted">The middle column comes from Google's published terms and storage plans: check them yourself at <a href="https://policies.google.com/terms">policies.google.com/terms</a>. Drive is a good product, and on speed Choud only matches it. The difference is who owns the building.</p></div>
-    </div>
-  </section>
-
-  <section id="plug">
+  <section id="plug" data-plug>
     <div class="wrap">
       <h2>Pull the plug</h2>
-      <p>Most storage trouble happens when the power dies halfway through saving. Press the button, then pull the plug while the file is being written. Both disks lose power at the same instant.</p>
+      <p>Press the button, then pull the plug while the file is being written. Both disks lose power at the same instant.</p>
       <div class="plug-grid">
         <div class="disk" id="disk-a">
           <h3>An app that saves over the old file</h3>
@@ -153,7 +138,7 @@
         <div class="disk" id="disk-b">
           <h3>Choud: write aside, flush, then rename</h3>
           <div class="blocks" data-blocks></div>
-          <ol class="steps" data-steps>
+          <ol data-steps>
             <li>write to a temporary name</li>
             <li>flush the bytes to the disk</li>
             <li>rename to the real name</li>
@@ -163,307 +148,182 @@
           <p class="result" data-result></p>
         </div>
       </div>
-      <div class="plug-controls">
+      <div class="row-btns">
         <button class="btn solid" id="plug-btn" type="button">Start saving report.pdf</button>
         <button class="btn" id="plug-reset" type="button" hidden>Try again</button>
       </div>
-      <p class="muted">A simplified animation of the rule the storage engine follows. The real thing is tested by killing a process mid-write: see <a href="https://github.com/chinchoooo/Choud/blob/main/engine/tests/durability_tests.cpp">durability_tests.cpp</a>.</p>
+      <p class="caption">A simplified animation of the rule the engine follows. The real thing is tested by killing a process mid-write: <a href="https://github.com/chinchoooo/Choud/blob/main/engine/tests/durability_tests.cpp">durability_tests.cpp</a>.</p>
+    </div>
+  </section>
+
+  <section id="built">
+    <div class="wrap split">
+      <div>
+        <h2>Two halves. The one that touches your bytes never touches the network.</h2>
+        <p>A Python API owns accounts, permissions, versions, sharing and search. A C++ engine owns hashing, storage and deduplication. Only the API can talk to the engine. Click a box.</p>
+        <div class="arch" role="group" aria-label="Architecture">
+          <button type="button" data-note="clients" aria-pressed="true">Browser · Android · Desktop</button>
+          <div class="edge">HTTP, over Tailscale or your home network</div>
+          <button type="button" data-note="caddy" aria-pressed="false">Caddy (the front door)</button>
+          <div class="edge">→</div>
+          <button type="button" data-note="api" aria-pressed="false">Python API (FastAPI)</button>
+          <div class="edge">↔ <button type="button" data-note="db" aria-pressed="false" style="display:inline;padding:0.1rem 0.5rem">PostgreSQL</button></div>
+          <div class="edge dashed">internal network only</div>
+          <button type="button" data-note="engine" aria-pressed="false">C++ engine</button>
+          <div class="edge">→</div>
+          <button type="button" data-note="disk" aria-pressed="false">Your disk</button>
+        </div>
+      </div>
+      <div>
+        <div class="arch-note" id="arch-note" aria-live="polite">
+          <h3>Browser, Android app, desktop client</h3>
+          <p>Talk only to the API, over Tailscale or your home network. They never reach the engine or the database.</p>
+        </div>
+        <p class="caption">Code: <a href="https://github.com/chinchoooo/Choud/tree/main/server">server/</a> · <a href="https://github.com/chinchoooo/Choud/tree/main/engine">engine/</a> · <a href="https://github.com/chinchoooo/Choud/tree/main/web">web/</a> · <a href="https://github.com/chinchoooo/Choud/tree/main/android">android/</a> · <a href="https://github.com/chinchoooo/Choud/tree/main/client">client/</a></p>
+      </div>
     </div>
   </section>
 
   <section id="features">
     <div class="wrap">
-      <h2>What you get</h2>
-      <dl class="features">
-        <div class="pair reveal" style="--i:0"><dt>Files</dt><dd>Folders, drag-and-drop, resumable uploads (a dropped connection only resends what is missing), a photo timeline, favorites, recents and an activity log.</dd></div>
-        <div class="pair reveal" style="--i:1"><dt>Never lose anything</dt><dd>Every overwrite is a new version you can restore. Deleted files wait in a trash. Nothing is destroyed on a doubt.</dd></div>
-        <div class="pair reveal" style="--i:2"><dt>Find anything</dt><dd>Search by file name and by what is written inside documents: text, code, PDF, Word and OpenDocument.</dd></div>
-        <div class="pair reveal" style="--i:3"><dt>View anywhere</dt><dd>Built-in viewers for images, video, audio, PDF and text, with thumbnails. No other app needed.</dd></div>
-        <div class="pair reveal" style="--i:4"><dt>Share</dt><dd>Public links with an expiry and a password, view-only or "add and edit". The people you share with need no account, and one command makes links work from anywhere without exposing the rest of your drive. A pause switch turns them all off.</dd></div>
-        <div class="pair reveal" style="--i:5"><dt>Phone</dt><dd>An Android app backs up photos and videos in the background with the phone's real dates, and resumes if the connection drops. Its Photos tab keeps the whole library on the phone for slow links.</dd></div>
-        <div class="pair reveal" style="--i:6"><dt>Laptops</dt><dd>A desktop client mirrors a folder both ways, with conflict copies and never a silent overwrite, or quietly backs up folders you choose.</dd></div>
-        <div class="pair reveal" style="--i:7"><dt>Time travel</dt><dd>Rewind any folder to an earlier moment, preview it, and put it back. An undo for ransomware and bad syncs.</dd></div>
-        <div class="pair reveal" style="--i:8"><dt>Vault</dt><dd>An encrypted vault sealed in your browser. The server never sees the contents, or even the file names.</dd></div>
-        <div class="pair reveal" style="--i:9"><dt>People</dt><dd>Invite family and friends with one-time codes. Each person gets their own storage and quota.</dd></div>
-        <div class="pair reveal" style="--i:10"><dt>Safe by default</dt><dd>Optional two-factor login, a registration lock, rate limiting, hash-checked uploads, nightly verified backups and webhook alerts.</dd></div>
-      </dl>
+      <h2>What it does for you</h2>
+      <div class="chapters">
+        <div class="chapter"><h3>Photos</h3><p>The Android app backs up your camera roll in the background, keeping each photo's real date, and resumes if the connection drops. The photo timeline paints blurry placeholders first and fills in a screenful of thumbnails at a time, so it stays quick on a slow link.</p></div>
+        <div class="chapter"><h3>Find and view</h3><p>Search by file name and by what is written inside documents: text, code, PDF, Word and OpenDocument. Images, video, audio, PDF and text open in built-in viewers, so you need no other app.</p></div>
+        <div class="chapter"><h3>Never lose anything</h3><p>Every overwrite is a new version you can restore, and deleted files wait in a trash. Rewind puts any folder back the way it was at an earlier moment, with a preview first: an undo for ransomware and bad syncs.</p></div>
+        <div class="chapter"><h3>Share</h3><p>Links with an expiry and a password, view-only or "add and edit". File-request links let people send you files without seeing anything. The people you share with need no account, and one switch pauses every link at once.</p></div>
+        <div class="chapter"><h3>Vault and people</h3><p>A vault sealed in your browser: the server never sees file contents or names, only how many sealed files there are, their sizes and when they were added. Invite family and friends with one-time codes; each gets their own storage and quota.</p></div>
+      </div>
+      <p class="muted" style="margin-top:1rem">Also: a desktop client that mirrors a folder both ways with conflict copies and never a silent overwrite, optional two-factor login, nightly verified backups, and webhook alerts. Real screenshots are coming in the next update.</p>
     </div>
   </section>
 
-  <section id="built">
+  <section id="speed">
     <div class="wrap">
-      <h2>How it is built</h2>
-      <div class="cols">
-        <div>
-          <p>Two halves, each doing what it is best at. The Python API owns accounts, permissions, versions, sharing and search. The C++ engine owns hashing, storage by content, deduplication and assembling chunks. The engine is never reachable from the network: only the API talks to it.</p>
-          <ul class="plain">
-            <li><b>Crash-tested storage.</b> A file is flushed to disk before it gets its final name. The tests kill the process mid-write on purpose and check that no half-written file ever appears.</li>
-            <li><b>Checked, not trusted.</b> Hashes are verified, paths are confined to the storage folder, and the request parser is fuzzed and run under sanitizers.</li>
-            <li><b>Public links stay narrow.</b> Share links are served by a second door that can only reach shared files, never your account or the rest of the API.</li>
-          </ul>
-          <p class="muted">91 engine tests and 384 server tests, plus the web, Android and desktop suites.</p>
+      <h2>As fast as Drive on one big file. Slower on a thousand small ones.</h2>
+      <p>The benchmark script reproduces the line speeds from Gizmodo's and Cloudwards' published Google Drive tests and measures how much of the line each service uses.</p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Test</th><th>Google Drive (published)</th><th>Choud</th><th>Difference</th></tr></thead>
+          <tbody>
+            <tr><td>500 MB up, 19.69 Mbps line</td><td class="num">3:33</td><td class="num">3:31</td><td class="num">level</td></tr>
+            <tr><td>500 MB down, 187.95 Mbps line</td><td class="num">0:24</td><td class="num">0:24</td><td class="num">level</td></tr>
+            <tr class="gap"><td>5 GB in 1,045 files, up, 100 Mbps line</td><td class="num">7:15</td><td class="num">7:57</td><td class="num">42 s slower</td></tr>
+            <tr><td>The same folder, down</td><td class="num">7:18</td><td class="num">7:01</td><td class="num">17 s faster</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:1rem">Why the slower row: Choud flushes every file to disk before it counts as saved, which is what keeps it intact through a power cut. It is a deliberate trade, and the next section's demo is the reason.</p>
+      <p>The photo grid is quick because a screen of 24 thumbnails is one request instead of 24: 151 ms the old way, 15 ms now, and 13 ms to find out nothing changed. Those two are measured on the server itself.</p>
+      <p class="caption">Choud: one run each, on the author's home server (Linux Mint, 4 CPUs, v0.5.1), with the client on the same machine and the line speeds simulated by scripts/benchmark.py. Google Drive: Gizmodo's (500 MB) and Cloudwards' (5 GB) published runs, each on its own network. Indicative, not a verdict. <a href="https://github.com/chinchoooo/Choud/blob/main/docs/benchmarks.md">Every number, and how to repeat it.</a></p>
+    </div>
+  </section>
+
+  <section id="landlord">
+    <div class="wrap">
+      <h2>The landlord problem</h2>
+      <p>Most cloud drives work the same way: your memories sit in someone else's building, and you pay rent to keep them there. It is a deal worth reading twice.</p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>The question</th><th>A rented cloud drive</th><th>Choud</th></tr></thead>
+          <tbody>
+            <tr><td>How much room do I get?</td><td>15 GB free, shared with your mail and photos. Then a monthly bill, for as long as you want your files.</td><td>Your whole disk. Buy a bigger one once.</td></tr>
+            <tr><td>Whose computer holds my files?</td><td>The company's servers.</td><td>The machine in your house.</td></tr>
+            <tr><td>Who can lock me out?</td><td>The company can suspend or close an account under its terms, and the files go with it.</td><td>Nobody but you. Your disk can still fail, so Choud makes nightly verified backups.</td></tr>
+            <tr><td>What if the product goes away?</td><td>That is the company's call, on its date.</td><td>It is your server and MIT-licensed code, so it keeps running.</td></tr>
+            <tr><td>What does it cost?</td><td>A subscription.</td><td>Nothing. You bring the hardware and the electricity.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="stamp-row"><span class="stamp" id="stamp" aria-hidden="true">YOURS</span><p class="muted small">The middle column comes from Google's published terms and storage plans: check them at <a href="https://policies.google.com/terms">policies.google.com/terms</a>. Drive is a good product, and on speed Choud only matches it. The difference is who owns the building.</p></div>
+    </div>
+  </section>
+
+  <section id="self-host">
+    <div class="wrap split">
+      <div>
+        <h2>One old laptop. Three commands.</h2>
+        <p>You need a Linux machine with Docker. Setup writes strong random secrets. Deploy checks the machine, builds, starts, and waits until everything reports healthy.</p>
+        <div class="codewrap">
+<pre id="cmds">git clone https://github.com/chinchoooo/Choud &amp;&amp; cd Choud
+scripts/setup.sh     # strong random secrets in .env
+scripts/deploy.sh    # checks, builds, starts, waits until healthy</pre>
+          <button class="copy" type="button" data-copy="cmds">copy</button>
         </div>
-        <div>
-<pre aria-label="Architecture diagram">Browser · Android · Desktop
-      |  HTTP (Tailscale or LAN)
-      v
-Python API (FastAPI) --- PostgreSQL
-      |  internal network only
-      v
-C++ engine -------------- your disk
-</pre>
-          <span class="wire" id="wire" aria-hidden="true"></span>
-          <p class="muted" style="margin-top:0">A file travelling from your phone to your disk.</p>
-        </div>
+        <p style="margin-top:1rem" class="small muted">For your phone away from home, add Tailscale. The full guide, with backups and public links, is in <a href="https://github.com/chinchoooo/Choud/blob/main/docs/deployment.md">docs/deployment.md</a>.</p>
+      </div>
+      <div>
+<pre aria-label="Health check output">$ scripts/healthcheck.sh
+{
+  "status": "healthy",
+  "database": "healthy",
+  "engine": "healthy",
+  "storage": "healthy"
+}</pre>
       </div>
     </div>
   </section>
 
-  <section id="run">
+  <section id="download">
     <div class="wrap">
-      <h2>Run your own</h2>
-      <p>You need one Linux machine with Docker. An old laptop is plenty.</p>
-<pre>git clone https://github.com/chinchoooo/Choud
-cd Choud
-scripts/setup.sh      # creates .env with strong random secrets
-scripts/deploy.sh     # checks the machine, builds, starts, waits until healthy</pre>
-      <p style="margin-top:1rem">Then install Tailscale on the server and your devices, and open the server's address. The full guide, including backups and public links, is in <a href="https://github.com/chinchoooo/Choud/blob/main/docs/deployment.md">docs/deployment.md</a>.</p>
-      <div class="cta" style="margin-top:1.2rem">
-        <a class="btn solid" href="https://github.com/chinchoooo/Choud">Get the code</a>
-        <a class="btn" href="https://github.com/chinchoooo/Choud/releases/latest">Android app (.apk)</a>
-        <a class="btn" href="https://github.com/chinchoooo/Choud/tree/main/docs">Docs</a>
+      <h2>Get it</h2>
+      <div class="dl">
+        <div><b>Android</b><span>v0.5.1 APK (under 1 MB) from <a href="https://github.com/chinchoooo/Choud/releases/latest">GitHub releases</a>, with <code>SHA256SUMS.txt</code> to check it. Allow "install unknown apps" for your browser. It has had little time on real phones so far.</span></div>
+        <div><b>Desktop</b><span>A command-line sync client. Install it with <code>pip install -e client/</code> on Windows, macOS or Linux. It is not a point-and-click installer yet.</span></div>
+        <div><b>Web</b><span>Comes with your server, in any browser.</span></div>
+        <div><b>iPhone</b><span>No app. The web version runs in any modern browser, but it has not been tested much on iPhones.</span></div>
       </div>
     </div>
   </section>
 
-  <section id="honest">
+  <section id="gaps">
     <div class="wrap">
       <h2>What it is not, yet</h2>
       <ul class="plain">
-        <li>The Android app has had little time on a real phone. There is no iOS app.</li>
+        <li>The Android app has had little time on a real phone, and there is no iOS app.</li>
         <li>You can share by link only. Sharing with named accounts is not built.</li>
+        <li>The desktop client is command-line only, and there is no importer from Google Drive (use Google Takeout, then upload the folder).</li>
         <li>It is built for one household on one machine, not for thousands of users.</li>
-        <li>It has not had an independent security audit.</li>
+        <li>It has not had an independent security audit. Report problems privately via <a href="https://github.com/chinchoooo/Choud/blob/main/SECURITY.md">SECURITY.md</a>.</li>
       </ul>
-      <p class="muted">The plans and the history are in <a href="https://github.com/chinchoooo/Choud/blob/main/docs/roadmap.md">docs/roadmap.md</a> and the <a href="https://github.com/chinchoooo/Choud/blob/main/CHANGELOG.md">changelog</a>.</p>
+      <p class="muted">Plans and history: <a href="https://github.com/chinchoooo/Choud/blob/main/docs/roadmap.md">roadmap</a> and <a href="https://github.com/chinchoooo/Choud/blob/main/CHANGELOG.md">changelog</a>.</p>
+    </div>
+  </section>
+
+  <section id="read">
+    <div class="wrap split">
+      <div>
+        <h2>Read it in an afternoon</h2>
+        <p>Built by one person: a C++ storage engine, a Python API, a React web app, a Kotlin Android app and a Python sync client. The docs explain the reasoning, not only the commands.</p>
+        <ul class="plain">
+          <li><a href="https://github.com/chinchoooo/Choud/blob/main/docs/guide.md">The guide</a> and <a href="https://github.com/chinchoooo/Choud/blob/main/docs/architecture.md">architecture</a></li>
+          <li><a href="https://github.com/chinchoooo/Choud/blob/main/CONTRIBUTING.md">How to contribute</a></li>
+          <li><a href="https://github.com/chinchoooo/Choud/blob/main/docs/benchmarks.md">Benchmarks, with the raw output</a></li>
+        </ul>
+        <p class="small muted">More of my work: <a href="https://chinchoooo.github.io/">chinchoooo.github.io</a>.</p>
+      </div>
+      <div>
+        <h3>Questions</h3>
+        <details><summary>Is it free?</summary><p>Yes. It is MIT-licensed. You pay only for your own hardware and electricity.</p></details>
+        <details><summary>Can I reach it away from home?</summary><p>Yes, over Tailscale. Public share links work from anywhere with <code>scripts/enable-public-links.sh</code>, through a separate door that can only reach shared files.</p></details>
+        <details><summary>Will it run on Windows or a Mac?</summary><p>To try it, yes: <code>make dev</code> with Docker Desktop. To keep your files, use Linux. Docker Desktop's virtual disk makes every write slow.</p></details>
+        <details><summary>What if the disk dies?</summary><p>Choud makes nightly verified backups, with scripts to restore them. Point them at a second disk or machine.</p></details>
+        <details><summary>Is it secure?</summary><p>It has optional two-factor login, rate limiting, hash-checked uploads and a separate door for public links. It has not been independently audited.</p></details>
+        <details><summary>Can my family use it?</summary><p>Yes. Invite them with one-time codes; each person gets their own storage and quota.</p></details>
+      </div>
     </div>
   </section>
 </main>
 
 <footer>
   <div class="wrap">
-    <span>Choud &middot; MIT licensed &middot; made by <a href="https://github.com/chinchoooo">chinchoooo</a></span>
-    <span><a href="https://github.com/chinchoooo/Choud">GitHub</a> &middot; <a href="https://github.com/chinchoooo/Choud/blob/main/SECURITY.md">Security</a> &middot; <a href="https://github.com/chinchoooo/Choud/blob/main/CONTRIBUTING.md">Contribute</a></span>
+    <span>Choud · MIT · v0.5.1 · This page has no analytics, no cookies and no third-party requests.</span>
+    <span><a href="https://github.com/chinchoooo/Choud">GitHub</a> · <a href="https://github.com/chinchoooo/Choud/blob/main/SECURITY.md">Security</a> · <a href="https://github.com/chinchoooo/Choud/blob/main/CONTRIBUTING.md">Contribute</a> · <a href="https://github.com/chinchoooo/Choud/blob/main/CHANGELOG.md">Changelog</a></span>
   </div>
 </footer>
 
-<script>
-(function () {
-  var root = document.documentElement;
-  var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  // theme flip, remembered per browser
-  var flip = document.getElementById("flip");
-  flip.addEventListener("click", function () {
-    var dark = getComputedStyle(root).getPropertyValue("color-scheme").indexOf("dark") !== -1;
-    var next = dark ? "paper" : "ink";
-    root.dataset.theme = next;
-    try { localStorage.setItem("choud-theme", next); } catch (e) {}
-  });
-
-  // the ticker needs its content twice to loop without a gap
-  var run = document.getElementById("run-ticker");
-  run.innerHTML = run.innerHTML + run.innerHTML;
-
-  // headline types itself out once
-  var h = document.getElementById("headline");
-  var text = h.dataset.text;
-  if (!still) {
-    h.textContent = "";
-    var cursor = document.createElement("span");
-    cursor.className = "cursor";
-    h.appendChild(cursor);
-    var i = 0;
-    var tick = function () {
-      if (i < text.length) {
-        h.insertBefore(document.createTextNode(text.charAt(i++)), cursor);
-        setTimeout(tick, 34 + Math.random() * 40);
-      }
-    };
-    setTimeout(tick, 250);
-  }
-
-  // bars fill and numbers count up when the panel scrolls into view
-  function fillBars() {
-    var fills = document.querySelectorAll(".fill");
-    var counts = document.querySelectorAll("[data-count]");
-    fills.forEach(function (f) {
-      var to = parseFloat(f.dataset.to);
-      if (still) { f.style.width = to + "%"; return; }
-      var steps = 28, n = 0;
-      var t = setInterval(function () {
-        n++;
-        f.style.width = (to * n / steps) + "%";
-        if (n >= steps) clearInterval(t);
-      }, 55);
-    });
-    counts.forEach(function (c) {
-      var to = parseFloat(c.dataset.count);
-      if (still) { c.textContent = to; return; }
-      var steps = 28, n = 0;
-      var t = setInterval(function () {
-        n++;
-        c.textContent = (to * n / steps).toFixed(1);
-        if (n >= steps) { clearInterval(t); c.textContent = to; }
-      }, 55);
-    });
-  }
-
-  var seen = false;
-  var panel = document.getElementById("panel");
-  if ("IntersectionObserver" in window) {
-    var barObserver = new IntersectionObserver(function (entries) {
-      if (entries[0].isIntersecting && !seen) { seen = true; fillBars(); }
-    }, { threshold: 0.4 });
-    barObserver.observe(panel);
-
-    var revealObserver = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (e.isIntersecting) { e.target.classList.add("in"); revealObserver.unobserve(e.target); }
-      });
-    }, { threshold: 0.2 });
-    document.querySelectorAll(".reveal").forEach(function (el) { revealObserver.observe(el); });
-  } else {
-    fillBars();
-    document.querySelectorAll(".reveal").forEach(function (el) { el.classList.add("in"); });
-  }
-
-  // a packet travelling along the wire
-  var wire = document.getElementById("wire");
-  var width = 34, pos = 0;
-  function draw() {
-    var line = "";
-    for (var k = 0; k < width; k++) line += (k === pos ? "#" : "-");
-    wire.textContent = "[phone] " + line + "> [disk]";
-  }
-  draw();
-  if (!still) {
-    setInterval(function () { pos = (pos + 1) % width; draw(); }, 90);
-  }
-
-  // ---- the stamp slams down once the table is on screen
-  var stamp = document.getElementById("stamp");
-  if (stamp && "IntersectionObserver" in window) {
-    var stampObserver = new IntersectionObserver(function (entries) {
-      if (entries[0].isIntersecting) { stamp.classList.add("slam"); stampObserver.disconnect(); }
-    }, { threshold: 0.6 });
-    stampObserver.observe(stamp);
-  } else if (stamp) { stamp.classList.add("slam"); }
-
-  // ---- pull the plug: two disks, one power cut
-  var TOTAL = 24, TICK = still ? 40 : 230;
-  var btn = document.getElementById("plug-btn");
-  var again = document.getElementById("plug-reset");
-  var a = document.getElementById("disk-a"), b = document.getElementById("disk-b");
-  var state = "idle", written = 0, timer = null;
-
-  function cells(disk) {
-    var holder = disk.querySelector("[data-blocks]");
-    if (!holder.children.length) {
-      for (var n = 0; n < TOTAL; n++) holder.appendChild(document.createElement("i"));
-    }
-    return holder.children;
-  }
-  function say(disk, status, result) {
-    disk.querySelector("[data-status]").textContent = status;
-    disk.querySelector("[data-result]").textContent = result || "";
-  }
-  function setSteps(n) {
-    var items = b.querySelectorAll("[data-steps] li");
-    for (var k = 0; k < items.length; k++) items[k].className = k < n ? "done" : (k === n ? "now" : "");
-  }
-  function fillAll(disk, cls) {
-    var cs = cells(disk);
-    for (var n = 0; n < cs.length; n++) cs[n].className = cls;
-  }
-  function reset() {
-    clearInterval(timer);
-    state = "idle"; written = 0;
-    // both disks start with the old report.pdf safely stored
-    fillAll(a, "old"); fillAll(b, "old");
-    a.classList.remove("off"); b.classList.remove("off");
-    say(a, "report.pdf (old copy) is on the disk", "");
-    say(b, "report.pdf (old copy) is on the disk", "");
-    setSteps(0);
-    btn.textContent = "Start saving report.pdf";
-    btn.classList.remove("danger");
-    btn.disabled = false;
-    again.hidden = true;
-  }
-  function frame() {
-    if (state !== "writing") return;
-    var ac = cells(a), bc = cells(b);
-    if (written < TOTAL) {
-      ac[written].className = "new";   // the plain app overwrites the old bytes in place
-      bc[written].className = "tmp";   // Choud fills a separate temporary file instead
-      written++;
-      say(a, "saving: " + written + " of " + TOTAL + " blocks", "");
-      say(b, "writing report.pdf.tmp: " + written + " of " + TOTAL + " blocks", "");
-    } else {
-      clearInterval(timer);
-      state = "done";
-      fillAll(a, "new");
-      fillAll(b, "new");
-      setSteps(4);
-      say(a, "saved", "Too slow, it finished. Try again and pull the plug earlier.");
-      say(b, "saved, renamed and flushed", "Too slow, it finished. Try again and pull the plug earlier.");
-      btn.textContent = "Saved";
-      btn.classList.remove("danger");
-      btn.disabled = true;
-      again.hidden = false;
-    }
-  }
-  function pull() {
-    clearInterval(timer);
-    state = "cut";
-    document.body.classList.add("blackout");
-    setTimeout(function () {
-      document.body.classList.remove("blackout");
-      a.classList.add("off"); b.classList.add("off");
-      var ac = cells(a);
-      // the plain app: the new blocks already replaced the start of the old file, the tail is still old
-      for (var n = 0; n < written; n++) ac[n].className = "new";
-      for (var m = written; m < TOTAL; m++) ac[m].className = "old";
-      say(a, "power lost after " + written + " of " + TOTAL + " blocks",
-        written > 0
-          ? "After reboot: " + written + " blocks of the new file glued to " + (TOTAL - written) + " blocks of the old one. report.pdf will not open."
-          : "After reboot: nothing was written.");
-      // Choud: the temporary file never had the real name, so the old copy is untouched
-      fillAll(b, "old");
-      setSteps(0);
-      say(b, "power lost after " + written + " of " + TOTAL + " blocks",
-        "After reboot: removed 1 unfinished temporary file. report.pdf is the old copy, complete and intact. 0 half-written files.");
-      btn.textContent = "Power lost";
-      btn.classList.remove("danger");
-      btn.disabled = true;
-      again.hidden = false;
-    }, still ? 150 : 900);
-  }
-  if (btn) {
-    reset();
-    btn.addEventListener("click", function () {
-      if (state === "idle") {
-        state = "writing";
-        btn.textContent = "PULL THE PLUG";
-        btn.classList.add("danger");
-        timer = setInterval(frame, TICK);
-      } else if (state === "writing") {
-        pull();
-      }
-    });
-    again.addEventListener("click", reset);
-  }
-})();
-</script>
+<script type="module" src="js/main.js"></script>
+<script type="module" src="js/store.js"></script>
+<script type="module" src="js/plug.js"></script>
 </body>
 </html>

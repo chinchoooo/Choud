@@ -66,3 +66,10 @@ These are separate programs started by Docker Compose, not linked into Choud:
 - **Brand artwork** (`choud-brand-assets/`, the generated logos and icons): created for this project and
   released under the same MIT licence as the code. The name "Choud" and the logo identify this project:
   you are free to use them to refer to it, but please do not present a modified fork as the official one.
+
+## Fonts on the website (`site/assets/fonts/`)
+
+Self-hosted so the site makes no third-party requests. All are under the SIL Open Font License 1.1.
+
+- **Departure Mono**, by Helena Zhang (<https://departuremono.com>). Licence text: `site/assets/fonts/DepartureMono-LICENSE.txt`.
+- **IBM Plex Sans** and **IBM Plex Mono**, by IBM (<https://github.com/IBM/plex>), taken from the `@fontsource` packages.
