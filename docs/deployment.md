@@ -252,28 +252,51 @@ database row is saved. The backend also reports once a day on its own; set
 ## Making share links public
 
 Share links point at your server's address. If that is a Tailscale address, only people on your
-tailnet can open them. To let **anyone** open a share link without exposing the rest of Choud:
+tailnet can open them. To let **anyone** open a share link without exposing the rest of Choud, run
+one command on the server:
 
-1. The stack already runs a second, **public door**: Caddy listens on `127.0.0.1:8081` (bound to this
-   machine only) and serves `/s/*` (share pages) and nothing else. The app, the API and login answer
-   404 there, so exposing it never exposes your drive. It reads the visitor's address from the
-   rightmost `X-Forwarded-For` entry (what your tunnel saw), so per-visitor rate limits cannot be
-   dodged with a forged header.
-2. Point a tunnel at it. Pick one:
-   - **Tailscale Funnel** (simplest if you already use Tailscale): enable HTTPS and Funnel for the
-     machine in the Tailscale admin console, then run
-     `sudo tailscale funnel --bg 8081` (older versions: `tailscale funnel 8081`).
-     It prints an address like `https://arvismint.your-tailnet.ts.net`.
-   - **Cloudflare Tunnel** (a free account and a domain): `cloudflared tunnel --url http://127.0.0.1:8081`
-     for a quick test, or a named tunnel to `http://127.0.0.1:8081` for a fixed address.
-   - **A port forward** from your router to a reverse proxy with HTTPS in front of `127.0.0.1:8081`.
-3. Put that address in `.env` as `PUBLIC_BASE_URL=https://arvismint.your-tailnet.ts.net` (no trailing
-   slash) and redeploy. Links made in the web app and the phone app then use it.
+```bash
+scripts/enable-public-links.sh                     # Tailscale Funnel (free, no domain needed)
+scripts/enable-public-links.sh --cloudflare links.example.com   # a Cloudflare Tunnel on your domain
+scripts/enable-public-links.sh --status            # what is on right now; changes nothing
+scripts/enable-public-links.sh --off               # back to private-only links
+scripts/enable-public-links.sh --dry-run           # show what it would do (works with any option)
+```
+
+It checks the public door on this machine, starts the tunnel, checks the public address answers,
+writes `PUBLIC_BASE_URL` into `.env` (keeping `.env.bak`) and restarts **only the backend** (a few
+seconds; the proxy and engine stay up). If something outside the script has to be done first (turn on
+HTTPS certificates or Funnel in the Tailscale admin console, run `cloudflared tunnel login`), it says
+exactly what and stops with exit code 2 without changing anything.
+
+What is reachable from the internet: **only `/s/*`**, the share pages. The stack runs a second,
+**public door**: Caddy listens on `127.0.0.1:8081` (this machine only) and the app, the API and login
+answer 404 there, so the tunnel never exposes your drive. It reads the visitor's address from the
+rightmost `X-Forwarded-For` entry (what your tunnel saw), so per-visitor rate limits cannot be dodged
+with a forged header. Requests through the public door carry an `X-Choud-Door: public` marker the
+private door strips, which is what the pause switch below keys on.
+
+**Pause, check, revoke** (Server page in the web app, administrator only):
+
+- *Pause public links* is an instant kill switch: the public door answers 404 for every share link
+  while the private door keeps working. *Resume* turns it back on. No restart, no `.env` edit.
+- *Check from outside* asks the server to open its own public address like a stranger would.
+- *Revoke all my links* (also available to every user) makes every link you created stop working.
+
+The web and phone apps tell the truth about each link: when no public address is set, the share dialog
+says the link only works on your private network, and the phone offers to **send the file itself**
+instead.
+
+Manual setup, if you prefer: run `sudo tailscale funnel --bg --https=443 http://127.0.0.1:8081` (or
+`cloudflared tunnel --url http://127.0.0.1:8081`), put the address in `.env` as
+`PUBLIC_BASE_URL=https://...` (no trailing slash) and run `docker compose up -d --no-deps backend`.
 
 Check from a phone that is **not** on Tailscale: open a share link, and also open
 `<public address>/api/health`, which must say "Not found". Use an expiry and a password on links to
 sensitive folders, and prefer view-only links; edit and file-request links accept uploads from the
-internet (limited by your quota and the rate limits).
+internet (limited by your quota and the rate limits). If every visitor shows the same address in
+`<public address>/s/_health` (`client_ip`), your tunnel is not passing the visitor's address and the
+per-visitor rate limits share one bucket.
 
 ## Using Choud from anywhere (without Tailscale on every device)
 

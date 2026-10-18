@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # docs/deployment.md "Making share links public".
     public_base_url: str = ""
 
+    # What the public door serves: "shares" (only /s/*) or "full" (the whole app). Set in .env; the
+    # proxy reads it to pick the door, the backend only reports it to clients.
+    public_door_mode: str = "shares"
+
     # Search inside files (app/services/index_service.py): a background pass every N seconds
     # extracts the text of up to INDEX_BATCH new or changed files. 0 seconds disables it.
     index_interval_seconds: int = 60

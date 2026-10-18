@@ -26,7 +26,7 @@ from app.models.file import File
 from app.models.folder import Folder
 from app.models.share import Share
 from app.models.user import User
-from app.services import activity_service, file_service, version_service
+from app.services import activity_service, file_service, instance_service, version_service
 from app.services.errors import NotFoundError
 
 UNLOCK_SECONDS = 3600
@@ -129,6 +129,16 @@ def revoke_share(db: Session, owner: User, share_id: uuid.UUID) -> None:
     db.commit()
 
 
+def revoke_all(db: Session, owner: User) -> int:
+    """Revokes every live link of `owner`; returns how many were live."""
+    live = [s for s in list_shares(db, owner) if is_active(s)]
+    now = _now()
+    for share in live:
+        share.revoked_at = now
+    db.commit()
+    return len(live)
+
+
 def update_share(db: Session, owner: User, share_id: uuid.UUID, data: dict) -> Share:
     share = _get_owned(db, owner, share_id)
     if "label" in data:
@@ -157,10 +167,10 @@ def _target_name(db: Session, share: Share) -> str | None:
     return folder.name if folder else None
 
 
-def public_url(share: Share) -> str | None:
-    """The link to hand out when a public address is configured."""
+def public_url(share: Share, enabled: bool = True) -> str | None:
+    """The link to hand out when a public address is configured (and not paused)."""
     base = get_settings().public_base_url.strip().rstrip("/")
-    return f"{base}/s/{share.token}" if base else None
+    return f"{base}/s/{share.token}" if base and enabled else None
 
 
 def describe(db: Session, share: Share) -> dict:
@@ -172,7 +182,8 @@ def describe(db: Session, share: Share) -> dict:
         "target_name": _target_name(db, share) or "(deleted)",
         "token": share.token,
         "url_path": f"/s/{share.token}",
-        "public_url": public_url(share),
+        "public_url": public_url(share, instance_service.public_links_enabled(db)),
+        "public_status": instance_service.public_status(db),
         "label": share.label,
         "has_password": share.password_hash is not None,
         "permission": share.permission,

@@ -155,18 +155,34 @@ class Sheets(private val ui: Ui, private val container: FrameLayout) {
             )
         }
 
-    /** The choices for how long a share link should work. */
-    fun linkChoices(title: String, onPick: (hours: Int?, maxDownloads: Int?) -> Unit) {
-        actions(
-            title,
-            "Anyone who has the link can open it until it stops working.",
-            listOf(
-                SheetItem(R.drawable.ic_share, "Link for 1 day") { onPick(24, null) },
-                SheetItem(R.drawable.ic_share, "Link for 7 days") { onPick(24 * 7, null) },
-                SheetItem(R.drawable.ic_share, "One-time link", "Stops working after one open") { onPick(24 * 7, 1) },
-                SheetItem(R.drawable.ic_share, "Link that never expires") { onPick(null, null) },
-            ),
+    /**
+     * The choices for how long a share link should work, with the truth about who can open it.
+     * When links only work on the private network, "send the file itself" is offered first.
+     */
+    fun linkChoices(
+        title: String,
+        instance: ApiClient.Instance?,
+        onSendFile: (() -> Unit)? = null,
+        onPick: (hours: Int?, maxDownloads: Int?) -> Unit,
+    ) {
+        val everywhere = instance?.linksWorkEverywhere == true
+        val note = when (instance?.publicStatus) {
+            "ready" -> "Anyone who has the link can open it until it stops working."
+            "paused" -> "Public links are paused: only devices on your private network can open a link."
+            "not_configured" -> "Only devices on your private network can open a link. Ask the administrator to run scripts/enable-public-links.sh to make links work from anywhere."
+            else -> "Anyone who can reach your server can open the link until it stops working."
+        }
+        val items = mutableListOf<SheetItem>()
+        if (!everywhere && instance != null && onSendFile != null) {
+            items += SheetItem(R.drawable.ic_download, "Send the file itself instead", "Works for anyone, no link needed") { onSendFile() }
+        }
+        items += listOf(
+            SheetItem(R.drawable.ic_link, "Link for 1 day") { onPick(24, null) },
+            SheetItem(R.drawable.ic_link, "Link for 7 days") { onPick(24 * 7, null) },
+            SheetItem(R.drawable.ic_link, "One-time link", "Stops working after one open") { onPick(24 * 7, 1) },
+            SheetItem(R.drawable.ic_link, "Link that never expires") { onPick(null, null) },
         )
+        actions(title, note, items)
     }
 
     private fun panelBackground(): android.graphics.drawable.Drawable {

@@ -7,7 +7,7 @@ a correct password sets a short-lived signed cookie scoped to that one link.
 
 import uuid
 
-from fastapi import APIRouter, Depends, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile
 from fastapi import File as FastAPIFile
 from fastapi.responses import FileResponse as FastAPIFileResponse
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -16,14 +16,33 @@ from sqlalchemy.orm import Session
 
 from app.api.media import INLINE_TYPES, safe_headers
 from app.core.database import get_db
-from app.core.rate_limit import rate_limit
+from app.core.rate_limit import client_ip, rate_limit
 from app.models.share import Share
 from app.models.user import User
 from app.schemas.files import FileUpdate
-from app.services import file_service, media_cache, share_pages, share_service, thumbnail_service
+from app.services import (
+    file_service,
+    instance_service,
+    media_cache,
+    share_pages,
+    share_service,
+    thumbnail_service,
+)
 from app.services.errors import PayloadTooLargeError, QuotaError
 
-router = APIRouter(prefix="/s", tags=["public-shares"])
+
+def public_door_guard(request: Request, db: Session = Depends(get_db)) -> None:
+    """The kill switch.
+
+    The proxy marks requests that came through the PUBLIC door. While an administrator has paused
+    public links those get a plain 404; the private door is unaffected."""
+    if request.headers.get(
+        "x-choud-door"
+    ) == "public" and not instance_service.public_links_enabled(db):
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+router = APIRouter(prefix="/s", tags=["public-shares"], dependencies=[Depends(public_door_guard)])
 
 _view_limit = Depends(rate_limit("share-view", 300, 60))
 _unlock_limit = Depends(rate_limit("share-unlock", 10, 60))
@@ -59,6 +78,17 @@ def _gate(request: Request, db: Session, token: str) -> tuple[Share | None, HTML
     if not share_service.is_unlocked(share, request.cookies.get(_cookie_name(share))):
         return None, _html(share_pages.unlock_form(token), 401)
     return share, None
+
+
+@router.get("/_health", dependencies=[_view_limit])
+def health(request: Request) -> dict:
+    """Answers "is this the public door, and who does the server think you are?". Used by the setup
+    script and the admin check to prove a link works from outside."""
+    return {
+        "ok": True,
+        "door": "public" if request.headers.get("x-choud-door") == "public" else "private",
+        "client_ip": client_ip(request),
+    }
 
 
 @router.get("/{token}", response_class=HTMLResponse, dependencies=[_view_limit])

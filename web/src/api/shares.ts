@@ -9,6 +9,8 @@ export interface Share {
   url_path: string;
   /** The address to hand out when the server has a public address configured. */
   public_url?: string | null;
+  /** ready: works from anywhere; paused: switched off by the administrator; not_configured: private network only. */
+  public_status?: "ready" | "paused" | "not_configured";
   label: string | null;
   has_password: boolean;
   permission: "view" | "edit" | "drop";

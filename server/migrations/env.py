@@ -14,6 +14,7 @@ from app.models import (  # noqa: F401
     file_text,
     file_version,
     folder,
+    instance_setting,
     invite,
     login_event,
     recovery_code,

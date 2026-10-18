@@ -46,6 +46,14 @@ def list_mine(current_user: User = Depends(get_current_user), db: Session = Depe
     return [share_service.describe(db, s) for s in share_service.list_shares(db, current_user)]
 
 
+@router.post("/revoke-all")
+def revoke_all(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> dict:
+    """Emergency button: every link you have made stops working at once."""
+    return {"revoked": share_service.revoke_all(db, current_user)}
+
+
 @router.patch("/{share_id}", response_model=ShareResponse)
 def update(
     share_id: uuid.UUID,

@@ -722,11 +722,12 @@ class ViewerActivity : Activity() {
     }
 
     private fun chooseShare(file: RemoteItem) {
-        sheets.linkChoices("Share ${file.name}") { hours, limit ->
+        val sendFile = { FileSender.send(this, api, listOf(file), ::runOnUiThread) { text -> say(text) } }
+        sheets.linkChoices("Share ${file.name}", api.cachedInstance(), sendFile) { hours, limit ->
             thread {
                 try {
-                    val link = api.createShareLink(file.id, hours, limit)
-                    runOnUiThread { offerLink(link) }
+                    val made = api.createShare(file.id, hours, limit)
+                    runOnUiThread { offerLink(made.link, made.publicStatus) }
                 } catch (e: Exception) {
                     EventLog.log("share failed: ${e.message}")
                     runOnUiThread { say("Could not make a link: ${e.message}") }
@@ -735,7 +736,7 @@ class ViewerActivity : Activity() {
         }
     }
 
-    private fun offerLink(link: String) {
+    private fun offerLink(link: String, status: String) {
         val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
         clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Choud link", link))
         sheets.show("Link copied", null) { sheet ->
@@ -746,7 +747,11 @@ class ViewerActivity : Activity() {
                 },
             )
             sheet.body.addView(
-                ui.muted("Anyone who has this link can open the file until it stops working.", 12f).apply {
+                ui.muted(
+                    if (status == "ready") "Anyone who has this link can open the file until it stops working."
+                    else "This link only opens on your private network. Use Save or Share the file itself to send it to anyone else.",
+                    12f,
+                ).apply {
                     setPadding(ui.dp(20), 0, ui.dp(20), ui.dp(12))
                 },
             )

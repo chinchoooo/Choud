@@ -520,8 +520,31 @@ class ApiClient(
     fun thumbnailUrl(fileId: String, size: Int = 256): String =
         "$base/api/media/${mediaToken()}/$fileId/thumbnail?size=$size"
 
-    /** Makes a public link to one file and returns its full address. */
-    fun createShareLink(fileId: String, expiresInHours: Int?, maxDownloads: Int?): String {
+    /** What the server says about itself: can people outside the private network open its links? */
+    class Instance(val publicStatus: String, val publicBaseUrl: String?, val isAdmin: Boolean) {
+        val linksWorkEverywhere: Boolean get() = publicStatus == "ready"
+    }
+
+    private fun parseInstance(body: JSONObject) = Instance(
+        publicStatus = if (body.isNull("public_status")) "not_configured" else body.optString("public_status", "not_configured"),
+        publicBaseUrl = if (body.isNull("public_base_url")) null else body.optString("public_base_url").ifBlank { null },
+        isAdmin = body.optBoolean("is_admin", false),
+    )
+
+    /** The last answer of `instance()`, for screens that must not wait for the network. */
+    fun cachedInstance(): Instance? =
+        ListCache.get("/api/instance")?.let { runCatching { parseInstance(JSONObject(it)) }.getOrNull() }
+
+    fun instance(): Instance {
+        val body = send("/api/instance").jsonBody()
+        ListCache.put("/api/instance", body.toString())
+        return parseInstance(body)
+    }
+
+    /** A made link: its full address, and whether people outside the private network can open it. */
+    class ShareResult(val link: String, val publicStatus: String)
+
+    fun createShare(fileId: String, expiresInHours: Int?, maxDownloads: Int?): ShareResult {
         val request = JSONObject().put("file_id", fileId)
         expiresInHours?.let { request.put("expires_in_hours", it) }
         maxDownloads?.let { request.put("max_downloads", it) }
@@ -529,8 +552,13 @@ class ApiClient(
         // A configured public address (PUBLIC_BASE_URL) is what outsiders can reach.
         // optString returns the TEXT "null" for a JSON null, which is how links ended up reading "null".
         val publicUrl = if (body.isNull("public_url")) "" else body.optString("public_url")
-        return publicUrl.ifBlank { base + body.getString("url_path") }
+        val status = if (body.isNull("public_status")) "not_configured" else body.optString("public_status", "not_configured")
+        return ShareResult(publicUrl.ifBlank { base + body.getString("url_path") }, status)
     }
+
+    /** Makes a public link to one file and returns its full address. */
+    fun createShareLink(fileId: String, expiresInHours: Int?, maxDownloads: Int?): String =
+        createShare(fileId, expiresInHours, maxDownloads).link
 
     fun contentUrl(fileId: String): String = "$base/api/media/${mediaToken()}/$fileId/content"
 

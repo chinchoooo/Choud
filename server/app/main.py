@@ -15,6 +15,7 @@ from app.api import (
     folders,
     health,
     insights,
+    instance,
     invites,
     library,
     media,
@@ -91,6 +92,7 @@ app.include_router(trash.router)
 app.include_router(media.router)
 app.include_router(library.router)
 app.include_router(shares.router)
+app.include_router(instance.router)
 app.include_router(invites.router)
 app.include_router(rewind.router)
 app.include_router(insights.router)

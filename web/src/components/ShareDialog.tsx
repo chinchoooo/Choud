@@ -72,6 +72,13 @@ export function ShareDialog({ target, onClose }: Props) {
           {created.expires_at ? " until it expires" : ""}
           {created.has_password ? ", after entering the password" : ""}.
         </p>
+        {created.public_status && created.public_status !== "ready" && (
+          <p role="note" className="mt-2 border border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-800 rounded-md">
+            {created.public_status === "paused"
+              ? "Public links are paused, so this link only works on your private network."
+              : "This link only works for people on your network. Ask the administrator to run scripts/enable-public-links.sh to make links work from anywhere."}
+          </p>
+        )}
         <input
           readOnly
           value={url}

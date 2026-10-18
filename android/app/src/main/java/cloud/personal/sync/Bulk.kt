@@ -139,8 +139,11 @@ class Bulk(private val host: Host, private val context: Context) {
 
     fun shareLinks(files: List<RemoteItem>) {
         if (files.isEmpty()) return
-        host.sheets.linkChoices("Share ${files.size} file${if (files.size == 1) "" else "s"}") { hours, limit ->
+        val instance = api.cachedInstance()
+        val sendFiles = { FileSender.send(context, api, files, host::runOnUi) { text -> say(text) } }
+        host.sheets.linkChoices("Share ${files.size} file${if (files.size == 1) "" else "s"}", instance, sendFiles) { hours, limit ->
             val lines = java.util.Collections.synchronizedList(ArrayList<String>())
+            val status = java.util.concurrent.atomic.AtomicReference("ready")
             each("Making link", files, { ok, failed ->
                 if (lines.isEmpty()) {
                     host.toast("Could not make links.")
@@ -149,14 +152,19 @@ class Bulk(private val host: Host, private val context: Context) {
                 val text = if (files.size == 1) lines.first().substringAfter(": ") else lines.joinToString("\n")
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("Choud links", text))
+                val where = if (status.get() == "ready") "" else " They only open on your private network."
                 host.toast(
-                    if (failed == 0) "$ok link${if (ok == 1) "" else "s"} copied." else "$ok copied, $failed failed.",
+                    (if (failed == 0) "$ok link${if (ok == 1) "" else "s"} copied." else "$ok copied, $failed failed.") + where,
                     "Send",
                 ) {
                     val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
                     context.startActivity(Intent.createChooser(send, "Send links").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }
-            }) { file -> lines.add("${file.name}: ${api.createShareLink(file.id, hours, limit)}") }
+            }) { file ->
+                val made = api.createShare(file.id, hours, limit)
+                if (made.publicStatus != "ready") status.set(made.publicStatus)
+                lines.add("${file.name}: ${made.link}")
+            }
         }
     }
 

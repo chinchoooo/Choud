@@ -54,6 +54,8 @@ class ShareResponse(BaseModel):
     url_path: str
     # Full public address when PUBLIC_BASE_URL is set (share this one), else None.
     public_url: str | None = None
+    # ready | paused | not_configured: whether people outside this network can open the link.
+    public_status: str = "not_configured"
     label: str | None
     has_password: bool
     permission: str

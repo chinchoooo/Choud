@@ -245,6 +245,7 @@ class MainActivity : Activity(), Host {
             try {
                 ServerPicker.pick(settings, force = true)
                 api.usage()
+                runCatching { api.instance() } // for honest share-link wording; not fatal if it fails
                 runOnUiThread { updateAppStatus() }
             } catch (e: AuthError) {
                 EventLog.log("boot: saved login is no longer valid")

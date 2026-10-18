@@ -30,6 +30,7 @@
         # never a leading value a visitor typed into X-Forwarded-For to dodge the per-visitor limits.
         reverse_proxy backend:8000 {
             header_up X-Forwarded-For {client_ip}
+            header_up X-Choud-Door public
         }
     }
 
@@ -46,6 +47,7 @@
         }
         reverse_proxy backend:8000 {
             header_up X-Forwarded-For {client_ip}
+            header_up X-Choud-Door public
         }
     }
 
@@ -55,12 +57,14 @@
         }
         reverse_proxy backend:8000 {
             header_up X-Forwarded-For {client_ip}
+            header_up X-Choud-Door public
         }
     }
 
     handle /s/* {
         reverse_proxy backend:8000 {
             header_up X-Forwarded-For {client_ip}
+            header_up X-Choud-Door public
         }
     }
 
@@ -124,7 +128,9 @@
         request_body {
             max_size 160MB
         }
-        reverse_proxy backend:8000
+        reverse_proxy backend:8000 {
+            header_up -X-Choud-Door
+        }
     }
 
     # Everything else is small JSON.
@@ -132,11 +138,15 @@
         request_body {
             max_size 10MB
         }
-        reverse_proxy backend:8000
+        reverse_proxy backend:8000 {
+            header_up -X-Choud-Door
+        }
     }
 
     handle /s/* {
-        reverse_proxy backend:8000
+        reverse_proxy backend:8000 {
+            header_up -X-Choud-Door
+        }
     }
 
     handle {

@@ -400,11 +400,16 @@ rebuilds from scratch (`INDEX_INTERVAL_SECONDS=0` turns the background pass off)
 | `GET /api/shares` | Your active links, with `download_count`, `last_accessed_at`, `has_password`, `expires_at` |
 | `PATCH /api/shares/{id}` | Change `label`, `password` (`null` removes it), `expires_in_hours` (`null` = never), `permission` |
 | `DELETE /api/shares/{id}` | Revoke: the link stops working immediately (`204`) |
+| `POST /api/shares/revoke-all` | Revoke every link you have made: `{"revoked": n}` |
+| `GET /api/instance` | `{version, public_base_url, public_status, public_door_mode, is_admin}`. `public_status` is `ready` (links work from anywhere), `paused` (administrator switched them off) or `not_configured` (private network only). Every share response also carries `public_status`, and `public_url` is `null` unless it is `ready` |
+| `PUT /api/admin/public-links` | Administrator: `{"enabled": bool}`. The kill switch: while off, the public door answers 404 for `/s/*` |
+| `POST /api/admin/public-links/check` | Administrator: the server opens its own public address like a stranger; `{ok, detail, door, client_ip}` |
 
 The visitor side needs no account, and is served as plain HTML (no scripts) by the backend:
 
 | URL | What it does |
 | --- | --- |
+| `GET /s/_health` | `{ok, door: "public"\|"private", client_ip}`: proves a public address reaches this server and which address visitors appear as |
 | `GET /s/{token}` | A file link shows the file with a download button (and an inline preview for images, video and audio). A folder link lists the folder; `?folder=<id>` navigates inside it |
 | `POST /s/{token}/unlock` | Form post of `password`; sets a one-hour signed cookie for that link only (rate limited: 10 per minute per IP) |
 | `GET /s/{token}/file/{file_id}` | The bytes as an attachment (`?inline=1` only for safe media types) |
