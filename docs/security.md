@@ -98,6 +98,23 @@ file contents.
   safety check before it did anything. The checks above are covered by tests, but an independent
   attack pass is still worth doing before the server is exposed beyond a tailnet.
 
+## Browser security headers and encrypted backups
+
+- **Headers.** The web image (nginx) sends a strict Content-Security-Policy (scripts only from the
+  app itself, no framing by others, connections only to its own origin), `nosniff`, `no-referrer`,
+  `X-Frame-Options: DENY`, a restrictive Permissions-Policy and `Cross-Origin-Opener-Policy`. Caddy
+  adds the same baseline to everything the backend answers *only where the backend did not set its
+  own* (previews and public share pages keep their stricter policies) and hides the server banner.
+  The CSP keeps `'unsafe-inline'` for **styles** only (React sizes elements with style attributes).
+- **Encrypted backups.** Set `BACKUP_PASSPHRASE_FILE` and `scripts/backup.sh` encrypts the database
+  dump, the object store and your `.env` secrets as they are written (AES-256-CBC, PBKDF2-SHA256 with
+  600,000 iterations, random salt): no plain copy ever lands in the backup folder, and the script
+  refuses to continue if the passphrase file is missing. `restore.sh` proves the passphrase works and
+  the dump is whole **before** it stops anything. This is encryption at rest, not a signature: the
+  checksums catch accidental damage but someone who can rewrite the backup could rewrite them too.
+  **Keep a copy of the passphrase off the machine; without it the backups cannot be read.** Without
+  the setting, backups are plain and the script warns that they contain your secrets.
+
 ## Rewind, pruning, drop links and the sign-in history
 
 - **Rewind never destroys.** A restore appends a new version, leaves files created after the chosen

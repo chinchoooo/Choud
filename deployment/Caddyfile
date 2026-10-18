@@ -7,6 +7,17 @@
 # will provision a certificate automatically.
 
 :80 {
+    # Baseline security headers on everything the backend answers. The "?" prefix means "only if the
+    # response does not already set it", so the stricter policies the backend (previews, public share
+    # pages) and the web image (the app's CSP) send are never overridden.
+    header {
+        ?X-Content-Type-Options "nosniff"
+        ?Referrer-Policy "no-referrer"
+        ?X-Frame-Options "DENY"
+        ?Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+        -Server
+    }
+
     # Only uploads carry big bodies, and the clients keep each request small on purpose:
     # a single-request upload is at most 20 MiB and a chunk 5 MiB. The server refuses more than
     # 128 MiB per request, and this stops an oversized body before it reaches the backend.
