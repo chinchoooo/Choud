@@ -26,6 +26,7 @@ re-sharpened so the pixel edges stay crisp, then written at the sizes each platf
 | Android, launcher | adaptive icon: black background, the mark scaled into the safe zone as the foreground, plus a themed (monochrome) layer; `ic_stat_choud` for notifications |
 | Android, launch window | black with the mark (`choud_splash.xml`, `choud_splash_icon.xml`) |
 | Web logos | `web/src/assets/brand/choud-{logo,mark,icon}-{dark,light}.png`; the `Logo` component picks the dark art (white) on dark and retro-black themes, the light art on the others |
+| README and GitHub | `docs/images/choud-logo-{light,dark}.png` (the README picks one by the reader's light or dark theme) and `docs/images/social-preview.png` (1280 x 640; upload it under the repository's Settings > Social preview) |
 | Web icons | `web/public/` `icon-192/512.png`, `apple-touch-icon.png`, `favicon-16/32.png`, referenced by `manifest.webmanifest` and `index.html` |
 
 ## The loading screen

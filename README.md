@@ -3,9 +3,12 @@
 [![CI](https://github.com/chinchoooo/Choud/actions/workflows/ci.yml/badge.svg)](https://github.com/chinchoooo/Choud/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<div align="center">
-  <img src="choud-brand-assets/choud-logo-light.svg" alt="Choud" width="400" />
-</div>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/choud-logo-dark.png">
+    <img src="docs/images/choud-logo-light.png" alt="Choud: a pixel-art cloud holding a folder, with the word Choud beneath" width="260">
+  </picture>
+</p>
 
 **Your own cloud. Your own server. Nobody else's.**
 

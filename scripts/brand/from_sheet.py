@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SHEET = ROOT / "choud-brand-assets" / "brand-sheet.png"
 WEB_PUBLIC = ROOT / "web" / "public"
 WEB_BRAND = ROOT / "web" / "src" / "assets" / "brand"
+DOC_IMAGES = ROOT / "docs" / "images"
 RES = ROOT / "android" / "app" / "src" / "main" / "res"
 NODPI = RES / "drawable-nodpi"
 
@@ -129,6 +130,14 @@ def build(sheet: Image.Image) -> dict[Path, Image.Image]:
         out[WEB_BRAND / f"choud-logo-{name}.png"] = painted(fit(full, 720), color)
         out[WEB_BRAND / f"choud-mark-{name}.png"] = painted(fit(mark, 480), color)
         out[WEB_BRAND / f"choud-icon-{name}.png"] = rounded_tile(256, dark=(name == "dark"), mark=mark)
+
+    # --- README and GitHub: the logo for light and dark pages, and the 1280 x 640 social preview
+    for name, color in (("dark", white), ("light", black)):
+        out[DOC_IMAGES / f"choud-logo-{name}.png"] = painted(fit(full, 520), color)
+    preview = Image.new("RGBA", (1280, 640), (0, 0, 0, 255))
+    logo = painted(fit(full, 470), white)
+    preview.alpha_composite(logo, ((1280 - logo.width) // 2, (640 - logo.height) // 2))
+    out[DOC_IMAGES / "social-preview.png"] = preview
 
     # --- Web: installed-app icons and favicons (the dark tile, the way the sheet shows the primary icon)
     for size, name in ((192, "icon-192.png"), (512, "icon-512.png"), (180, "apple-touch-icon.png")):
