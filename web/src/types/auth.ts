@@ -5,6 +5,7 @@ export interface User {
   is_active: boolean;
   storage_quota: number;
   totp_enabled?: boolean;
+  is_admin?: boolean;
   created_at: string;
 }
 

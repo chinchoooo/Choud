@@ -3,11 +3,14 @@ import {
   Activity,
   Clock,
   Folder,
+  HardDrive,
+  History,
   Image as ImageIcon,
   Link2,
   LogOut,
   RefreshCw,
   Search,
+  Server as ServerIcon,
   ShieldCheck,
   Star,
   Trash2,
@@ -26,13 +29,16 @@ import { THEMES, isThemeId, useTheme } from "../theme/ThemeContext";
 import { UploadProvider } from "../uploads/UploadContext";
 import { UploadPanel } from "./UploadPanel";
 
-const NAV: { to: string; label: string; icon: LucideIcon }[] = [
+const NAV: { to: string; label: string; icon: LucideIcon; admin?: boolean }[] = [
   { to: "/files", label: "My files", icon: Folder },
   { to: "/photos", label: "Photos", icon: ImageIcon },
   { to: "/favorites", label: "Favorites", icon: Star },
   { to: "/recent", label: "Recent", icon: Clock },
   { to: "/shares", label: "Shared links", icon: Link2 },
-  { to: "/invites", label: "Invites", icon: UserPlus },
+  { to: "/rewind", label: "Rewind", icon: History },
+  { to: "/space", label: "Storage", icon: HardDrive },
+  { to: "/invites", label: "Invites", icon: UserPlus, admin: true },
+  { to: "/server", label: "Server", icon: ServerIcon, admin: true },
   { to: "/security", label: "Security", icon: ShieldCheck },
   { to: "/activity", label: "Activity", icon: Activity },
   { to: "/trash", label: "Trash", icon: Trash2 },
@@ -112,7 +118,7 @@ export function AppShell() {
               </span>
             </div>
             <nav aria-label="Main" className="flex gap-1 overflow-x-auto px-2 pb-2 md:block md:space-y-1 md:pb-0">
-              {NAV.map((item) => (
+              {NAV.filter((item) => !item.admin || user?.is_admin).map((item) => (
                 <NavLink key={item.to} to={item.to} className={linkClass}>
                   <item.icon size={16} aria-hidden />
                   {item.label}

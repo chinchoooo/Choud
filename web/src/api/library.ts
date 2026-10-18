@@ -24,6 +24,16 @@ export function getUsage(): Promise<Usage> {
   return apiGet<Usage>("/api/library/usage");
 }
 
+export interface MemoryGroup {
+  year: number;
+  years_ago: number;
+  files: FileResponse[];
+}
+
+export function listMemories(): Promise<MemoryGroup[]> {
+  return apiGet<MemoryGroup[]>("/api/library/memories");
+}
+
 export function listActivity(limit = 100): Promise<ActivityItem[]> {
   return apiGet<ActivityItem[]>(`/api/library/activity?limit=${limit}`);
 }

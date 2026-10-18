@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { ApiError } from "../api/client";
+import { getSecurityLog } from "../api/insights";
 import {
   disableTwoFactor,
   enableTwoFactor,
@@ -12,6 +13,7 @@ import {
 } from "../api/twofactor";
 import { plainButton, primaryButton } from "../components/Dialogs";
 import { QrCode } from "../components/QrCode";
+import { formatDateTime } from "../lib/format";
 
 const field =
   "mt-1 block w-56 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900";
@@ -44,6 +46,7 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
 export function Security() {
   const queryClient = useQueryClient();
   const status = useQuery({ queryKey: ["2fa"], queryFn: getTwoFactorStatus });
+  const log = useQuery({ queryKey: ["security-log"], queryFn: getSecurityLog });
   const [setup, setSetup] = useState<TwoFactorSetup | null>(null);
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
@@ -182,6 +185,27 @@ export function Security() {
           {error}
         </p>
       )}
+
+      <h2 className="mt-8 text-sm font-medium text-gray-900">Recent sign-ins</h2>
+      <p className="mt-1 text-sm text-gray-600">
+        Attempts to sign in to your account. If you see one you do not recognise, change your password.
+      </p>
+      <ul className="mt-2 divide-y divide-gray-200 border border-gray-200 bg-white rounded-md" aria-label="Sign-in history">
+        {(log.data ?? []).length === 0 && <li className="p-3 text-sm text-gray-500">Nothing recorded yet.</li>}
+        {(log.data ?? []).map((event, index) => (
+          <li key={index} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+            <span className={event.success ? "text-gray-900" : "font-semibold text-red-600"}>
+              {event.success ? "Signed in" : "Failed attempt"}
+            </span>
+            {event.new_device && <span className="border border-gray-400 px-1.5 text-xs text-gray-900">new device</span>}
+            <span className="text-xs text-gray-500">{formatDateTime(event.at)}</span>
+            <span className="text-xs text-gray-500">{event.ip || "unknown address"}</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-gray-400" title={event.user_agent}>
+              {event.user_agent}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

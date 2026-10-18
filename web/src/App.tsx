@@ -9,6 +9,9 @@ import { Login } from "./pages/Login";
 import { Photos } from "./pages/Photos";
 import { Register } from "./pages/Register";
 import { Invites } from "./pages/Invites";
+import { Rewind } from "./pages/Rewind";
+import { Server } from "./pages/Server";
+import { Space } from "./pages/Space";
 import { Security } from "./pages/Security";
 import { Shares } from "./pages/Shares";
 import { Trash } from "./pages/Trash";
@@ -28,6 +31,9 @@ export default function App() {
           <Route path="/activity" element={<Activity />} />
           <Route path="/shares" element={<Shares />} />
           <Route path="/invites" element={<Invites />} />
+          <Route path="/rewind" element={<Rewind />} />
+          <Route path="/space" element={<Space />} />
+          <Route path="/server" element={<Server />} />
           <Route path="/security" element={<Security />} />
           <Route path="/trash" element={<Trash />} />
         </Route>

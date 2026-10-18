@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { ApiError } from "../api/client";
-import { EXPIRY_CHOICES, createShare, shareUrl, type Share } from "../api/shares";
+import { DOWNLOAD_LIMITS, EXPIRY_CHOICES, createShare, shareUrl, type Share } from "../api/shares";
 import { Modal, plainButton, primaryButton } from "./Dialogs";
 
 /** Copies text; falls back to selecting it when the clipboard API is unavailable (plain http). */
@@ -26,7 +26,8 @@ export function ShareDialog({ target, onClose }: Props) {
   const queryClient = useQueryClient();
   const [expiry, setExpiry] = useState<number | null>(null);
   const [password, setPassword] = useState("");
-  const [permission, setPermission] = useState<"view" | "edit">("view");
+  const [permission, setPermission] = useState<"view" | "edit" | "drop">("view");
+  const [maxDownloads, setMaxDownloads] = useState<number | null>(null);
   const [created, setCreated] = useState<Share | null>(null);
   const [copied, setCopied] = useState<"yes" | "no" | null>(null);
 
@@ -37,6 +38,7 @@ export function ShareDialog({ target, onClose }: Props) {
         expiresInHours: expiry,
         password: password || undefined,
         permission,
+        ...(maxDownloads && permission !== "drop" ? { maxDownloads } : {}),
       }),
     onSuccess: (share) => {
       setCreated(share);
@@ -58,7 +60,9 @@ export function ShareDialog({ target, onClose }: Props) {
       <Modal title={`Link for "${target.name}"`} onClose={onClose}>
         <p className="text-sm text-gray-700">
           Anyone with this link can{" "}
-          {created.permission === "edit"
+          {created.permission === "drop"
+            ? "send files into the folder, without seeing what is in it"
+            : created.permission === "edit"
             ? target.kind === "folder"
               ? "open the folder, add files and change them"
               : "see the file and upload new versions"
@@ -103,13 +107,20 @@ export function ShareDialog({ target, onClose }: Props) {
         People with the link can
         <select
           value={permission}
-          onChange={(event) => setPermission(event.target.value as "view" | "edit")}
+          onChange={(event) => setPermission(event.target.value as "view" | "edit" | "drop")}
           className="mt-1 w-full border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 rounded-md"
         >
           <option value="view">View and download</option>
           <option value="edit">Add, rename and delete files</option>
+          {target.kind === "folder" && <option value="drop">Only send me files (a file request)</option>}
         </select>
       </label>
+      {permission === "drop" && (
+        <p className="mt-1 text-xs text-gray-500">
+          Visitors see only an upload form. They cannot see, download or change anything in the folder, and a file with
+          the same name is saved as "name (2)".
+        </p>
+      )}
       {permission === "edit" && (
         <p className="mt-1 text-xs text-gray-500">
           Anyone who gets this link can change the {target.kind}. Deleted files go to your trash and
@@ -130,6 +141,22 @@ export function ShareDialog({ target, onClose }: Props) {
           ))}
         </select>
       </label>
+      {permission !== "drop" && (
+        <label className="mt-3 block text-sm text-gray-700">
+          Stops working after
+          <select
+            value={maxDownloads ?? ""}
+            onChange={(event) => setMaxDownloads(event.target.value === "" ? null : Number(event.target.value))}
+            className="mt-1 w-full border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 rounded-md"
+          >
+            {DOWNLOAD_LIMITS.map((choice) => (
+              <option key={choice.label} value={choice.count ?? ""}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label className="mt-3 block text-sm text-gray-700">
         Password (optional)
         <input

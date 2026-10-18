@@ -1,7 +1,7 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
-import { listPhotos, type PhotoKind } from "../api/library";
+import { listMemories, listPhotos, type PhotoKind } from "../api/library";
 import { FileViewer } from "../components/FileViewer";
 import { Thumb } from "../components/Thumb";
 import { useFileActions } from "../hooks/useFileActions";
@@ -29,6 +29,9 @@ export function Photos() {
   const [kind, setKind] = useState<PhotoKind>("all");
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const actions = useFileActions();
+  const memories = useQuery({ queryKey: ["memories"], queryFn: listMemories, staleTime: 5 * 60_000 });
+  // The viewer can show either the timeline or one "on this day" group.
+  const [memoryViewer, setMemoryViewer] = useState<{ files: FileResponse[]; index: number } | null>(null);
 
   const query = useInfiniteQuery({
     queryKey: ["photos", kind],
@@ -75,6 +78,31 @@ export function Photos() {
           ))}
         </div>
       </div>
+
+      {(memories.data ?? []).length > 0 && (
+        <section aria-label="On this day" className="mt-5 border border-gray-300 p-3 rounded-md">
+          <h2 className="text-sm font-semibold text-gray-900">On this day</h2>
+          {(memories.data ?? []).map((group) => (
+            <div key={group.year} className="mt-2">
+              <p className="text-xs text-gray-500">
+                {group.years_ago === 1 ? "1 year ago" : `${group.years_ago} years ago`} ({group.year})
+              </p>
+              <div className="mt-1 flex gap-1 overflow-x-auto">
+                {group.files.map((file, index) => (
+                  <button
+                    key={file.id}
+                    onClick={() => setMemoryViewer({ files: group.files, index })}
+                    aria-label={`Open memory ${file.name}`}
+                    className="relative block h-24 w-24 shrink-0 overflow-hidden bg-gray-100"
+                  >
+                    <Thumb file={file} size={256} className="h-full w-full text-xs" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
 
       {query.isError && <p className="mt-4 text-sm text-red-600">Could not load your photos.</p>}
       {query.isSuccess && items.length === 0 && (
@@ -131,6 +159,15 @@ export function Photos() {
             setViewerIndex(null);
             actions.deleteWithConfirm(file);
           }}
+        />
+      )}
+      {memoryViewer && (
+        <FileViewer
+          files={memoryViewer.files}
+          index={memoryViewer.index}
+          onIndexChange={(next) => setMemoryViewer({ ...memoryViewer, index: next })}
+          onClose={() => setMemoryViewer(null)}
+          onToggleFavorite={actions.toggleFavorite}
         />
       )}
       {actions.dialogs}

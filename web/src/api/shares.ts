@@ -9,7 +9,8 @@ export interface Share {
   url_path: string;
   label: string | null;
   has_password: boolean;
-  permission: "view" | "edit";
+  permission: "view" | "edit" | "drop";
+  max_downloads: number | null;
   expires_at: string | null;
   created_at: string;
   download_count: number;
@@ -24,7 +25,9 @@ export interface CreateShareInput {
   expiresInHours?: number | null;
   password?: string;
   label?: string;
-  permission?: "view" | "edit";
+  permission?: "view" | "edit" | "drop";
+  /** The link stops working after this many downloads (1 = a one-time link). */
+  maxDownloads?: number;
 }
 
 export function createShare(input: CreateShareInput): Promise<Share> {
@@ -35,6 +38,7 @@ export function createShare(input: CreateShareInput): Promise<Share> {
     ...(input.password ? { password: input.password } : {}),
     ...(input.label ? { label: input.label } : {}),
     ...(input.permission ? { permission: input.permission } : {}),
+    ...(input.maxDownloads ? { max_downloads: input.maxDownloads } : {}),
   });
 }
 
@@ -44,13 +48,14 @@ export function listShares(): Promise<Share[]> {
 
 export function updateShare(
   id: string,
-  changes: { password?: string | null; expiresInHours?: number | null; label?: string | null; permission?: "view" | "edit" },
+  changes: { password?: string | null; expiresInHours?: number | null; label?: string | null; permission?: "view" | "edit" | "drop"; maxDownloads?: number | null },
 ): Promise<Share> {
   return apiPatch<Share>(`/api/shares/${id}`, {
     ...("password" in changes ? { password: changes.password } : {}),
     ...("expiresInHours" in changes ? { expires_in_hours: changes.expiresInHours } : {}),
     ...("label" in changes ? { label: changes.label } : {}),
     ...("permission" in changes ? { permission: changes.permission } : {}),
+    ...("maxDownloads" in changes ? { max_downloads: changes.maxDownloads } : {}),
   });
 }
 
@@ -62,6 +67,14 @@ export function revokeShare(id: string): Promise<void> {
 export function shareUrl(share: Pick<Share, "url_path">, origin = window.location.origin): string {
   return `${origin}${share.url_path}`;
 }
+
+export const DOWNLOAD_LIMITS: { label: string; count: number | null }[] = [
+  { label: "No limit", count: null },
+  { label: "Once (a one-time link)", count: 1 },
+  { label: "5 downloads", count: 5 },
+  { label: "25 downloads", count: 25 },
+  { label: "100 downloads", count: 100 },
+];
 
 export const EXPIRY_CHOICES: { label: string; hours: number | null }[] = [
   { label: "Never", hours: null },

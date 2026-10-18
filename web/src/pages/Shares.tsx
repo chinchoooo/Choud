@@ -70,6 +70,8 @@ export function Shares() {
                     {expiryText(share)}
                     {share.has_password ? " · password" : ""}
                     {share.permission === "edit" ? " · can edit" : ""}
+                    {share.permission === "drop" ? " · file request" : ""}
+                    {share.max_downloads ? ` · ${share.download_count}/${share.max_downloads} downloads` : ""}
                     {` · ${share.download_count} download${share.download_count === 1 ? "" : "s"}`}
                     {share.last_accessed_at ? ` · last opened ${formatDateTime(share.last_accessed_at)}` : ""}
                   </div>
