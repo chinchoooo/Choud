@@ -239,15 +239,20 @@ def multipart(
 def upload_file(api: Api, line: Line, folder_id: str, name: str, seed: int, size: int) -> str:
     """Uploads one deterministic file the way the apps do; returns its file id."""
     if size <= SMALL_LIMIT:
-        headers, body = multipart(
-            {"folder_id": folder_id, "name": name, "base_version_id": "none"},
-            "file",
-            name,
-            size,
-            blob(seed, size),
-            line,
-        )
-        reply = api.call("POST", "/api/files/upload", headers=headers, content=body)
+        for attempt in range(6):
+            # The body is a one-shot stream, so a throttled request is rebuilt from scratch.
+            headers, body = multipart(
+                {"folder_id": folder_id, "name": name, "base_version_id": "none"},
+                "file",
+                name,
+                size,
+                blob(seed, size),
+                line,
+            )
+            reply = api.call("POST", "/api/files/upload", headers=headers, content=body)
+            if reply.status_code != 429:
+                break
+            time.sleep(min(30, int(reply.headers.get("retry-after", "2")) + attempt))
         if reply.status_code != 201:
             raise RuntimeError(f"upload {name}: {reply.status_code} {reply.text[:200]}")
         return reply.json()["id"]
