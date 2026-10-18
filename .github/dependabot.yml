@@ -1,17 +1,27 @@
+# Dependency update pull requests. Kept deliberately quiet: monthly, minor and patch updates grouped
+# into one pull request per ecosystem. Major upgrades (a new Kotlin, React or Python framework version)
+# are done by hand, on purpose, with the whole test suite.
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /server
-    schedule: {interval: weekly}
+    schedule: {interval: monthly}
+    open-pull-requests-limit: 2
+    groups: {python-minor-and-patch: {update-types: [minor, patch]}}
+    ignore: [{dependency-name: "*", update-types: ["version-update:semver-major"]}]
   - package-ecosystem: npm
     directory: /web
-    schedule: {interval: weekly}
+    schedule: {interval: monthly}
+    open-pull-requests-limit: 2
+    groups: {web-minor-and-patch: {update-types: [minor, patch]}}
+    ignore: [{dependency-name: "*", update-types: ["version-update:semver-major"]}]
   - package-ecosystem: gradle
     directory: /android
-    schedule: {interval: weekly}
+    schedule: {interval: monthly}
+    open-pull-requests-limit: 2
+    groups: {android-minor-and-patch: {update-types: [minor, patch]}}
+    ignore: [{dependency-name: "*", update-types: ["version-update:semver-major"]}]
   - package-ecosystem: github-actions
     directory: /
-    schedule: {interval: weekly}
-  - package-ecosystem: docker
-    directory: /server
-    schedule: {interval: weekly}
+    schedule: {interval: monthly}
+    open-pull-requests-limit: 2
