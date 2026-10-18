@@ -159,3 +159,20 @@ def test_a_download_limit_can_be_raised_or_removed(
         "/api/shares", json={"file_id": file["id"], "max_downloads": 0}, headers=headers
     )
     assert zero.status_code == 422
+
+
+def test_share_responses_carry_the_public_address_when_one_is_configured(
+    client: TestClient, make_user, auth_headers, monkeypatch
+) -> None:
+    from app.core.config import get_settings
+
+    headers = auth_headers(make_user())
+    file = _upload(client, headers, "a.txt")
+    plain = _share(client, headers, file_id=file["id"])
+    assert plain["public_url"] is None  # no public address set: clients use the address they know
+
+    monkeypatch.setattr(get_settings(), "public_base_url", "https://files.example.com/")
+    shown = _share(client, headers, file_id=file["id"])
+    assert shown["public_url"] == f"https://files.example.com/s/{shown['token']}"
+    listed = client.get("/api/shares", headers=headers).json()
+    assert all(item["public_url"].startswith("https://files.example.com/s/") for item in listed)

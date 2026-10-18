@@ -52,6 +52,8 @@ class ShareResponse(BaseModel):
     token: str
     # Path on this server, e.g. /s/AbC...; the client adds its own origin.
     url_path: str
+    # Full public address when PUBLIC_BASE_URL is set (share this one), else None.
+    public_url: str | None = None
     label: str | None
     has_password: bool
     permission: str

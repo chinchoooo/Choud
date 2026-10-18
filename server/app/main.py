@@ -30,7 +30,7 @@ from app.api import (
 )
 from app.core.config import enforce_safe_settings, get_settings
 from app.core.logging import configure_logging
-from app.core.maintenance import index_loop, maintenance_loop
+from app.core.maintenance import index_loop, maintenance_loop, thumbnail_loop
 from app.services.errors import PayloadTooLargeError, QuotaError
 
 settings = get_settings()
@@ -47,6 +47,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         tasks.append(asyncio.create_task(maintenance_loop(settings.maintenance_interval_seconds)))
     if settings.index_interval_seconds > 0:
         tasks.append(asyncio.create_task(index_loop(settings.index_interval_seconds)))
+    if settings.thumb_interval_seconds > 0:
+        tasks.append(asyncio.create_task(thumbnail_loop(settings.thumb_interval_seconds)))
     try:
         yield
     finally:

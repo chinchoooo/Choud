@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core import database
 from app.core.config import get_settings
-from app.services import gc_service, index_service, media_cache, upload_service
+from app.services import gc_service, index_service, media_cache, thumbnail_service, upload_service
 from app.services.storage_service import get_storage_service
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,28 @@ def run_index_once(session_factory: Callable[[], Session] | None = None) -> dict
         return {}
     finally:
         db.close()
+
+
+def run_thumbnails_once(session_factory: Callable[[], Session] | None = None) -> int:
+    """Makes a few thumbnails ahead of time; returns how many it made."""
+    db = (session_factory or database.SessionLocal)()
+    try:
+        return thumbnail_service.pregenerate(db, get_settings().thumb_batch)
+    except Exception:
+        db.rollback()
+        logger.exception("thumbnail pre-generation failed; will retry at the next interval")
+        return 0
+    finally:
+        db.close()
+
+
+async def thumbnail_loop(interval_seconds: float) -> None:
+    """Works through the photo library a few thumbnails at a time, resting when it is caught up."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        made = await asyncio.to_thread(run_thumbnails_once)
+        if made == 0:
+            await asyncio.sleep(max(interval_seconds, 60))  # caught up: check less often
 
 
 async def index_loop(interval_seconds: float) -> None:

@@ -157,6 +157,12 @@ def _target_name(db: Session, share: Share) -> str | None:
     return folder.name if folder else None
 
 
+def public_url(share: Share) -> str | None:
+    """The link to hand out when a public address is configured."""
+    base = get_settings().public_base_url.strip().rstrip("/")
+    return f"{base}/s/{share.token}" if base else None
+
+
 def describe(db: Session, share: Share) -> dict:
     """The fields the API shows for a share (never the password hash)."""
     return {
@@ -166,6 +172,7 @@ def describe(db: Session, share: Share) -> dict:
         "target_name": _target_name(db, share) or "(deleted)",
         "token": share.token,
         "url_path": f"/s/{share.token}",
+        "public_url": public_url(share),
         "label": share.label,
         "has_password": share.password_hash is not None,
         "permission": share.permission,

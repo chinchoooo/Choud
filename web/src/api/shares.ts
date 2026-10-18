@@ -7,6 +7,8 @@ export interface Share {
   target_name: string;
   token: string;
   url_path: string;
+  /** The address to hand out when the server has a public address configured. */
+  public_url?: string | null;
   label: string | null;
   has_password: boolean;
   permission: "view" | "edit" | "drop";
@@ -64,8 +66,8 @@ export function revokeShare(id: string): Promise<void> {
 }
 
 /** The full address to hand to someone: this site's origin plus the link's path. */
-export function shareUrl(share: Pick<Share, "url_path">, origin = window.location.origin): string {
-  return `${origin}${share.url_path}`;
+export function shareUrl(share: Pick<Share, "url_path" | "public_url">, origin = window.location.origin): string {
+  return share.public_url || `${origin}${share.url_path}`;
 }
 
 export const DOWNLOAD_LIMITS: { label: string; count: number | null }[] = [

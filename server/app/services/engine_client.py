@@ -40,6 +40,18 @@ class EngineClient:
     are added as the corresponding phases land.
     """
 
+    @staticmethod
+    def local_object_path(content_hash: str):
+        """Where the engine keeps an object on the shared volume, if it is there.
+
+        The backend and engine share STORAGE_ROOT, so derived-data jobs (thumbnails) can READ an
+        object in place instead of asking the engine to copy it out first. Read-only use only.
+        """
+        from pathlib import Path
+
+        path = Path(settings.storage_root) / "objects" / content_hash[:2] / content_hash
+        return path if path.is_file() else None
+
     def __init__(self, base_url: str | None = None, timeout: float | None = None) -> None:
         self._base_url = base_url or settings.engine_base_url
         self._timeout = timeout or settings.engine_timeout_seconds

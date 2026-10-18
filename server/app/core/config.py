@@ -56,10 +56,21 @@ class Settings(BaseSettings):
     # "open" (anyone who can reach the server) or "closed" (only the first account).
     registration_mode: str = "invite"
 
+    # The address people OUTSIDE your private network use to reach share links, e.g.
+    # https://choud.example.com or a Tailscale Funnel address. Empty = share links use the address
+    # you are browsing with (so they only work for people who can reach the server). See
+    # docs/deployment.md "Making share links public".
+    public_base_url: str = ""
+
     # Search inside files (app/services/index_service.py): a background pass every N seconds
     # extracts the text of up to INDEX_BATCH new or changed files. 0 seconds disables it.
     index_interval_seconds: int = 60
     index_batch: int = 25
+
+    # Thumbnails are made ahead of time in the background so opening Photos is fast. A pass every N
+    # seconds makes up to THUMB_BATCH of them (0 seconds disables it).
+    thumb_interval_seconds: int = 15
+    thumb_batch: int = 6
 
     # Auth endpoint rate limiting (app/core/rate_limit.py).
     rate_limit_enabled: bool = True

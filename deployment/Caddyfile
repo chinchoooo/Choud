@@ -6,6 +6,43 @@
 # HTTPS, replace ":80" with your hostname (e.g. "cloud.example.com") and Caddy
 # will provision a certificate automatically.
 
+# Optional global settings: trust the address the tunnel/funnel tells us about, so per-visitor rate
+# limits work for people arriving on the public port below.
+{
+    servers :8081 {
+        trusted_proxies static private_ranges
+        # Read X-Forwarded-For from the right (what OUR tunnel appended), not the left (what the visitor typed).
+        trusted_proxies_strict
+    }
+}
+
+# The PUBLIC door (docker-compose publishes it on 127.0.0.1 only; you point Tailscale Funnel, a
+# Cloudflare Tunnel or a port forward at it). It serves share pages and nothing else: no app, no API,
+# no login. Everything else answers 404, so exposing this port never exposes your drive.
+:8081 {
+    header {
+        ?X-Content-Type-Options "nosniff"
+        ?Referrer-Policy "no-referrer"
+        ?X-Frame-Options "DENY"
+        -Server
+    }
+
+    handle /s/* {
+        request_body {
+            max_size 160MB
+        }
+        # Hand the backend ONE address: the last one that is not our own tunnel (what the tunnel saw),
+        # never a leading value a visitor typed into X-Forwarded-For to dodge the per-visitor limits.
+        reverse_proxy backend:8000 {
+            header_up X-Forwarded-For {client_ip}
+        }
+    }
+
+    handle {
+        respond "Not found" 404
+    }
+}
+
 :80 {
     # Baseline security headers on everything the backend answers. The "?" prefix means "only if the
     # response does not already set it", so the stricter policies the backend (previews, public share

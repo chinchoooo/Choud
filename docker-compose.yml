@@ -74,6 +74,7 @@ services:
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       DEFAULT_STORAGE_QUOTA_BYTES: ${DEFAULT_STORAGE_QUOTA_BYTES:-429496729600}
       REGISTRATION_MODE: ${REGISTRATION_MODE:-invite}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       GC_DELETE_ENABLED: ${GC_DELETE_ENABLED:-false}
       GC_GRACE_HOURS: ${GC_GRACE_HOURS:-72}
       BACKEND_LOG_LEVEL: ${BACKEND_LOG_LEVEL:-info}
@@ -115,6 +116,9 @@ services:
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
+      # The public share-link door (share pages only). Bound to this machine so only a tunnel or
+      # funnel running here can reach it; see docs/deployment.md.
+      - "127.0.0.1:${PUBLIC_PORT:-8081}:8081"
     volumes:
       - ./deployment/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

@@ -18,6 +18,11 @@ class StorageService:
     def hash_file(self, path: Path) -> str:
         return self._client.hash_file(str(path))
 
+    def local_path(self, content_hash: str) -> Path | None:
+        """The object's file on the shared volume, for read-only use (None if unavailable)."""
+        finder = getattr(self._client, "local_object_path", None)
+        return finder(content_hash) if finder else None
+
     def exists(self, content_hash: str) -> bool:
         return self._client.exists(content_hash)
 

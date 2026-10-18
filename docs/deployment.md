@@ -248,3 +248,29 @@ them. Nothing referenced by any file or version of any user is ever removed (tra
 nothing younger than 72 hours (`GC_GRACE_HOURS`), because an upload stores its bytes just before its
 database row is saved. The backend also reports once a day on its own; set
 `GC_DELETE_ENABLED=true` to let that daily pass delete too.
+
+## Making share links public
+
+Share links point at your server's address. If that is a Tailscale address, only people on your
+tailnet can open them. To let **anyone** open a share link without exposing the rest of Choud:
+
+1. The stack already runs a second, **public door**: Caddy listens on `127.0.0.1:8081` (bound to this
+   machine only) and serves `/s/*` (share pages) and nothing else. The app, the API and login answer
+   404 there, so exposing it never exposes your drive. It reads the visitor's address from the
+   rightmost `X-Forwarded-For` entry (what your tunnel saw), so per-visitor rate limits cannot be
+   dodged with a forged header.
+2. Point a tunnel at it. Pick one:
+   - **Tailscale Funnel** (simplest if you already use Tailscale): enable HTTPS and Funnel for the
+     machine in the Tailscale admin console, then run
+     `sudo tailscale funnel --bg 8081` (older versions: `tailscale funnel 8081`).
+     It prints an address like `https://arvismint.your-tailnet.ts.net`.
+   - **Cloudflare Tunnel** (a free account and a domain): `cloudflared tunnel --url http://127.0.0.1:8081`
+     for a quick test, or a named tunnel to `http://127.0.0.1:8081` for a fixed address.
+   - **A port forward** from your router to a reverse proxy with HTTPS in front of `127.0.0.1:8081`.
+3. Put that address in `.env` as `PUBLIC_BASE_URL=https://arvismint.your-tailnet.ts.net` (no trailing
+   slash) and redeploy. Links made in the web app and the phone app then use it.
+
+Check from a phone that is **not** on Tailscale: open a share link, and also open
+`<public address>/api/health`, which must say "Not found". Use an expiry and a password on links to
+sensitive folders, and prefer view-only links; edit and file-request links accept uploads from the
+internet (limited by your quota and the rate limits).

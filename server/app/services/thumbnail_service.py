@@ -15,6 +15,7 @@ from pathlib import Path
 from app.core.config import get_settings
 from app.models.file import File
 from app.services import file_service
+from app.services.storage_service import get_storage_service
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -116,15 +117,21 @@ def get_thumbnail(file: File, size: int) -> Path:
     if cached.exists():
         return cached
 
-    staged = file_service.prepare_download(file)
+    # Read the stored object in place when we can (no copy of a multi-megabyte original just to
+    # shrink it); otherwise fall back to asking the engine for a staged copy.
+    staged: Path | None = None
+    source = get_storage_service().local_path(file.content_hash)
+    if source is None:
+        staged = file_service.prepare_download(file)
+        source = staged
     fd, tmp_name = tempfile.mkstemp(dir=directory, suffix=".tmp.jpg")
     os.close(fd)  # we only want a unique name; Pillow/ffmpeg reopen it
     tmp_out = Path(tmp_name)
     try:
         if kind == "image":
-            _image_thumbnail(staged, tmp_out, size)
+            _image_thumbnail(source, tmp_out, size)
         else:
-            _video_thumbnail(staged, tmp_out, size)
+            _video_thumbnail(source, tmp_out, size)
         tmp_out.replace(cached)  # atomic: a half-written thumbnail is never served
     except ThumbnailUnavailable:
         tmp_out.unlink(missing_ok=True)
@@ -134,5 +141,60 @@ def get_thumbnail(file: File, size: int) -> Path:
         logger.warning("thumbnail failed for %s: %s", file.id, exc)
         raise ThumbnailUnavailable(f"could not create a thumbnail: {exc}") from exc
     finally:
-        staged.unlink(missing_ok=True)
+        if staged is not None:
+            staged.unlink(missing_ok=True)
     return cached
+
+
+# --- pre-generation -------------------------------------------------------------------------------
+
+PREGENERATE_SIZE = 256  # what the photo grid and file lists ask for
+_settled: set[str] = set()  # content hashes already done (or known impossible) in this process
+
+
+def _marker(content_hash: str) -> Path:
+    return thumbs_dir() / f"{content_hash}-{PREGENERATE_SIZE}.fail"
+
+
+def pregenerate(db, limit: int = 6) -> int:
+    """Makes grid thumbnails ahead of time for photos and videos that lack one, newest first.
+
+    at once, which is the slow part of opening Photos. Files that cannot have a thumbnail get a
+    marker so they are not retried forever. Returns how many thumbnails were made.
+    so they are not retried forever. Returns how many thumbnails were made.
+    """
+    from sqlalchemy import or_, select
+
+    directory = thumbs_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    rows = db.execute(
+        select(File)
+        .where(
+            File.deleted_at.is_(None),
+            File.content_hash.is_not(None),
+            or_(File.mime_type.like("image/%"), File.mime_type.like("video/%")),
+        )
+        .order_by(File.created_at.desc())
+    ).scalars()
+    made = 0
+    for file in rows:
+        if made >= limit:
+            break
+        content_hash = file.content_hash
+        if content_hash in _settled:
+            continue
+        if (directory / f"{content_hash}-{PREGENERATE_SIZE}.jpg").exists() or _marker(
+            content_hash
+        ).exists():
+            _settled.add(content_hash)
+            continue
+        try:
+            get_thumbnail(file, PREGENERATE_SIZE)
+            made += 1
+        except (ThumbnailUnavailable, file_service.StorageError):
+            _marker(content_hash).touch()
+        except Exception as exc:  # one bad file must never stop the rest
+            logger.warning("thumbnail pre-generation failed for %s: %s", file.id, exc)
+            _marker(content_hash).touch()
+        _settled.add(content_hash)
+    return made

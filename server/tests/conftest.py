@@ -7,6 +7,7 @@ os.environ.setdefault("MAINTENANCE_INTERVAL_SECONDS", "0")
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 os.environ.setdefault("REGISTRATION_MODE", "open")
 os.environ.setdefault("INDEX_INTERVAL_SECONDS", "0")
+os.environ.setdefault("THUMB_INTERVAL_SECONDS", "0")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient
@@ -115,6 +116,7 @@ def _isolated_storage_root(tmp_path, fake_engine_client, monkeypatch: pytest.Mon
     attribute in place rather than relying on env vars taking effect late.
     """
     from app.services import file_service as file_service_module
+    from app.services import thumbnail_service as thumbnail_service_module
     from app.services import trash_service as trash_service_module
     from app.services import upload_service as upload_service_module
     from app.services.storage_service import StorageService
@@ -135,6 +137,11 @@ def _isolated_storage_root(tmp_path, fake_engine_client, monkeypatch: pytest.Mon
     )
     monkeypatch.setattr(
         trash_service_module,
+        "get_storage_service",
+        lambda: StorageService(fake_engine_client),
+    )
+    monkeypatch.setattr(
+        thumbnail_service_module,
         "get_storage_service",
         lambda: StorageService(fake_engine_client),
     )

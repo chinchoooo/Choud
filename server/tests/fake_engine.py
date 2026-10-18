@@ -25,6 +25,10 @@ class FakeEngineClient:
     def _path_for(self, content_hash: str) -> Path:
         return self._objects_dir / content_hash[:2] / content_hash
 
+    def local_object_path(self, content_hash: str):
+        path = self._path_for(content_hash)
+        return path if path.is_file() else None
+
     def hash_file(self, path: str) -> str:
         hasher = hashlib.sha256()
         with open(path, "rb") as f:

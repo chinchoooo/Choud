@@ -388,11 +388,83 @@ def test_timeline_prefers_taken_then_modified_then_upload_time(
     client: TestClient, make_user, auth_headers
 ):
     headers = auth_headers(make_user())
-    _upload(client, headers, "taken.png", _png((1, 1, 1)), "image/png",
-            taken_at="2020-01-01T00:00:00+00:00", modified_at="2026-01-01T00:00:00+00:00")
-    _upload(client, headers, "modified.png", _png((2, 2, 2)), "image/png",
-            modified_at="2021-01-01T00:00:00+00:00")
+    _upload(
+        client,
+        headers,
+        "taken.png",
+        _png((1, 1, 1)),
+        "image/png",
+        taken_at="2020-01-01T00:00:00+00:00",
+        modified_at="2026-01-01T00:00:00+00:00",
+    )
+    _upload(
+        client,
+        headers,
+        "modified.png",
+        _png((2, 2, 2)),
+        "image/png",
+        modified_at="2021-01-01T00:00:00+00:00",
+    )
     _upload(client, headers, "plain.png", _png((3, 3, 3)), "image/png")
     names = [f["name"] for f in client.get("/api/library/photos", headers=headers).json()["items"]]
     # plain = now (newest), modified = 2021, taken = 2020 (taken wins over its newer mtime)
     assert names == ["plain.png", "modified.png", "taken.png"]
+
+
+# --- thumbnails made ahead of time, and read in place ---------------------------------------------
+
+
+def test_thumbnails_are_made_ahead_of_time_and_without_copying_the_original(
+    client: TestClient, make_user, auth_headers, db_session, monkeypatch
+):
+    from app.services import file_service, thumbnail_service
+
+    thumbnail_service._settled.clear()
+    headers = auth_headers(make_user())
+    ids = [
+        _upload(client, headers, f"p{i}.png", _png(color=(i * 40, 30, 30)), "image/png").json()[
+            "id"
+        ]
+        for i in range(3)
+    ]
+    _upload(client, headers, "broken.jpg", b"not an image at all", "image/jpeg")
+    _upload(client, headers, "notes.txt", b"text", "text/plain")
+
+    staged = []
+    real = file_service.prepare_download
+    monkeypatch.setattr(
+        file_service, "prepare_download", lambda *a, **k: staged.append(1) or real(*a, **k)
+    )
+
+    assert thumbnail_service.pregenerate(db_session, limit=2) == 2  # a few at a time
+    assert (
+        thumbnail_service.pregenerate(db_session, limit=10) == 1
+    )  # the rest; the broken one is skipped
+    assert thumbnail_service.pregenerate(db_session, limit=10) == 0  # nothing left, nothing retried
+    assert staged == []  # every original was read in place, never copied out first
+
+    token = _media_token(client, headers)
+    for file_id in ids:
+        response = client.get(f"/api/media/{token}/{file_id}/thumbnail")
+        assert response.status_code == 200 and response.content[:2] == b"\xff\xd8"
+    assert staged == []  # and they were already cached when asked for
+    thumbnail_service._settled.clear()
+
+
+def test_a_missing_local_object_falls_back_to_the_engine_copy(
+    client: TestClient, make_user, auth_headers, monkeypatch
+):
+    from app.services import file_service
+    from app.services.storage_service import StorageService
+
+    headers = auth_headers(make_user())
+    file_id = _upload(client, headers, "a.png", _png(), "image/png").json()["id"]
+    monkeypatch.setattr(StorageService, "local_path", lambda self, content_hash: None)
+    copied = []
+    real = file_service.prepare_download
+    monkeypatch.setattr(
+        file_service, "prepare_download", lambda *a, **k: copied.append(1) or real(*a, **k)
+    )
+    token = _media_token(client, headers)
+    assert client.get(f"/api/media/{token}/{file_id}/thumbnail").status_code == 200
+    assert copied == [1]
