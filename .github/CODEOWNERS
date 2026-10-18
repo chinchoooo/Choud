@@ -1,0 +1,8 @@
+# Every change is reviewed by the maintainer. Sensitive areas are listed so they are never missed.
+* @chinchoooo
+/server/app/core/ @chinchoooo
+/server/app/api/public_shares.py @chinchoooo
+/deployment/ @chinchoooo
+/scripts/ @chinchoooo
+/.github/ @chinchoooo
+/SECURITY.md @chinchoooo
