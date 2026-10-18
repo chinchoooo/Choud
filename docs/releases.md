@@ -12,7 +12,7 @@ Each release carries:
 macOS and Linux run the sync client from source (`pip install -e client`), and the server is
 deployed from the repository itself (`docs/deployment.md`), so neither is a release file.
 
-> The repository is **private** at the time of writing, so downloading needs a browser (or `gh`)
+> While the repository is **private**, downloading needs a browser (or `gh`)
 > logged in to the owner's GitHub account. The files contain no secrets (the server address and
 > password are typed into the app), so making the repository public would be safe if you want
 > plain download links; that is your decision.
