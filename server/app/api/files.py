@@ -50,7 +50,7 @@ def list_directory(
 
 @router.post(
     "/upload",
-    dependencies=[Depends(rate_limit("upload", 600, 60))],
+    dependencies=[Depends(rate_limit("upload", 3000, 60))],
     response_model=FileResponse,
     status_code=status.HTTP_201_CREATED,
 )
@@ -105,7 +105,7 @@ def get_file(
         raise _not_found(exc) from exc
 
 
-@router.get("/{file_id}/download", dependencies=[Depends(rate_limit("download", 600, 60))])
+@router.get("/{file_id}/download", dependencies=[Depends(rate_limit("download", 6000, 60))])
 def download(
     file_id: uuid.UUID,
     current_user: User = Depends(get_current_user),

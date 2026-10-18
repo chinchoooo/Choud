@@ -39,7 +39,7 @@ def _conflict(exc: upload_service.ConflictError) -> HTTPException:
 
 @router.post(
     "",
-    dependencies=[Depends(rate_limit("upload", 600, 60))],
+    dependencies=[Depends(rate_limit("upload", 3000, 60))],
     response_model=UploadSessionResponse,
     status_code=status.HTTP_201_CREATED,
 )
@@ -89,7 +89,7 @@ def get_upload_status(
 
 @router.post(
     "/{upload_id}/chunks/{index}",
-    dependencies=[Depends(rate_limit("upload-chunk", 1200, 60))],
+    dependencies=[Depends(rate_limit("upload-chunk", 3000, 60))],
     response_model=ChunkAckResponse,
 )
 async def upload_chunk(
@@ -121,7 +121,7 @@ async def upload_chunk(
 
 @router.post(
     "/{upload_id}/complete",
-    dependencies=[Depends(rate_limit("upload", 600, 60))],
+    dependencies=[Depends(rate_limit("upload", 3000, 60))],
     response_model=FileResponse,
 )
 def complete_upload(
