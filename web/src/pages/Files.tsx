@@ -3,14 +3,16 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent 
 import { useSearchParams } from "react-router-dom";
 
 import { ApiError } from "../api/client";
-import { listDirectory, search as searchFiles } from "../api/files";
+import { deleteFile, downloadZip, listDirectory, moveFile, search as searchFiles } from "../api/files";
 import { createFolder, deleteFolder, getFolder, moveFolder, renameFolder } from "../api/folders";
+import { BulkBar } from "../components/BulkBar";
 import { ConfirmDialog, FolderPicker, PromptDialog, plainButton, primaryButton } from "../components/Dialogs";
 import { FileCollection, ViewToggle, loadViewMode, saveViewMode, type ViewMode } from "../components/FileCollection";
 import { FileViewer } from "../components/FileViewer";
 import { ShareDialog } from "../components/ShareDialog";
 import { VersionHistory } from "../components/VersionHistory";
 import { useFileActions } from "../hooks/useFileActions";
+import { ensureFolderPath, fromDrop, fromPickedFolder, groupByDir, type TreeFile } from "../lib/folderUpload";
 import { useUploads } from "../uploads/UploadContext";
 import type { FolderResponse } from "../types/files";
 
@@ -26,6 +28,7 @@ export function Files() {
   const queryClient = useQueryClient();
   const { enqueue } = useUploads();
   const fileInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
 
   const [params, setParams] = useSearchParams();
   const folderId = params.get("folder");
@@ -37,6 +40,13 @@ export function Files() {
   const [versionsFor, setVersionsFor] = useState<string | null>(null);
   const [folderDialog, setFolderDialog] = useState<FolderDialog | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Bulk selection: files and folders chosen with the checkboxes.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selFiles, setSelFiles] = useState<Set<string>>(new Set());
+  const [selFolders, setSelFolders] = useState<Set<string>>(new Set());
+  const [bulkDialog, setBulkDialog] = useState<null | "move" | "trash">(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
   const dragDepth = useRef(0);
 
   const actions = useFileActions((file) => [
@@ -143,6 +153,81 @@ export function Files() {
     onError: (err) => folderError(err, "Could not delete the folder. Is it empty?"),
   });
 
+  // Moving to another folder or searching starts a fresh selection.
+  useEffect(() => {
+    setSelFiles(new Set());
+    setSelFolders(new Set());
+    setBulkMessage(null);
+  }, [folderId, searchText]);
+
+  function toggle(set: Set<string>, id: string): Set<string> {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  }
+  function endSelecting() {
+    setSelectMode(false);
+    setSelFiles(new Set());
+    setSelFolders(new Set());
+    setBulkMessage(null);
+  }
+  const selectedCount = selFiles.size + selFolders.size;
+  const selectableTotal = nameFiles.length + folders.length;
+  function selectAllOrNone() {
+    if (selectedCount === selectableTotal) {
+      setSelFiles(new Set());
+      setSelFolders(new Set());
+    } else {
+      setSelFiles(new Set(nameFiles.map((file) => file.id)));
+      setSelFolders(new Set(folders.map((folder) => folder.id)));
+    }
+  }
+
+  /** Runs one request per item, then says how many worked, so one failure never hides the rest. */
+  async function runBulk(label: string, jobs: (() => Promise<unknown>)[]) {
+    setBulkBusy(true);
+    setBulkMessage(null);
+    const results = await Promise.allSettled(jobs.map((job) => job()));
+    const failed = results.filter((result) => result.status === "rejected").length;
+    setBulkBusy(false);
+    setSelFiles(new Set());
+    setSelFolders(new Set());
+    setBulkMessage(
+      failed === 0
+        ? `${label}: ${results.length} done.`
+        : `${label}: ${results.length - failed} done, ${failed} could not be changed (a non-empty folder, or a name already taken).`,
+    );
+    refresh();
+    void queryClient.invalidateQueries({ queryKey: ["usage"] });
+  }
+  async function bulkDownload() {
+    setBulkBusy(true);
+    setBulkMessage(null);
+    try {
+      await downloadZip([...selFiles], [...selFolders]);
+      setBulkMessage("Download started.");
+    } catch (err) {
+      setBulkMessage(err instanceof Error ? err.message : "Could not build the zip.");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+  function bulkMove(destination: string | null) {
+    setBulkDialog(null);
+    void runBulk("Move", [
+      ...[...selFiles].map((id) => () => moveFile(id, destination)),
+      ...[...selFolders].map((id) => () => moveFolder(id, destination)),
+    ]);
+  }
+  function bulkTrash() {
+    setBulkDialog(null);
+    void runBulk("Delete", [
+      ...[...selFiles].map((id) => () => deleteFile(id)),
+      ...[...selFolders].map((id) => () => deleteFolder(id)),
+    ]);
+  }
+
   function openFolder(folder: FolderResponse) {
     setVersionsFor(null);
     setParams({ folder: folder.id });
@@ -153,13 +238,37 @@ export function Files() {
     saveViewMode(next);
   }
 
+  /** Uploads files that sit in sub-folders: the folders are created first, then each group queued. */
+  async function uploadTree(tree: TreeFile[]) {
+    const here = (crumbs.data ?? []).map((crumb) => crumb.name).join("/");
+    try {
+      for (const [dir, group] of groupByDir(tree)) {
+        if (dir === "") {
+          enqueue(group, folderId, destination);
+          continue;
+        }
+        const id = await ensureFolderPath(here ? `${here}/${dir}` : dir);
+        enqueue(group, id, `${destination} / ${dir.replaceAll("/", " / ")}`);
+      }
+      refresh();
+    } catch (err) {
+      setFolderDialog({ kind: "error", message: err instanceof ApiError ? err.message : "Could not create the folders." });
+    }
+  }
+
+  function pickFolder(event: ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    void uploadTree(fromPickedFolder(picked));
+  }
+
   function pickFiles(event: ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(event.target.files ?? []);
     event.target.value = "";
     enqueue(picked, folderId, destination);
   }
 
-  // Drag & drop anywhere on the page. Folders dropped are skipped (they have no size/type).
+  // Drag & drop anywhere on the page. Dropped folders are uploaded with their structure.
   function onDragEnter(event: DragEvent) {
     if (!event.dataTransfer.types.includes("Files")) return;
     dragDepth.current += 1;
@@ -173,8 +282,13 @@ export function Files() {
     event.preventDefault();
     dragDepth.current = 0;
     setDragging(false);
-    const dropped = Array.from(event.dataTransfer.files).filter((file) => file.type !== "" || file.size > 0);
-    enqueue(dropped, folderId, destination);
+    if (event.dataTransfer.items?.length) {
+      void fromDrop(event.dataTransfer.items).then((tree) => {
+        if (tree.length > 0) void uploadTree(tree);
+      });
+      return;
+    }
+    enqueue(Array.from(event.dataTransfer.files), folderId, destination);
   }
 
   return (
@@ -217,12 +331,26 @@ export function Files() {
           <ViewToggle mode={mode} onChange={changeMode} />
           {!isSearching && (
             <>
+              <button onClick={() => setSelectMode((on) => !on)} aria-pressed={selectMode} className={plainButton}>
+                Select
+              </button>
               <button onClick={() => setFolderDialog({ kind: "new" })} className={plainButton}>
                 New folder
+              </button>
+              <button onClick={() => folderInput.current?.click()} className={plainButton}>
+                Upload folder
               </button>
               <button onClick={() => fileInput.current?.click()} className={primaryButton}>
                 Upload files
               </button>
+              <input
+                ref={folderInput}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={pickFolder}
+                {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+              />
               <input ref={fileInput} type="file" multiple className="hidden" onChange={pickFiles} />
             </>
           )}
@@ -233,6 +361,20 @@ export function Files() {
           )}
         </div>
       </div>
+
+      {selectMode && !isSearching && (
+        <BulkBar
+          count={selectedCount}
+          total={selectableTotal}
+          busy={bulkBusy}
+          message={bulkMessage}
+          onSelectAll={selectAllOrNone}
+          onDownload={() => void bulkDownload()}
+          onMove={() => setBulkDialog("move")}
+          onTrash={() => setBulkDialog("trash")}
+          onClear={endSelecting}
+        />
+      )}
 
       <div className="mt-4">
         {loading && <p className="p-4 text-sm text-gray-500">Loading…</p>}
@@ -255,6 +397,16 @@ export function Files() {
             onToggleFavorite={actions.toggleFavorite}
             onDownload={(file) => void actions.download(file)}
             fileMenu={actions.menuFor}
+            selection={
+              selectMode && !isSearching
+                ? {
+                    files: selFiles,
+                    folders: selFolders,
+                    toggleFile: (id) => setSelFiles((set) => toggle(set, id)),
+                    toggleFolder: (id) => setSelFolders((set) => toggle(set, id)),
+                  }
+                : undefined
+            }
             folderMenu={(folder) => [
               { label: "Open", onSelect: () => openFolder(folder) },
               { label: "Share link…", onSelect: () => setFolderDialog({ kind: "share", folder }) },
@@ -286,6 +438,24 @@ export function Files() {
           </section>
         )}
       </div>
+
+      {bulkDialog === "move" && (
+        <FolderPicker
+          title={`Move ${selectedCount} item${selectedCount === 1 ? "" : "s"}`}
+          onPick={bulkMove}
+          onClose={() => setBulkDialog(null)}
+        />
+      )}
+      {bulkDialog === "trash" && (
+        <ConfirmDialog
+          title="Delete the selected items?"
+          message={`${selFiles.size} file(s) go to the trash and can be restored. ${selFolders.size} folder(s) are removed only if they are empty.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={bulkTrash}
+          onClose={() => setBulkDialog(null)}
+        />
+      )}
 
       {viewerIndex !== null && (
         <FileViewer

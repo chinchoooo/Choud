@@ -87,6 +87,37 @@ export async function downloadAuthenticated(path: string, filename: string): Pro
   URL.revokeObjectURL(url);
 }
 
+/** Downloads the chosen files and folders as one .zip (built on the server). */
+export async function downloadZip(fileIds: string[], folderIds: string[]): Promise<void> {
+  const token = getAccessToken();
+  const response = await fetch(`${API_BASE_URL}/api/archive/zip`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ file_ids: fileIds, folder_ids: folderIds }),
+  });
+  if (!response.ok) {
+    let detail = `download failed with status ${response.status}`;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (typeof body.detail === "string") detail = body.detail;
+    } catch {
+      // keep the generic message
+    }
+    throw new Error(detail);
+  }
+  const header = response.headers.get("Content-Disposition") ?? "";
+  const match = /filename="?([^";]+)"?/.exec(header);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = match?.[1] ?? "choud.zip";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function downloadFile(id: string, filename: string): Promise<void> {
   return downloadAuthenticated(`/api/files/${id}/download`, filename);
 }

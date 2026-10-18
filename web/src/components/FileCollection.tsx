@@ -62,9 +62,38 @@ interface Props {
   onDownload: (file: FileResponse) => void;
   fileMenu: (file: FileResponse) => MenuItem[];
   folderMenu?: (folder: FolderResponse) => MenuItem[];
+  /** When set, every row gets a checkbox (bulk actions). */
+  selection?: {
+    files: ReadonlySet<string>;
+    folders: ReadonlySet<string>;
+    toggleFile: (id: string) => void;
+    toggleFolder: (id: string) => void;
+  };
   /** Rendered under a file's row (the inline version history). */
   expandedFor?: string | null;
   renderExpanded?: (file: FileResponse) => ReactNode;
+}
+
+function Check({
+  checked,
+  label,
+  onChange,
+  className = "",
+}: {
+  checked: boolean;
+  label: string;
+  onChange: () => void;
+  className?: string;
+}) {
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      aria-label={label}
+      className={`h-4 w-4 shrink-0 accent-gray-900 ${className}`}
+    />
+  );
 }
 
 function Star({ file, onToggle }: { file: FileResponse; onToggle: (file: FileResponse) => void }) {
@@ -96,6 +125,7 @@ export function FileCollection({
   onDownload,
   fileMenu,
   folderMenu,
+  selection,
   expandedFor,
   renderExpanded,
 }: Props) {
@@ -120,6 +150,14 @@ export function FileCollection({
             >
               <FolderBadge className="h-16 w-16 text-sm" />
             </button>
+            {selection && (
+              <Check
+                checked={selection.folders.has(folder.id)}
+                label={`Select folder ${folder.name}`}
+                onChange={() => selection.toggleFolder(folder.id)}
+                className="absolute left-1 top-1"
+              />
+            )}
             <div className="flex items-center justify-between gap-1 border-t border-gray-100 px-2 py-1.5">
               <span className="truncate text-sm font-medium text-gray-900" title={folder.name}>
                 {folder.name}
@@ -137,6 +175,14 @@ export function FileCollection({
             >
               <Thumb file={file} size={256} className="h-full w-full text-sm" />
             </button>
+            {selection && (
+              <Check
+                checked={selection.files.has(file.id)}
+                label={`Select ${file.name}`}
+                onChange={() => selection.toggleFile(file.id)}
+                className="absolute left-1 top-1"
+              />
+            )}
             <div className="absolute right-1 top-1 bg-white/80 rounded-md">
               <Star file={file} onToggle={onToggleFavorite} />
             </div>
@@ -162,6 +208,13 @@ export function FileCollection({
           key={folder.id}
           className="flex items-center gap-3 border-b border-gray-100 px-3 py-2 last:border-b-0 hover:bg-gray-50"
         >
+          {selection && (
+            <Check
+              checked={selection.folders.has(folder.id)}
+              label={`Select folder ${folder.name}`}
+              onChange={() => selection.toggleFolder(folder.id)}
+            />
+          )}
           <FolderBadge className="h-10 w-10 shrink-0" />
           <button
             onClick={() => onOpenFolder?.(folder)}
@@ -182,6 +235,13 @@ export function FileCollection({
           onMouseLeave={() => setHovered(null)}
         >
           <div className={`flex items-center gap-3 px-3 py-2 ${hovered === file.id ? "bg-gray-50" : ""}`}>
+            {selection && (
+              <Check
+                checked={selection.files.has(file.id)}
+                label={`Select ${file.name}`}
+                onChange={() => selection.toggleFile(file.id)}
+              />
+            )}
             <Thumb file={file} size={128} className="h-10 w-10 shrink-0 text-[10px]" />
             <button onClick={() => onOpenFile(index)} className="min-w-0 flex-1 text-left" aria-label={`Open ${file.name}`}>
               <div className="truncate text-sm text-gray-900 hover:underline" title={file.name}>

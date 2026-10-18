@@ -61,4 +61,6 @@ class UserResponse(BaseModel):
     is_active: bool
     storage_quota: int
     totp_enabled: bool = False
+    # True for the oldest account (it manages invites and sees the server view).
+    is_admin: bool = False
     created_at: datetime

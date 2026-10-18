@@ -89,3 +89,10 @@ def test_open_mode_lets_anyone_in_and_closed_mode_lets_nobody(
     assert _register(client, "nobody").status_code == 403
     _mode(monkeypatch, "banana")  # an unknown value must fail safe, not open
     assert _register(client, "nobody2").status_code == 403
+
+
+def test_me_says_who_the_administrator_is(client: TestClient, make_user, auth_headers) -> None:
+    admin = auth_headers(make_user("admin", "admin@example.com"))
+    other = auth_headers(make_user("other", "other@example.com"))
+    assert client.get("/api/auth/me", headers=admin).json()["is_admin"] is True
+    assert client.get("/api/auth/me", headers=other).json()["is_admin"] is False
