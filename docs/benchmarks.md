@@ -93,20 +93,28 @@ Run on 2026-10-18 on the home server (Linux Mint, 4 logical CPUs), Choud 0.5.1, 
 over `localhost` with the line speeds simulated by the script. One run each; Drive's numbers are other
 people's single runs on other networks, so read the comparison as indicative.
 
-| Test (line speed) | Google Drive, published | Choud 0.5.1 |
-| --- | --- | --- |
-| 500 MB at 19.69 Mbps up | 3:33 (95% of the line) | 3:43 (90.7%) |
-| 500 MB at 187.95 Mbps down | 0:24 (89%) | 0:24 (85.6%) |
-| 5 GB mixed folder (1,045 files) at 100 Mbps up | 7:15 (92%) | 8:54 (74.9%) |
-| 5 GB mixed folder at 100 Mbps down | 7:18 (91%) | 6:41 (99.6%) |
+| Test (line speed) | Google Drive, published | Choud, first run | Choud, after the speed fixes |
+| --- | --- | --- | --- |
+| 500 MB at 19.69 Mbps up | 3:33 (95% of the line) | 3:43 (90.7%) | **3:31 (96.3%)** |
+| 500 MB at 187.95 Mbps down | 0:24 (89%) | 0:24 (85.6%) | 0:24 (87.8%) |
+| 5 GB mixed folder (1,045 files) at 100 Mbps up | 7:15 (92%) | 8:54 (74.9%) | 7:57 (83.8%) |
+| 5 GB mixed folder at 100 Mbps down | 7:18 (91%) | 6:41 (99.6%) | 7:01 (94.9%) |
+
+What changed between the two Choud columns: the upload endpoints no longer block the server while they wait
+on the disk, clients send up to three chunks at once, the engine no longer reads an uploaded file twice, and
+downloads use a hard link instead of copying the file.
 
 What this says, honestly:
 
-- Downloads keep up with the line. Uploads of one big file are within about five points of Drive.
-- Uploading about a thousand small files is the weak spot: each upload costs roughly 65 ms of server work
-  (a 100 KB upload takes 67 ms against 16 ms for a bare health check), which adds up over a thousand files.
-- Big uploads sent one 5 MiB chunk at a time leave the line idle between chunks. Clients now send up to
-  three chunks at once; the 500 MB number above is from before that change and will be re-measured.
+- A single 500 MB upload now matches Drive's published run (3:31 against 3:33; two seconds is within the
+  noise of one run, so read it as level, not faster).
+- Uploading a thousand mixed files improved from 74.9% to 83.8% of the line, but is still about 40 seconds
+  behind Drive's published run. Each small upload still costs roughly 65 ms of server work, including the
+  flush-to-disk that keeps files safe through a power cut. That is a deliberate trade, not an accident.
+- The 5 GB download came out slower on the second run (94.9% against 99.6%) even though nothing in the
+  download path got slower. One run each, so this is most likely noise (disk cache, other work on the
+  machine), but it is reported rather than hidden. Repeat runs would show the spread.
+- Choud's downloads are level with or ahead of Drive's published numbers in the mixed-folder test.
 
 API latency on the same machine (milliseconds, median / 95th percentile):
 

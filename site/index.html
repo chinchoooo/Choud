@@ -107,13 +107,15 @@
           <tbody>
             <tr><td>500 MB upload, 19.69 Mbps line</td><td>3:33</td><td class="win">3:31</td></tr>
             <tr><td>500 MB download, 187.95 Mbps line</td><td>0:24</td><td class="win">0:24</td></tr>
+            <tr><td>5 GB mixed folder (1,045 files) up, 100 Mbps line</td><td>7:15</td><td>7:57</td></tr>
+            <tr><td>The same folder down</td><td>7:18</td><td class="win">7:01</td></tr>
             <tr><td>A screen of 24 photo thumbnails, 24 requests</td><td>&mdash;</td><td>151 ms</td></tr>
             <tr><td>The same screen, one batch request</td><td>&mdash;</td><td class="win">15 ms</td></tr>
             <tr><td>Photo library check when nothing changed</td><td>&mdash;</td><td class="win">13 ms</td></tr>
           </tbody>
         </table>
       </div>
-      <p class="muted">The photo grid is fast because a screen of thumbnails is one round trip instead of 24, and a blurry placeholder paints instantly. More tests, including a 5 GB mixed folder, and how to repeat all of them yourself: <a href="https://github.com/chinchoooo/Choud/blob/main/docs/benchmarks.md">docs/benchmarks.md</a>.</p>
+      <p class="muted">The photo grid is fast because a screen of thumbnails is one round trip instead of 24, and a blurry placeholder paints instantly. The 5 GB folder is the honest weak spot: a thousand small files upload about 40 seconds slower than Drive's published run, partly because Choud flushes every file to disk before it counts as saved. Every test, and how to repeat all of them yourself: <a href="https://github.com/chinchoooo/Choud/blob/main/docs/benchmarks.md">docs/benchmarks.md</a>.</p>
     </div>
   </section>
 
