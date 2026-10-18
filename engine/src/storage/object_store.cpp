@@ -149,8 +149,16 @@ void ObjectStore::get(const std::string& hash, const std::filesystem::path& dest
     }
 
     std::filesystem::create_directories(destination.parent_path());
-    std::filesystem::copy_file(source, destination,
-                               std::filesystem::copy_options::overwrite_existing);
+    // A hard link makes the download copy instant; the caller only reads it and deletes it
+    // afterwards, which removes the link and never the object. Falls back to a real copy where
+    // links are not possible (another filesystem).
+    std::error_code ec;
+    std::filesystem::remove(destination, ec);
+    std::filesystem::create_hard_link(source, destination, ec);
+    if (ec) {
+        std::filesystem::copy_file(source, destination,
+                                   std::filesystem::copy_options::overwrite_existing);
+    }
 }
 
 void ObjectStore::remove(const std::string& hash) {

@@ -26,12 +26,12 @@ class StorageService:
     def exists(self, content_hash: str) -> bool:
         return self._client.exists(content_hash)
 
-    def store(self, content_hash: str, source: Path) -> int:
+    def store(self, content_hash: str, source: Path, verified: bool = False) -> int:
         """Stores `source`'s bytes under `content_hash`. Returns the size in bytes.
 
         Consumes `source` — see `EngineClient.put`.
         """
-        return self._client.put(content_hash, str(source))
+        return self._client.put(content_hash, str(source), verified=verified)
 
     def retrieve(self, content_hash: str, destination: Path) -> int:
         return self._client.get(content_hash, str(destination))

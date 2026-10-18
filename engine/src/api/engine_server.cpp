@@ -105,7 +105,10 @@ http::response<http::string_body> handle_objects_put(unsigned version, const Jso
     }
     try {
         const auto safe = engine::util::confine(ctx.root, *source_path, /*allow_objects=*/false);
-        ctx.manager.store_object(*hash, safe);
+        // The backend sets "verified" when the engine itself just hashed this very file, so the
+        // second full read is skipped. Anything else is checked before it is stored.
+        const bool verified = body.boolean("verified").value_or(false);
+        ctx.manager.store_object(*hash, safe, /*verify=*/!verified);
         auto size = ctx.manager.object_size(*hash);
         return json_response(http::status::created, version,
                               R"({"stored":true,"size":)" + std::to_string(size) + "}");

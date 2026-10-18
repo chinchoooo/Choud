@@ -19,6 +19,7 @@ from pathlib import Path
 from fastapi import UploadFile
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
 from app.models.file import File
@@ -117,9 +118,7 @@ def _folder_name_taken(
     return db.execute(stmt).scalar_one_or_none() is not None
 
 
-def _would_create_cycle(
-    db: Session, folder_id: uuid.UUID, new_parent_id: uuid.UUID | None
-) -> bool:
+def _would_create_cycle(db: Session, folder_id: uuid.UUID, new_parent_id: uuid.UUID | None) -> bool:
     """True if setting `folder_id`'s parent to `new_parent_id` creates a cycle.
 
     A folder can't become its own descendant's parent — walk up from the
@@ -141,9 +140,7 @@ def _would_create_cycle(
     return False
 
 
-def create_folder(
-    db: Session, owner: User, name: str, parent_id: uuid.UUID | None
-) -> Folder:
+def create_folder(db: Session, owner: User, name: str, parent_id: uuid.UUID | None) -> Folder:
     if parent_id is not None:
         _get_folder_or_404(db, owner, parent_id)
 
@@ -170,9 +167,7 @@ def list_subfolders(db: Session, owner: User, parent_id: uuid.UUID | None) -> li
     return list(db.execute(stmt).scalars().all())
 
 
-def update_folder(
-    db: Session, owner: User, folder_id: uuid.UUID, data: dict
-) -> Folder:
+def update_folder(db: Session, owner: User, folder_id: uuid.UUID, data: dict) -> Folder:
     folder = _get_folder_or_404(db, owner, folder_id)
 
     new_parent_id = folder.parent_id
@@ -208,9 +203,7 @@ def delete_folder(db: Session, owner: User, folder_id: uuid.UUID) -> None:
     )
     has_file = (
         db.execute(
-            select(File.id)
-            .where(File.folder_id == folder.id, File.deleted_at.is_(None))
-            .limit(1)
+            select(File.id).where(File.folder_id == folder.id, File.deleted_at.is_(None)).limit(1)
         )
         .scalars()
         .first()
@@ -269,12 +262,42 @@ async def upload_file(
 ) -> File:
     resolved_name = _validate_filename(name or upload.filename)
 
+    content = await _read_bounded(upload, MAX_SIMPLE_UPLOAD_BYTES)
+    # Everything below blocks (database, disk, calls to the engine). Run it in a worker thread so
+    # one upload waiting on the disk never stalls the server's event loop, and with it every other
+    # request and upload in flight.
+    return await run_in_threadpool(
+        _store_upload,
+        db,
+        owner,
+        upload.content_type,
+        content,
+        resolved_name,
+        folder_id,
+        base_version_id,
+        expect_new,
+        taken_at,
+        modified_at,
+    )
+
+
+def _store_upload(
+    db: Session,
+    owner: User,
+    content_type: str | None,
+    content: bytes,
+    resolved_name: str,
+    folder_id: uuid.UUID | None,
+    base_version_id: uuid.UUID | None,
+    expect_new: bool,
+    taken_at: datetime | None,
+    modified_at: datetime | None,
+) -> File:
     if folder_id is not None:
         _get_folder_or_404(db, owner, folder_id)
 
-    content = await _read_bounded(upload, MAX_SIMPLE_UPLOAD_BYTES)
     quota_service.ensure_room(db, owner, len(content))
-    mime_type = upload.content_type or mimetypes.guess_type(resolved_name)[0]
+    mime_type = content_type or mimetypes.guess_type(resolved_name)[0]
 
     # Stage the bytes on the shared storage volume so the engine (a
     # separate process, possibly a separate container) can read them,
@@ -288,7 +311,7 @@ async def upload_file(
     storage = get_storage_service()
     try:
         content_hash = storage.hash_file(staging_path)
-        storage.store(content_hash, staging_path)  # consumes staging_path
+        storage.store(content_hash, staging_path, verified=True)  # consumes staging_path
     except Exception as exc:
         staging_path.unlink(missing_ok=True)
         raise StorageError(f"could not store uploaded file: {exc}") from exc

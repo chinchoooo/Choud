@@ -72,3 +72,36 @@ def test_expensive_routes_carry_a_rate_limit() -> None:
         if any("rate_limit" in n for n in names):
             limited |= {(m, route.path) for m in route.methods}
     assert wanted <= limited, wanted - limited
+
+
+def test_uploads_do_their_blocking_work_off_the_event_loop(
+    client: TestClient, make_user, auth_headers, monkeypatch
+) -> None:
+    """Upload endpoints are async; the engine/database work must not run on the loop thread,
+    or one slow disk write stalls every other request."""
+    import threading
+
+    from app.services import file_service
+
+    seen: dict[str, int] = {}
+    real_read = file_service._read_bounded
+    real_store = file_service._store_upload
+
+    async def read(*args, **kwargs):
+        seen["loop"] = threading.get_ident()
+        return await real_read(*args, **kwargs)
+
+    def store(*args, **kwargs):
+        seen["work"] = threading.get_ident()
+        return real_store(*args, **kwargs)
+
+    monkeypatch.setattr(file_service, "_read_bounded", read)
+    monkeypatch.setattr(file_service, "_store_upload", store)
+
+    res = client.post(
+        "/api/files/upload",
+        files={"file": ("a.txt", b"hello", "text/plain")},
+        headers=auth_headers(make_user()),
+    )
+    assert res.status_code == 201
+    assert seen["loop"] != seen["work"]

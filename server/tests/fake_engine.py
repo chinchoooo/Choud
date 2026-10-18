@@ -39,7 +39,7 @@ class FakeEngineClient:
     def exists(self, content_hash: str) -> bool:
         return self._path_for(content_hash).is_file()
 
-    def put(self, content_hash: str, source_path: str) -> int:
+    def put(self, content_hash: str, source_path: str, verified: bool = False) -> int:
         target = self._path_for(content_hash)
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.exists():

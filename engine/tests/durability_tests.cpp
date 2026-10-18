@@ -253,6 +253,26 @@ TEST_F(DurabilityTest, ManyWritersOfTheSameObjectAtOnceLeaveOneCompleteObject) {
     EXPECT_EQ(stray_temp_files(), 0u);
 }
 
+TEST_F(DurabilityTest, ADownloadIsALinkOrCopyAndRemovingItNeverTouchesTheObject) {
+    const std::string content = "downloaded twice";
+    const auto hash = hash_of(content);
+    ObjectStore store(root_);
+    store.put(hash, source("d.bin", content));
+
+    const auto out = root_ / "staging" / "out.bin";
+    store.get(hash, out);
+    EXPECT_EQ(engine::hashing::hash_file(out), hash);
+    std::filesystem::remove(out);  // what the backend does after serving the file
+
+    EXPECT_TRUE(store.exists(hash));
+    EXPECT_EQ(engine::hashing::hash_file(store.path_for(hash)), hash);
+
+    // Asking again over an existing destination replaces it rather than failing.
+    store.get(hash, out);
+    store.get(hash, out);
+    EXPECT_EQ(engine::hashing::hash_file(out), hash);
+}
+
 TEST_F(DurabilityTest, FinalizingAChunkedUploadStoresAVerifiedObject) {
     engine::storage::StorageManager storage(root_);
     engine::chunks::ChunkManager chunks(root_, storage);

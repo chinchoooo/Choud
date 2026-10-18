@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
 from app.models.file import File
@@ -130,6 +131,14 @@ def get_status(db: Session, owner: User, upload_id: uuid.UUID) -> Upload:
 async def write_chunk(
     db: Session, owner: User, upload_id: uuid.UUID, index: int, chunk: UploadFile
 ) -> Upload:
+    # Only reading the request body awaits. The database and engine work blocks, so it runs in
+    # a worker thread (see file_service.upload_file for why).
+    expected = await run_in_threadpool(_expected_chunk_size, db, owner, upload_id, index)
+    content = await chunk.read(expected + 1)
+    return await run_in_threadpool(_store_chunk, db, owner, upload_id, index, content, expected)
+
+
+def _expected_chunk_size(db: Session, owner: User, upload_id: uuid.UUID, index: int) -> int:
     upload = _get_upload_or_404(db, owner, upload_id)
     _ensure_active(upload)
 
@@ -141,8 +150,14 @@ async def write_chunk(
     # Every chunk must be exactly the size the session promised (the last one is the remainder).
     # Without this a client could declare a tiny file to pass the quota check and then send an
     # enormous chunk.
-    expected = min(upload.chunk_size, upload.file_size - index * upload.chunk_size)
-    content = await chunk.read(expected + 1)
+    return min(upload.chunk_size, upload.file_size - index * upload.chunk_size)
+
+
+def _store_chunk(
+    db: Session, owner: User, upload_id: uuid.UUID, index: int, content: bytes, expected: int
+) -> Upload:
+    upload = _get_upload_or_404(db, owner, upload_id)
+    _ensure_active(upload)
     if len(content) != expected:
         got = "more" if len(content) > expected else str(len(content))
         raise ValidationError(f"chunk {index} must be exactly {expected} bytes (got {got})")

@@ -90,16 +90,19 @@ class EngineClient:
     def exists(self, content_hash: str) -> bool:
         return self._post("/objects/exists", {"hash": content_hash})["exists"]
 
-    def put(self, content_hash: str, source_path: str) -> int:
+    def put(self, content_hash: str, source_path: str, verified: bool = False) -> int:
         """Stores `source_path`'s bytes under `content_hash`. Returns the size in bytes.
 
         The engine takes ownership of `source_path` (moves it into the
         store) — treat it as consumed after this call, whether or not an
         object already existed under that hash (deduplication).
+
+        `verified=True` says the engine just hashed this exact file (via `hash`), so it does not
+        read it a second time; otherwise the engine checks the bytes against `content_hash`.
         """
         body = self._post(
             "/objects/put",
-            {"hash": content_hash, "source_path": source_path},
+            {"hash": content_hash, "source_path": source_path, "verified": verified},
             data_plane=True,
         )
         return body["size"]
