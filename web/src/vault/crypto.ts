@@ -56,7 +56,7 @@ export function fromBase64(text: string): Uint8Array {
   return out;
 }
 
-export async function deriveKey(passphrase: string, salt: Uint8Array, iterations: number): Promise<CryptoKey> {
+export async function deriveKey(passphrase: string, salt: BufferSource, iterations: number): Promise<CryptoKey> {
   const material = await subtle().importKey("raw", new TextEncoder().encode(passphrase), "PBKDF2", false, ["deriveKey"]);
   return subtle().deriveKey(
     { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
@@ -67,14 +67,17 @@ export async function deriveKey(passphrase: string, salt: Uint8Array, iterations
   );
 }
 
-function chunkIv(nonce: Uint8Array, counter: number): Uint8Array {
+/** Our byte arrays are always plain ArrayBuffers (never shared memory), which is what Web Crypto wants. */
+const asBuffer = (bytes: Uint8Array): Uint8Array<ArrayBuffer> => bytes as Uint8Array<ArrayBuffer>;
+
+function chunkIv(nonce: Uint8Array, counter: number): Uint8Array<ArrayBuffer> {
   const iv = new Uint8Array(12);
   iv.set(nonce, 0);
   new DataView(iv.buffer).setUint32(8, counter, false);
   return iv;
 }
 
-function chunkAad(counter: number, last: boolean): Uint8Array {
+function chunkAad(counter: number, last: boolean): Uint8Array<ArrayBuffer> {
   const aad = new Uint8Array(5);
   new DataView(aad.buffer).setUint32(0, counter, false);
   aad[4] = last ? 1 : 0;
@@ -91,7 +94,7 @@ export async function encryptBytes(key: CryptoKey, data: Uint8Array): Promise<Ui
     const sealed = await subtle().encrypt(
       { name: "AES-GCM", iv: chunkIv(nonce, i), additionalData: chunkAad(i, i === chunks - 1), tagLength: 128 },
       key,
-      slice,
+      asBuffer(slice),
     );
     parts.push(new Uint8Array(sealed));
   }
@@ -120,7 +123,7 @@ export async function decryptBytes(key: CryptoKey, sealed: Uint8Array): Promise<
       const plain = await subtle().decrypt(
         { name: "AES-GCM", iv: chunkIv(nonce, i), additionalData: chunkAad(i, i === chunks - 1), tagLength: 128 },
         key,
-        piece,
+        asBuffer(piece),
       );
       pieces.push(new Uint8Array(plain));
     }
@@ -158,7 +161,7 @@ export async function createVault(
 /** Derives the key from a passphrase and proves it is right; throws WrongPassphrase otherwise. */
 export async function unlockVault(config: VaultConfig, passphrase: string): Promise<CryptoKey> {
   if (config.version !== 1 || config.iterations < 100_000) throw new CorruptVaultData("Unsupported vault settings.");
-  const key = await deriveKey(passphrase, fromBase64(config.salt), config.iterations);
+  const key = await deriveKey(passphrase, asBuffer(fromBase64(config.salt)), config.iterations);
   try {
     const text = new TextDecoder().decode(await decryptBytes(key, fromBase64(config.check)));
     if (text !== CHECK_TEXT) throw new WrongPassphrase();
