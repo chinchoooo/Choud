@@ -103,6 +103,10 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
         val tools = ui.vertical().apply {
             addView(ui.button("Test connection to the server") { testConnection() }, ui.matchWidth())
             addView(
+                ui.button("Fix dates of photos already uploaded") { fixDates() },
+                ui.matchWidth(8),
+            )
+            addView(
                 ui.button("Allow background running (battery)") {
                     host.ui.context.startActivity(
                         Intent(
@@ -172,6 +176,24 @@ class MoreTab(private val host: Host, private val onLogout: () -> Unit) : Tab {
         // Without this the box outline is invisible on the black retro background.
         buttonTintList = android.content.res.ColorStateList.valueOf(palette.ink)
         setOnCheckedChangeListener { _, on -> onChange(on) }
+    }
+
+    /** Asks the server to give undated photos the date in their name or EXIF, then reports. */
+    private fun fixDates() {
+        messageView.text = "Reading dates from file names and EXIF..."
+        thread {
+            val result = try {
+                val (fixed, checked) = host.api.fixDates(apply = true)
+                if (checked == 0) "Every photo already has a date." else "Fixed the dates of $fixed of $checked undated photos."
+            } catch (e: Exception) {
+                EventLog.log("fix dates failed: ${e.javaClass.simpleName}: ${e.message}")
+                "Could not fix dates: ${e.message}"
+            }
+            host.runOnUi {
+                messageView.text = result
+                host.toast(result)
+            }
+        }
     }
 
     private fun testConnection() {

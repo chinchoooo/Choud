@@ -422,6 +422,13 @@ class ApiClient(
         return reply.has("modified_at")
     }
 
+    /** Gives photos uploaded without a date their real one (from the name or EXIF). Returns "fixed|checked". */
+    fun fixDates(apply: Boolean): Pair<Int, Int> {
+        val body = JSONObject().put("dry_run", !apply)
+        val reply = send("/api/library/fix-dates") { it.post(json(body)) }.jsonBody()
+        return reply.getInt("fixed") to reply.getInt("checked")
+    }
+
     fun moveFile(id: String, folderId: String?) {
         val body = JSONObject().put("folder_id", folderId ?: JSONObject.NULL)
         send("/api/files/$id") { it.patch(json(body)) }.close()
@@ -501,7 +508,9 @@ class ApiClient(
         maxDownloads?.let { request.put("max_downloads", it) }
         val body = send("/api/shares") { it.post(json(request)) }.jsonBody()
         // A configured public address (PUBLIC_BASE_URL) is what outsiders can reach.
-        return body.optString("public_url").ifEmpty { base + body.getString("url_path") }
+        // optString returns the TEXT "null" for a JSON null, which is how links ended up reading "null".
+        val publicUrl = if (body.isNull("public_url")) "" else body.optString("public_url")
+        return publicUrl.ifBlank { base + body.getString("url_path") }
     }
 
     fun contentUrl(fileId: String): String = "$base/api/media/${mediaToken()}/$fileId/content"

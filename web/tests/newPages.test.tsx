@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -114,7 +114,8 @@ describe("Storage", () => {
     expect(screen.getByText("huge.bin")).toBeInTheDocument();
     expect(screen.getByText(/x\.txt, y\.txt/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    const cleanup = within(screen.getByLabelText("Clean up old versions"));
+    fireEvent.click(cleanup.getByRole("button", { name: "Preview" }));
     expect(await screen.findByText(/remove 3 version/)).toBeInTheDocument();
     expect(insights.pruneVersions).toHaveBeenCalledWith(5, true);
     fireEvent.click(screen.getByRole("button", { name: "Remove them" }));

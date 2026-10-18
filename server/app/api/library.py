@@ -17,7 +17,7 @@ from app.models.file import File
 from app.models.folder import Folder
 from app.models.user import User
 from app.schemas.files import FileResponse
-from app.services import activity_service, file_service, quota_service
+from app.services import activity_service, dates_service, file_service, quota_service
 
 router = APIRouter(prefix="/api/library", tags=["library"])
 
@@ -61,6 +61,40 @@ def decorate(db: Session, user: User, files: list[File]) -> list[FileResponse]:
         item.folder_path = paths.get(f.folder_id, "") if f.folder_id else ""
         out.append(item)
     return out
+
+
+class FixDatesBody(BaseModel):
+    dry_run: bool = True  # preview first: nothing changes unless this is false
+
+
+class FixDatesReport(BaseModel):
+    dry_run: bool
+    checked: int
+    fixed: int
+    from_name: int
+    from_exif: int
+    no_date_found: int
+    examples: list[str]
+
+
+@router.post("/fix-dates", response_model=FixDatesReport)
+def fix_dates(
+    body: FixDatesBody,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Give photos and videos that were uploaded without a date the real one, from the file name
+    (IMG_20250206_160717.jpg and the like) or the photo's own EXIF data. Previews by default."""
+    report = dates_service.fix_dates(db, current_user, dry_run=body.dry_run)
+    return FixDatesReport(
+        dry_run=body.dry_run,
+        checked=report.checked,
+        fixed=report.fixed,
+        from_name=report.from_name,
+        from_exif=report.from_exif,
+        no_date_found=report.no_date_found,
+        examples=report.examples,
+    )
 
 
 class MemoryGroup(BaseModel):

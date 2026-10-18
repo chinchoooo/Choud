@@ -246,7 +246,7 @@ class PhotosTab(private val host: Host) : Tab {
                 showState(
                     ui.vertical().apply {
                         setBackgroundColor(palette.bg)
-                        addView(skeleton.view)
+                        addView(skeleton.detached())
                     },
                 )
                 skeleton.start()

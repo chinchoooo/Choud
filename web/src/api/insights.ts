@@ -44,6 +44,19 @@ export interface LoginEvent {
   new_device: boolean;
 }
 
+export interface FixDatesReport {
+  dry_run: boolean;
+  checked: number;
+  fixed: number;
+  from_name: number;
+  from_exif: number;
+  no_date_found: number;
+  examples: string[];
+}
+
+export const fixPhotoDates = (dryRun: boolean) =>
+  apiPost<FixDatesReport>("/api/library/fix-dates", { dry_run: dryRun });
+
 export const getSpace = () => apiGet<SpaceReport>("/api/insights/space");
 export const pruneVersions = (keep: number, dryRun: boolean) =>
   apiPost<PruneReport>("/api/insights/prune-versions", { keep, dry_run: dryRun });

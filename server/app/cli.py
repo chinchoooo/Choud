@@ -3,6 +3,7 @@
     docker compose exec backend python -m app.cli gc              # report only
     docker compose exec backend python -m app.cli gc --delete     # actually remove orphans
     docker compose exec backend python -m app.cli index [--all]   # (re)build the search index
+    docker compose exec backend python -m app.cli fix-dates [--apply]  # undated photos
 
 (`scripts/gc.sh` wraps this.) Exit code 0 on success, 1 if anything could not be done.
 """
@@ -15,7 +16,7 @@ from pathlib import Path
 from app.core import database
 from app.core.config import get_settings
 from app.core.logging import configure_logging
-from app.services import gc_service, index_service
+from app.services import dates_service, gc_service, index_service
 from app.services.storage_service import get_storage_service
 
 
@@ -59,6 +60,30 @@ def _index(args: argparse.Namespace) -> int:
     return 0
 
 
+def _fix_dates(args: argparse.Namespace) -> int:
+    from sqlalchemy import select
+
+    from app.models.user import User
+
+    db = database.SessionLocal()
+    try:
+        total = 0
+        for user in db.execute(select(User)).scalars():
+            report = dates_service.fix_dates(db, user, dry_run=not args.apply)
+            total += report.fixed
+            print(
+                f"{user.email}: {report.checked} undated, {report.from_name} from names, "
+                f"{report.from_exif} from EXIF, {report.no_date_found} with no date found"
+            )
+            for line in report.examples:
+                print("   ", line)
+    finally:
+        db.close()
+    note = "applied" if args.apply else "preview only: nothing was changed (add --apply)"
+    print(note, f"({total})")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -77,6 +102,9 @@ def main(argv: list[str] | None = None) -> int:
     index.add_argument("--all", action="store_true", help="throw the index away and rebuild it")
     index.add_argument("--batch", type=int, default=100)
     index.set_defaults(func=_index)
+    fix = sub.add_parser("fix-dates", help="give undated photos and videos their real date")
+    fix.add_argument("--apply", action="store_true", help="change the dates (default: preview)")
+    fix.set_defaults(func=_fix_dates)
     args = parser.parse_args(argv)
     configure_logging(get_settings().backend_log_level)
     return args.func(args)

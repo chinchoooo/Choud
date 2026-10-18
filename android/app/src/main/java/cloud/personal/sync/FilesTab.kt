@@ -233,7 +233,7 @@ class FilesTab(private val host: Host) : Tab {
         val empty = folders.isEmpty() && files.isEmpty()
         when {
             loading && empty -> {
-                showState(ui.vertical().apply { setBackgroundColor(palette.bg); addView(skeleton.view) })
+                showState(ui.vertical().apply { setBackgroundColor(palette.bg); addView(skeleton.detached()) })
                 skeleton.start()
             }
             error != null && empty -> showState(

@@ -96,6 +96,12 @@ class Skeleton(private val ui: Ui, rows: Int = 8) {
         }
     }
 
+    /** The placeholder, detached from wherever it was last shown (a view can have only one parent). */
+    fun detached(): View {
+        (view.parent as? ViewGroup)?.removeView(view)
+        return view
+    }
+
     fun start() {
         if (animating) return
         animating = true

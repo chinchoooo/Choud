@@ -3,7 +3,7 @@ import { HardDrive } from "lucide-react";
 import { useState } from "react";
 
 import { ApiError } from "../api/client";
-import { getSpace, pruneVersions, type PruneReport } from "../api/insights";
+import { fixPhotoDates, getSpace, pruneVersions, type FixDatesReport, type PruneReport } from "../api/insights";
 import { ConfirmDialog, plainButton } from "../components/Dialogs";
 import { formatBytes } from "../lib/format";
 
@@ -41,6 +41,7 @@ export function Space() {
   const [preview, setPreview] = useState<PruneReport | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  const [dates, setDates] = useState<FixDatesReport | null>(null);
 
   const refresh = () => {
     setPreview(null);
@@ -60,6 +61,16 @@ export function Space() {
       setConfirming(false);
       setDone(`Removed ${report.versions_removed} old version(s) and freed ${formatBytes(report.bytes_freed)}.`);
       refresh();
+    },
+  });
+
+  const previewDates = useMutation({ mutationFn: () => fixPhotoDates(true), onSuccess: setDates });
+  const applyDates = useMutation({
+    mutationFn: () => fixPhotoDates(false),
+    onSuccess: (report) => {
+      setDates(null);
+      setDone(`Fixed the dates of ${report.fixed} photo(s).`);
+      void queryClient.invalidateQueries({ queryKey: ["photos"] });
     },
   });
 
@@ -132,6 +143,31 @@ export function Space() {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="mt-6 border border-gray-300 p-4 rounded-md" aria-label="Photo dates">
+        <h2 className="text-sm font-medium text-gray-900">Photo dates</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Photos uploaded without a date show up on the day they were uploaded. This reads the real date from the file name
+          (IMG_20250206_160717.jpg and similar) or the photo's own data, and puts the photos in the right place on the timeline.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button type="button" className={plainButton} disabled={previewDates.isPending} onClick={() => previewDates.mutate()}>
+            Preview
+          </button>
+          {dates && dates.fixed > 0 && (
+            <button type="button" className={plainButton} disabled={applyDates.isPending} onClick={() => applyDates.mutate()}>
+              Fix {dates.fixed} photo(s)
+            </button>
+          )}
+        </div>
+        {dates && (
+          <p role="status" className="mt-3 text-sm text-gray-800">
+            {dates.fixed === 0
+              ? `Nothing to fix (${dates.checked} photo(s) without a date, ${dates.no_date_found} with no date to be found).`
+              : `${dates.fixed} of ${dates.checked} undated photo(s) can be fixed (${dates.from_name} from names, ${dates.from_exif} from photo data). ${dates.examples[0] ?? ""}`}
+          </p>
+        )}
       </section>
 
       <section className="mt-6 border border-gray-300 p-4 rounded-md" aria-label="Clean up old versions">

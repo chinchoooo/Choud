@@ -24,6 +24,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.work.WorkInfo
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import androidx.work.WorkManager
 import java.time.Instant
 import java.time.ZoneId
@@ -96,6 +97,15 @@ class MainActivity : Activity(), Host {
         if (settings.loggedIn) showBoot() else showLogin()
     }
 
+    /** Adds a missing http://, drops a trailing slash, and rejects things that cannot be an address. */
+    private fun cleanAddress(raw: String): String? {
+        var text = raw.trim().trimEnd('/')
+        if (text.isEmpty()) return null
+        if (!text.contains("://")) text = "http://$text"
+        val parsed = text.toHttpUrlOrNull() ?: return null
+        return parsed.toString().trimEnd('/')
+    }
+
     private fun applySystemBars(palette: Palette) = applyWindowTheme(this, palette)
 
     // ---------------------------------------------------------------- login
@@ -160,12 +170,19 @@ class MainActivity : Activity(), Host {
             loginButton.alpha = 0.6f
             message.setTextColor(p.mute)
             message.text = "Signing in..."
-            val serverUrl = url.text.toString().trim()
+            val serverUrl = cleanAddress(url.text.toString())
+            if (serverUrl == null) {
+                loginButton.isEnabled = true
+                loginButton.alpha = 1f
+                message.setTextColor(p.danger)
+                message.text = "That does not look like an address. Try something like http://100.64.0.5 or https://files.example.com"
+                return@button
+            }
             thread {
                 var needsCode = false
                 val error = try {
                     settings.serverUrl = serverUrl
-                    settings.altServerUrl = alt.text.toString().trim()
+                    settings.altServerUrl = cleanAddress(alt.text.toString()).orEmpty()
                     settings.activeUrl = ""
                     settings.deviceName = safeDeviceName(device.text.toString())
                     EventLog.log("login: $serverUrl as ${email.text.toString().trim()}, device '${settings.deviceName}'")

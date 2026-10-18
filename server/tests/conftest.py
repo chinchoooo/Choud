@@ -115,6 +115,7 @@ def _isolated_storage_root(tmp_path, fake_engine_client, monkeypatch: pytest.Mon
     import time and reuses that `Settings` object, so we mutate the
     attribute in place rather than relying on env vars taking effect late.
     """
+    from app.services import dates_service as dates_service_module
     from app.services import file_service as file_service_module
     from app.services import thumbnail_service as thumbnail_service_module
     from app.services import trash_service as trash_service_module
@@ -142,6 +143,11 @@ def _isolated_storage_root(tmp_path, fake_engine_client, monkeypatch: pytest.Mon
     )
     monkeypatch.setattr(
         thumbnail_service_module,
+        "get_storage_service",
+        lambda: StorageService(fake_engine_client),
+    )
+    monkeypatch.setattr(
+        dates_service_module,
         "get_storage_service",
         lambda: StorageService(fake_engine_client),
     )
