@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Choud: your own cloud</title>
+  <meta name="description" content="Choud is a self-hosted Google Drive alternative that runs on one spare Linux machine. Photos, files, versions, search inside documents, link sharing, Android and desktop backup. No subscription, no tracking.">
+  <meta property="og:title" content="Choud: your own cloud">
+  <meta property="og:description" content="A self-hosted Google Drive alternative for one spare Linux machine. Your files, your disk, nobody else's server.">
+  <meta property="og:image" content="https://chinchoooo.github.io/Choud/assets/social-preview.png">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="assets/choud-logo-light.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    try {
+      document.documentElement.classList.add("js");
+      var saved = localStorage.getItem("choud-theme");
+      if (saved === "ink" || saved === "paper") document.documentElement.dataset.theme = saved;
+    } catch (e) {}
+  </script>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Choud home">
+      <img class="logo-light" src="assets/choud-logo-light.png" alt="">
+      <img class="logo-dark" src="assets/choud-logo-dark.png" alt="">
+      Choud
+    </a>
+    <nav class="top" aria-label="Sections">
+      <a href="#speed">Speed</a>
+      <a href="#features">Features</a>
+      <a href="#built">How it works</a>
+      <a href="#run">Run it</a>
+      <a href="https://github.com/chinchoooo/Choud">GitHub</a>
+      <button class="flip" id="flip" type="button" aria-label="Switch between black-on-white and white-on-black">[ ink / paper ]</button>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap hero">
+    <div class="grid">
+      <div>
+        <h1 id="headline" data-text="Your own cloud. Your own server. Nobody else's.">Your own cloud. Your own server. Nobody else's.</h1>
+        <p class="lead">Choud is a self-hosted Google Drive alternative that runs on one spare Linux machine at home. Your files sit on your own disk, are stored once however often you upload them, and reach your phone and laptops over Tailscale or your home network. No subscription. No tracking.</p>
+        <div class="cta">
+          <a class="btn solid" href="https://github.com/chinchoooo/Choud/releases/latest">Get the Android app</a>
+          <a class="btn" href="#run">Run your own</a>
+          <a class="btn" href="https://github.com/chinchoooo/Choud">Read the code</a>
+        </div>
+      </div>
+      <div class="scene" aria-hidden="true">
+        <div class="cloud">
+          <img class="logo-light" src="assets/choud-logo-light.png" alt="">
+          <img class="logo-dark" src="assets/choud-logo-dark.png" alt="">
+        </div>
+        <i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+    </div>
+  </div>
+
+  <div class="ticker" aria-hidden="true">
+    <div class="run" id="run-ticker">
+      <span>stored once, however often you upload it</span>
+      <span>storage tested by killing it mid-write</span>
+      <span>24 thumbnails in 15 ms</span>
+      <span>96.3% of the line on a 500 MB upload</span>
+      <span>no subscription</span>
+      <span>no tracking</span>
+      <span>every overwrite is a version you can restore</span>
+      <span>MIT licensed</span>
+    </div>
+  </div>
+
+  <section id="speed">
+    <div class="wrap">
+      <h2>Fast, measured the same way as the published tests</h2>
+      <p>The benchmark script reproduces the line speeds from Gizmodo's and Cloudwards' Google Drive tests and measures how much of the line each service actually uses. Same file size, same speeds, so the comparison is fair. Choud ran on a spare laptop at home.</p>
+
+      <div class="panel" id="panel">
+        <div class="bar-title"><span>upload 500 MB &middot; line 19.69 Mbps</span><span>share of the line used</span></div>
+        <div class="rows">
+          <div class="row">
+            <span class="who">Choud</span>
+            <div class="track"><div class="fill" data-to="96.3"></div><span class="mark" style="left:95%" title="Google Drive, published: 95%"></span></div>
+            <span class="num"><b data-count="96.3">0</b>% &middot; 3:31</span>
+          </div>
+          <div class="row">
+            <span class="who">Google Drive</span>
+            <div class="track"><div class="fill" data-to="95"></div></div>
+            <span class="num"><b data-count="95">0</b>% &middot; 3:33</span>
+          </div>
+        </div>
+        <div class="foot">Dashed line: Google Drive's published 95%. Drive's figure is Gizmodo's single run on their network; Choud's is one run on a home server. Read it as "level with", not "faster than".</div>
+      </div>
+
+      <div class="scroll" style="margin-top:1.6rem">
+        <table>
+          <thead><tr><th>Test</th><th>Google Drive (published)</th><th>Choud</th></tr></thead>
+          <tbody>
+            <tr><td>500 MB upload, 19.69 Mbps line</td><td>3:33</td><td class="win">3:31</td></tr>
+            <tr><td>500 MB download, 187.95 Mbps line</td><td>0:24</td><td class="win">0:24</td></tr>
+            <tr><td>A screen of 24 photo thumbnails, 24 requests</td><td>&mdash;</td><td>151 ms</td></tr>
+            <tr><td>The same screen, one batch request</td><td>&mdash;</td><td class="win">15 ms</td></tr>
+            <tr><td>Photo library check when nothing changed</td><td>&mdash;</td><td class="win">13 ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted">The photo grid is fast because a screen of thumbnails is one round trip instead of 24, and a blurry placeholder paints instantly. More tests, including a 5 GB mixed folder, and how to repeat all of them yourself: <a href="https://github.com/chinchoooo/Choud/blob/main/docs/benchmarks.md">docs/benchmarks.md</a>.</p>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>What you get</h2>
+      <dl class="features">
+        <div class="pair reveal" style="--i:0"><dt>Files</dt><dd>Folders, drag-and-drop, resumable uploads (a dropped connection only resends what is missing), a photo timeline, favorites, recents and an activity log.</dd></div>
+        <div class="pair reveal" style="--i:1"><dt>Never lose anything</dt><dd>Every overwrite is a new version you can restore. Deleted files wait in a trash. Nothing is destroyed on a doubt.</dd></div>
+        <div class="pair reveal" style="--i:2"><dt>Find anything</dt><dd>Search by file name and by what is written inside documents: text, code, PDF, Word and OpenDocument.</dd></div>
+        <div class="pair reveal" style="--i:3"><dt>View anywhere</dt><dd>Built-in viewers for images, video, audio, PDF and text, with thumbnails. No other app needed.</dd></div>
+        <div class="pair reveal" style="--i:4"><dt>Share</dt><dd>Public links with an expiry and a password, view-only or "add and edit". The people you share with need no account, and one command makes links work from anywhere without exposing the rest of your drive. A pause switch turns them all off.</dd></div>
+        <div class="pair reveal" style="--i:5"><dt>Phone</dt><dd>An Android app backs up photos and videos in the background with the phone's real dates, and resumes if the connection drops. Its Photos tab keeps the whole library on the phone for slow links.</dd></div>
+        <div class="pair reveal" style="--i:6"><dt>Laptops</dt><dd>A desktop client mirrors a folder both ways, with conflict copies and never a silent overwrite, or quietly backs up folders you choose.</dd></div>
+        <div class="pair reveal" style="--i:7"><dt>Time travel</dt><dd>Rewind any folder to an earlier moment, preview it, and put it back. An undo for ransomware and bad syncs.</dd></div>
+        <div class="pair reveal" style="--i:8"><dt>Vault</dt><dd>An encrypted vault sealed in your browser. The server never sees the contents, or even the file names.</dd></div>
+        <div class="pair reveal" style="--i:9"><dt>People</dt><dd>Invite family and friends with one-time codes. Each person gets their own storage and quota.</dd></div>
+        <div class="pair reveal" style="--i:10"><dt>Safe by default</dt><dd>Optional two-factor login, a registration lock, rate limiting, hash-checked uploads, nightly verified backups and webhook alerts.</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section id="built">
+    <div class="wrap">
+      <h2>How it is built</h2>
+      <div class="cols">
+        <div>
+          <p>Two halves, each doing what it is best at. The Python API owns accounts, permissions, versions, sharing and search. The C++ engine owns hashing, storage by content, deduplication and assembling chunks. The engine is never reachable from the network: only the API talks to it.</p>
+          <ul class="plain">
+            <li><b>Crash-tested storage.</b> A file is flushed to disk before it gets its final name. The tests kill the process mid-write on purpose and check that no half-written file ever appears.</li>
+            <li><b>Checked, not trusted.</b> Hashes are verified, paths are confined to the storage folder, and the request parser is fuzzed and run under sanitizers.</li>
+            <li><b>Public links stay narrow.</b> Share links are served by a second door that can only reach shared files, never your account or the rest of the API.</li>
+          </ul>
+          <p class="muted">91 engine tests and 384 server tests, plus the web, Android and desktop suites.</p>
+        </div>
+        <div>
+<pre aria-label="Architecture diagram">Browser · Android · Desktop
+      |  HTTP (Tailscale or LAN)
+      v
+Python API (FastAPI) --- PostgreSQL
+      |  internal network only
+      v
+C++ engine -------------- your disk
+</pre>
+          <span class="wire" id="wire" aria-hidden="true"></span>
+          <p class="muted" style="margin-top:0">A file travelling from your phone to your disk.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="run">
+    <div class="wrap">
+      <h2>Run your own</h2>
+      <p>You need one Linux machine with Docker. An old laptop is plenty.</p>
+<pre>git clone https://github.com/chinchoooo/Choud
+cd Choud
+scripts/setup.sh      # creates .env with strong random secrets
+scripts/deploy.sh     # checks the machine, builds, starts, waits until healthy</pre>
+      <p style="margin-top:1rem">Then install Tailscale on the server and your devices, and open the server's address. The full guide, including backups and public links, is in <a href="https://github.com/chinchoooo/Choud/blob/main/docs/deployment.md">docs/deployment.md</a>.</p>
+      <div class="cta" style="margin-top:1.2rem">
+        <a class="btn solid" href="https://github.com/chinchoooo/Choud">Get the code</a>
+        <a class="btn" href="https://github.com/chinchoooo/Choud/releases/latest">Android app (.apk)</a>
+        <a class="btn" href="https://github.com/chinchoooo/Choud/tree/main/docs">Docs</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="honest">
+    <div class="wrap">
+      <h2>What it is not, yet</h2>
+      <ul class="plain">
+        <li>The Android app has had little time on a real phone. There is no iOS app.</li>
+        <li>You can share by link only. Sharing with named accounts is not built.</li>
+        <li>It is built for one household on one machine, not for thousands of users.</li>
+        <li>It has not had an independent security audit.</li>
+      </ul>
+      <p class="muted">The plans and the history are in <a href="https://github.com/chinchoooo/Choud/blob/main/docs/roadmap.md">docs/roadmap.md</a> and the <a href="https://github.com/chinchoooo/Choud/blob/main/CHANGELOG.md">changelog</a>.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Choud &middot; MIT licensed &middot; made by <a href="https://github.com/chinchoooo">chinchoooo</a></span>
+    <span><a href="https://github.com/chinchoooo/Choud">GitHub</a> &middot; <a href="https://github.com/chinchoooo/Choud/blob/main/SECURITY.md">Security</a> &middot; <a href="https://github.com/chinchoooo/Choud/blob/main/CONTRIBUTING.md">Contribute</a></span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // theme flip, remembered per browser
+  var flip = document.getElementById("flip");
+  flip.addEventListener("click", function () {
+    var dark = getComputedStyle(root).getPropertyValue("color-scheme").indexOf("dark") !== -1;
+    var next = dark ? "paper" : "ink";
+    root.dataset.theme = next;
+    try { localStorage.setItem("choud-theme", next); } catch (e) {}
+  });
+
+  // the ticker needs its content twice to loop without a gap
+  var run = document.getElementById("run-ticker");
+  run.innerHTML = run.innerHTML + run.innerHTML;
+
+  // headline types itself out once
+  var h = document.getElementById("headline");
+  var text = h.dataset.text;
+  if (!still) {
+    h.textContent = "";
+    var cursor = document.createElement("span");
+    cursor.className = "cursor";
+    h.appendChild(cursor);
+    var i = 0;
+    var tick = function () {
+      if (i < text.length) {
+        h.insertBefore(document.createTextNode(text.charAt(i++)), cursor);
+        setTimeout(tick, 34 + Math.random() * 40);
+      }
+    };
+    setTimeout(tick, 250);
+  }
+
+  // bars fill and numbers count up when the panel scrolls into view
+  function fillBars() {
+    var fills = document.querySelectorAll(".fill");
+    var counts = document.querySelectorAll("[data-count]");
+    fills.forEach(function (f) {
+      var to = parseFloat(f.dataset.to);
+      if (still) { f.style.width = to + "%"; return; }
+      var steps = 28, n = 0;
+      var t = setInterval(function () {
+        n++;
+        f.style.width = (to * n / steps) + "%";
+        if (n >= steps) clearInterval(t);
+      }, 55);
+    });
+    counts.forEach(function (c) {
+      var to = parseFloat(c.dataset.count);
+      if (still) { c.textContent = to; return; }
+      var steps = 28, n = 0;
+      var t = setInterval(function () {
+        n++;
+        c.textContent = (to * n / steps).toFixed(1);
+        if (n >= steps) { clearInterval(t); c.textContent = to; }
+      }, 55);
+    });
+  }
+
+  var seen = false;
+  var panel = document.getElementById("panel");
+  if ("IntersectionObserver" in window) {
+    var barObserver = new IntersectionObserver(function (entries) {
+      if (entries[0].isIntersecting && !seen) { seen = true; fillBars(); }
+    }, { threshold: 0.4 });
+    barObserver.observe(panel);
+
+    var revealObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add("in"); revealObserver.unobserve(e.target); }
+      });
+    }, { threshold: 0.2 });
+    document.querySelectorAll(".reveal").forEach(function (el) { revealObserver.observe(el); });
+  } else {
+    fillBars();
+    document.querySelectorAll(".reveal").forEach(function (el) { el.classList.add("in"); });
+  }
+
+  // a packet travelling along the wire
+  var wire = document.getElementById("wire");
+  var width = 34, pos = 0;
+  function draw() {
+    var line = "";
+    for (var k = 0; k < width; k++) line += (k === pos ? "#" : "-");
+    wire.textContent = "[phone] " + line + "> [disk]";
+  }
+  draw();
+  if (!still) {
+    setInterval(function () { pos = (pos + 1) % width; draw(); }, 90);
+  }
+})();
+</script>
+</body>
+</html>
