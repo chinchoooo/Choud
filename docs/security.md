@@ -98,6 +98,32 @@ file contents.
   safety check before it did anything. The checks above are covered by tests, but an independent
   attack pass is still worth doing before the server is exposed beyond a tailnet.
 
+## The Vault (client-side encryption)
+
+The Vault page keeps files that **even the server cannot read**. It is implemented entirely in the
+web app (`web/src/vault/`) with the browser's Web Crypto API; the backend needs no special support and
+only ever stores ordinary files whose contents happen to be ciphertext.
+
+- **Key:** PBKDF2-SHA256, 600,000 iterations, random 16-byte salt, from a passphrase that never leaves
+  the browser, giving an AES-256-GCM key. The key lives only in memory: dropped on "Lock now", after
+  10 idle minutes, and when leaving the page.
+- **Data:** split into 1 MiB chunks, each sealed with AES-GCM under its own IV (8-byte random per-file
+  nonce + chunk counter); the chunk number and a last-chunk flag are authenticated, so reordering,
+  dropping or truncating chunks is detected, not just flipped bits.
+- **Names:** the real name, type, size and date of every file live only inside an encrypted index
+  (`manifest.cvault`); the server sees `<random-id>.cvault` files. Index updates are new *versions*, so
+  the index itself has history.
+- **What the server still sees:** that a folder named "Vault (encrypted)" exists, how many sealed files
+  it holds, their sizes and when they were added. No previews, thumbnails or search work on vault
+  files, by design.
+- **A wrong passphrase is recognised** by decrypting a sealed check value; weak or unknown settings in
+  the config are refused rather than trusted.
+- **No recovery.** Forget the passphrase and the data is gone. The create form makes you confirm that.
+- **Limits:** files are sealed in browser memory, so a single file is limited to 400 MB. The Vault
+  protects against a curious or compromised server and stolen backups; it cannot protect against
+  malware on the device you unlock it from, or a malicious copy of the web app served to you (the
+  page's own code does the encryption).
+
 ## Browser security headers and encrypted backups
 
 - **Headers.** The web image (nginx) sends a strict Content-Security-Policy (scripts only from the

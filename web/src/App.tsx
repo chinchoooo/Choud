@@ -12,6 +12,7 @@ import { Invites } from "./pages/Invites";
 import { Rewind } from "./pages/Rewind";
 import { Server } from "./pages/Server";
 import { Space } from "./pages/Space";
+import { Vault } from "./pages/Vault";
 import { Security } from "./pages/Security";
 import { Shares } from "./pages/Shares";
 import { Trash } from "./pages/Trash";
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/invites" element={<Invites />} />
           <Route path="/rewind" element={<Rewind />} />
           <Route path="/space" element={<Space />} />
+          <Route path="/vault" element={<Vault />} />
           <Route path="/server" element={<Server />} />
           <Route path="/security" element={<Security />} />
           <Route path="/trash" element={<Trash />} />
