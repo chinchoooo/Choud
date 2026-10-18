@@ -44,6 +44,18 @@
 }
 
 :80 {
+    # Compress what compresses (API JSON, text). Photos, video and anything already compressed pass
+    # through untouched; the web image compresses its own files.
+    encode zstd gzip {
+        minimum_length 512
+        match {
+            header Content-Type application/json*
+            header Content-Type text/*
+            header Content-Type application/javascript*
+            header Content-Type image/svg+xml*
+        }
+    }
+
     # Baseline security headers on everything the backend answers. The "?" prefix means "only if the
     # response does not already set it", so the stricter policies the backend (previews, public share
     # pages) and the web image (the app's CSP) send are never overridden.
