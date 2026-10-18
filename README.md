@@ -1,5 +1,9 @@
 # Choud
 
+<div align="center">
+  <img src="choud-brand-assets/choud-logo-light.svg" alt="Choud" width="400" />
+</div>
+
 **Your own cloud. Your own server. Nobody else's.**
 
 Choud is a self-hosted Google Drive alternative that runs on one spare Linux machine at home.

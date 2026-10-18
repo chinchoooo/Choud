@@ -90,12 +90,13 @@ class MainActivity : Activity(), Host {
         super.onCreate(savedInstanceState)
         EventLog.init(this)
         ThumbLoader.init(this)
+        ListCache.init(this)
         settings = Settings(this)
         if (settings.deviceName.isEmpty()) settings.deviceName = safeDeviceName(Build.MODEL ?: "Phone")
         val palette = Themes.palette(AppTheme.fromId(settings.theme))
         ui = Ui(this, palette)
         applySystemBars(palette)
-        if (settings.loggedIn) showBoot() else showLogin()
+        if (settings.loggedIn) startApp() else showLogin()
     }
 
     /** Adds a missing http://, drops a trailing slash, and rejects things that cannot be an address. */
@@ -230,107 +231,31 @@ class MainActivity : Activity(), Host {
     // ---------------------------------------------------------------- boot
 
     /**
-     * The start-up screen. Each step is a real check (is the server answering, is the saved login still
-     * valid); nothing here runs on a timer. If a step fails, it says why and offers to try again or to
-     * open the app anyway (the files kept on the phone still work offline).
+     * The app opens at once on what it already knows. Whether the server answers and whether the saved
+     * login is still valid are checked in the background: a dead login sends you back to the sign-in
+     * page, and an unreachable server is shown as a message while everything cached keeps working.
      */
-    private fun showBoot() {
-        val p = ui.palette
-        val labels = listOf("Reaching your server", "Checking your login")
-        val marks = ArrayList<ImageView>()
-        val details = ArrayList<TextView>()
-        val bar = ui.bar()
-        val buttons = ui.vertical()
+    private fun startApp() {
+        showMain()
+        checkServer()
+    }
 
-        val column = ui.vertical().apply {
-            gravity = android.view.Gravity.CENTER
-            setPadding(ui.dp(32), ui.dp(24), ui.dp(32), ui.dp(24))
-            addView(
-                ImageView(this@MainActivity).apply { setImageResource(R.drawable.ic_choud_mark) },
-                LinearLayout.LayoutParams(ui.dp(96), ui.dp(96)),
-            )
-            addView(ui.text(if (p.retro) "CHOUD" else "Choud", 24f, bold = true).apply { gravity = android.view.Gravity.CENTER }, ui.matchWidth(14))
-            val steps = ui.vertical().apply {
-                labels.forEachIndexed { i, label ->
-                    val mark = ui.icon(R.drawable.ic_refresh, 18, p.mute)
-                    val detail = ui.muted("", 12f)
-                    marks += mark
-                    details += detail
-                    addView(
-                        ui.horizontal().apply {
-                            gravity = android.view.Gravity.TOP
-                            addView(mark, LinearLayout.LayoutParams(ui.dp(18), ui.dp(18)).apply { topMargin = ui.dp(2) })
-                            addView(
-                                ui.vertical().apply {
-                                    setPadding(ui.dp(12), 0, 0, 0)
-                                    addView(ui.text(label, 14f))
-                                    addView(detail)
-                                },
-                            )
-                        },
-                        ui.matchWidth(if (i == 0) 0 else 10),
-                    )
-                }
-            }
-            addView(steps, LinearLayout.LayoutParams(ui.dp(260), ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(28) })
-            addView(bar, LinearLayout.LayoutParams(ui.dp(260), ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(22) })
-            addView(buttons, LinearLayout.LayoutParams(ui.dp(260), ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = ui.dp(22) })
-        }
-        setContentView(FrameLayout(this).apply { setBackgroundColor(p.bg); addView(column, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) })
-
-        fun mark(i: Int, state: String, detail: String = "") = runOnUiThread {
-            val view = marks[i]
-            view.animate().cancel()
-            view.rotation = 0f
-            view.setImageResource(when (state) { "done" -> R.drawable.ic_check; "failed" -> R.drawable.ic_warning; else -> R.drawable.ic_refresh })
-            view.imageTintList = android.content.res.ColorStateList.valueOf(if (state == "pending") p.line else if (state == "failed") p.danger else p.ink)
-            if (state == "active" && android.provider.Settings.Global.getFloat(contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f) {
-                view.animate().rotationBy(360f).setDuration(900).withEndAction(object : Runnable {
-                    override fun run() { if (marks[i].drawable != null && state == "active") view.animate().rotationBy(360f).setDuration(900).withEndAction(this).start() }
-                }).start()
-            }
-            details[i].text = detail
-            bar.progress = (0 until marks.size).count { j -> j < i || (j == i && state == "done") }.toFloat() / labels.size
-        }
-
-        fun fail(i: Int, why: String) {
-            mark(i, "failed", why)
-            runOnUiThread {
-                buttons.removeAllViews()
-                buttons.addView(ui.button("Try again", primary = true) { showBoot() }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(48)))
-                buttons.addView(ui.button("Open anyway") { showMain() }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(48)).apply { topMargin = ui.dp(8) })
-            }
-        }
-
-        labels.indices.forEach { mark(it, "pending") }
+    private fun checkServer() {
         thread {
-            mark(0, "active")
             try {
                 ServerPicker.pick(settings, force = true)
-                api.health()
-                mark(0, "done", if (ServerPicker.usingPublic(settings)) "Using the public address" else "")
-            } catch (e: Exception) {
-                EventLog.log("boot: server not reachable: ${e.javaClass.simpleName}: ${e.message}")
-                fail(0, "No answer. Is Tailscale on, and is the server running?")
-                return@thread
-            }
-            mark(1, "active")
-            try {
                 api.usage()
-                mark(1, "done")
+                runOnUiThread { updateAppStatus() }
             } catch (e: AuthError) {
                 EventLog.log("boot: saved login is no longer valid")
                 runOnUiThread {
                     settings.logout()
                     showLogin("Your session ended. Please sign in again.")
                 }
-                return@thread
             } catch (e: Exception) {
-                EventLog.log("boot: login check failed: ${e.javaClass.simpleName}: ${e.message}")
-                fail(1, "Could not check your login: ${e.message}")
-                return@thread
+                EventLog.log("boot: server not reachable: ${e.javaClass.simpleName}: ${e.message}")
+                runOnUiThread { toast("Can't reach your server. Showing what is on this phone.", "Retry") { checkServer() } }
             }
-            runOnUiThread { showMain() }
         }
     }
 
@@ -451,6 +376,7 @@ class MainActivity : Activity(), Host {
         settings.logout()
         BackupDb(this).use { it.clear() }
         ThumbLoader.clear()
+        ListCache.clear()
         EventLog.log("user: logged out, backup state cleared")
         facts = Facts()
         apiCache = null

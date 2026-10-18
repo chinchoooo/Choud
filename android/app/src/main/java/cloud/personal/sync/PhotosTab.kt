@@ -184,14 +184,28 @@ class PhotosTab(private val host: Host) : Tab {
         if (!loadedOnce || System.currentTimeMillis() - loadedAt > 30_000) reload()
     }
 
+    /** Bumped by every reload so a slow answer for an older request never lands on the new list. */
+    private var generation = 0
+
+    /** Paints the last known first page at once (no blank flash), then asks the server what changed. */
     private fun reload() {
         loadedOnce = true
-        items.clear()
-        rows = emptyList()
-        total = 0
+        generation++
+        loading = false
         error = null
+        val cached = host.api.cachedPhotos(kind, 0, pageSize)
+        if (cached != null) {
+            items.clear()
+            items.addAll(cached.items)
+            total = cached.total
+            rows = groupByMonth(items)
+        } else {
+            items.clear()
+            rows = emptyList()
+            total = 0
+        }
         adapter.notifyDataSetChanged()
-        loadMore()
+        loadMore(replace = true)
     }
 
     private fun showState(content: View?) {
@@ -203,18 +217,28 @@ class PhotosTab(private val host: Host) : Tab {
         }
     }
 
-    private fun loadMore() {
+    private fun loadMore(replace: Boolean = false) {
         if (loading) return
         loading = true
         val wantedKind = kind
-        val offset = items.size
+        val wantedGeneration = generation
+        val offset = if (replace) 0 else items.size
         refreshStatus()
         thread {
             try {
                 val page = host.api.listPhotos(wantedKind, offset, pageSize)
                 host.runOnUi {
-                    if (wantedKind != kind || offset != items.size) return@runOnUi
-                    items.addAll(page.items)
+                    if (wantedKind != kind || wantedGeneration != generation) return@runOnUi
+                    if (replace) {
+                        // Only swap the first page in if nothing further was scrolled in meanwhile.
+                        if (items.size <= pageSize) {
+                            items.clear()
+                            items.addAll(page.items)
+                        }
+                    } else {
+                        if (offset != items.size) return@runOnUi
+                        items.addAll(page.items)
+                    }
                     total = page.total
                     rows = groupByMonth(items)
                     loading = false
@@ -229,6 +253,7 @@ class PhotosTab(private val host: Host) : Tab {
             } catch (e: Exception) {
                 EventLog.log("photos: could not load: ${e.javaClass.simpleName}: ${e.message}")
                 host.runOnUi {
+                    if (wantedGeneration != generation) return@runOnUi
                     loading = false
                     error = e.message ?: e.javaClass.simpleName
                     refreshStatus()

@@ -181,8 +181,17 @@ class FilesTab(private val host: Host) : Tab {
         loadedOnce = true
         loading = true
         error = null
-        render()
         val id = currentId
+        // Show the last known contents of this folder at once; the server answer replaces them.
+        val cached = host.api.cachedDirectory(id)
+        if (cached != null) {
+            folders = cached.folders
+            files = cached.files.toMutableList()
+        } else {
+            folders = emptyList()
+            files = ArrayList()
+        }
+        render()
         thread {
             try {
                 val listing = host.api.listDirectory(id)
@@ -207,7 +216,7 @@ class FilesTab(private val host: Host) : Tab {
                     error = e.message ?: e.javaClass.simpleName
                     // Offline: show what is kept on this phone so it can still be opened.
                     val kept = OfflineStore.items(host.ui.context)
-                    if (kept.isNotEmpty()) {
+                    if (kept.isNotEmpty() && folders.isEmpty() && files.isEmpty()) {
                         folders = emptyList()
                         files = kept.toMutableList()
                     }
@@ -244,7 +253,7 @@ class FilesTab(private val host: Host) : Tab {
             )
             error != null -> {
                 showState(null)
-                host.toast("Server not reachable. Showing the ${files.size} file(s) kept on this phone.")
+                host.toast("Server not reachable. Showing what this phone remembers.")
             }
             else -> showState(null)
         }

@@ -23,8 +23,8 @@ android {
         applicationId = "cloud.personal.sync"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "0.4.1"
+        versionCode = 7
+        versionName = "0.4.2"
     }
 
     signingConfigs {
@@ -40,7 +40,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }

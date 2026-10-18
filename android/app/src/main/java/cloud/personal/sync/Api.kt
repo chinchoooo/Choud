@@ -131,11 +131,7 @@ fun sha256Hex(open: () -> InputStream, onBytes: (Long) -> Unit = {}): String {
 class ApiClient(
     baseUrl: String,
     private val tokens: TokenStore,
-    private val http: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(300, TimeUnit.SECONDS)
-        .writeTimeout(300, TimeUnit.SECONDS)
-        .build(),
+    private val http: OkHttpClient = Net.bulk(),
     private val log: (String) -> Unit = {},
 ) {
     private val base = baseUrl.trim().trimEnd('/')
@@ -387,9 +383,7 @@ class ApiClient(
 
     // ---------------------------------------------------------------- browsing
 
-    fun listDirectory(folderId: String?): Listing {
-        val query = if (folderId == null) "" else "?folder_id=$folderId"
-        val body = send("/api/files$query").jsonBody()
+    private fun parseListing(body: JSONObject): Listing {
         val folders = body.getJSONArray("subfolders")
         val files = body.getJSONArray("files")
         return Listing(
@@ -398,10 +392,35 @@ class ApiClient(
         )
     }
 
-    fun listPhotos(kind: String, offset: Int, limit: Int): PhotoPage {
-        val body = send("/api/library/photos?kind=$kind&offset=$offset&limit=$limit").jsonBody()
+    private fun directoryPath(folderId: String?) = "/api/files" + if (folderId == null) "" else "?folder_id=$folderId"
+
+    /** The last listing of this folder the server sent, if any (instant, no network). */
+    fun cachedDirectory(folderId: String?): Listing? =
+        ListCache.get(directoryPath(folderId))?.let { runCatching { parseListing(JSONObject(it)) }.getOrNull() }
+
+    fun listDirectory(folderId: String?): Listing {
+        val path = directoryPath(folderId)
+        val body = send(path).jsonBody()
+        ListCache.put(path, body.toString())
+        return parseListing(body)
+    }
+
+    private fun parsePage(body: JSONObject): PhotoPage {
         val items = body.getJSONArray("items")
         return PhotoPage((0 until items.length()).map { items.getJSONObject(it).toItem() }, body.getInt("total"))
+    }
+
+    private fun photosPath(kind: String, offset: Int, limit: Int) = "/api/library/photos?kind=$kind&offset=$offset&limit=$limit"
+
+    /** The last page of photos the server sent for these arguments, if any (instant, no network). */
+    fun cachedPhotos(kind: String, offset: Int, limit: Int): PhotoPage? =
+        ListCache.get(photosPath(kind, offset, limit))?.let { runCatching { parsePage(JSONObject(it)) }.getOrNull() }
+
+    fun listPhotos(kind: String, offset: Int, limit: Int): PhotoPage {
+        val path = photosPath(kind, offset, limit)
+        val body = send(path).jsonBody()
+        if (offset == 0) ListCache.put(path, body.toString())
+        return parsePage(body)
     }
 
     fun usage(): Usage {

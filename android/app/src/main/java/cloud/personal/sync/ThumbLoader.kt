@@ -50,11 +50,7 @@ object ThumbLoader {
     private val queue = LinkedBlockingDeque<Runnable>()
     private val pool = ThreadPoolExecutor(THREADS, THREADS, 30, TimeUnit.SECONDS, queue).apply { allowCoreThreadTimeOut(true) }
     private val main = Handler(Looper.getMainLooper())
-    private val http = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .connectionPool(okhttp3.ConnectionPool(THREADS, 5, TimeUnit.MINUTES))
-        .build()
+    private val http: OkHttpClient = Net.client
 
     @Volatile private var diskDir: File? = null
     private val lastTrim = AtomicLong(0)
