@@ -355,8 +355,7 @@ nav.top a:hover {
   display: grid;
   justify-items: center;
   gap: 0.4rem;
-  padding: 1.2rem 1rem 1rem;
-  border-bottom: 1px solid var(--ink);
+  padding: 1.4rem 1rem 0.6rem;
   text-align: center;
   transition: background 120ms;
 }
@@ -391,6 +390,7 @@ nav.top a:hover {
   line-height: 1.5;
   padding: 0.9rem 1rem 1rem;
   min-height: 15.5rem;
+  border-top: 1px dashed var(--ink);
 }
 
 .receipt .title {
@@ -447,7 +447,8 @@ nav.top a:hover {
   display: flex;
   gap: 0.6rem;
   flex-wrap: wrap;
-  padding: 0 1rem 1rem;
+  justify-content: center;
+  padding: 0.4rem 1rem 1.1rem;
 }
 
 .drop .tools .btn {
@@ -471,29 +472,10 @@ nav.top a:hover {
   margin: 0.7rem 0 0;
 }
 
-/* dithered horizon under the hero */
-
-.horizon {
-  display: block;
-  width: 100%;
-  height: 72px;
-  object-fit: cover;
-  image-rendering: pixelated;
-}
-
-:root[data-theme="ink"] .horizon {
-  filter: invert(1);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="paper"]) .horizon {
-    filter: invert(1);
-  }
-}
-
 /* ---------- proof strip ---------- */
 
 .proof {
+  margin-top: clamp(1.5rem, 4vw, 3rem);
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   border-block: 1px solid var(--ink);
