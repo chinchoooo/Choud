@@ -43,3 +43,10 @@ Then convert to WebP (about 1600 px wide, under 120 KB each) and name them `v<ve
 `seed_demo.py` fetches public-domain NASA images into `scripts/site/nasa-cache/`; the filter skips images that
 mention people, but **look at every picture before publishing** (an earlier run let a lab photo through). Use a
 fresh `DEMO_EMAIL` each run so uploads do not merge into an old demo account.
+
+## Two pages on purpose
+
+`index.html` is the short version (about five screens: hero, pull the plug, the app, speed, rented vs owned, get it).
+`dev.html` is the long version for developers: architecture, the storage rules and how they are tested,
+benchmarks with their method, the security model, the repo map and the honest gaps. Put detail there, not on
+the front page.

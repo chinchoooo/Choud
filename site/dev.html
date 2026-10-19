@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Choud for developers: how it is built</title>
+  <meta name="description" content="How Choud works under the hood: the storage engine, the crash-safety rules, the API, the benchmarks with their method, the security model, the tests and the honest gaps.">
+  <link rel="canonical" href="https://chinchoooo.github.io/Choud/dev.html">
+  <meta property="og:title" content="Choud for developers">
+  <meta property="og:description" content="The nitty gritty: storage engine, crash safety, benchmarks with method, security model, tests.">
+  <meta property="og:image" content="https://chinchoooo.github.io/Choud/assets/social-preview.png">
+  <link rel="icon" href="assets/choud-logo-light.png">
+  <link rel="preload" href="assets/fonts/DepartureMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/site.css">
+  <script>
+    try {
+      var saved = localStorage.getItem("choud-theme");
+      if (saved === "ink" || saved === "paper") document.documentElement.dataset.theme = saved;
+    } catch (e) {}
+  </script>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./" aria-label="Choud home">
+      <img class="mark logo-light" src="assets/choud-logo-light.png" alt="" width="36" height="36">
+      <img class="mark logo-dark" src="assets/choud-logo-dark.png" alt="" width="36" height="36">
+      Choud
+    </a>
+    <nav class="top" aria-label="Sections">
+      <a class="opt" href="#storage">Storage</a>
+      <a class="opt" href="#perf">Performance</a>
+      <a class="opt" href="#security">Security</a>
+      <a href="#repo">Repo</a>
+      <a href="./">Short version</a>
+      <button class="flip" id="flip" type="button" aria-label="Switch between black-on-white and white-on-black">[ ink / paper ]</button>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap hero" style="padding-bottom:1rem">
+    <h1>How it is built.</h1>
+    <p class="lead">The long version, for people who want to read before they run. Everything here is in the repository, and every number links to where it was measured.</p>
+    <div class="row-btns">
+      <a class="btn solid" href="https://github.com/chinchoooo/Choud">Read the code</a>
+      <a class="btn" href="https://github.com/chinchoooo/Choud/blob/main/docs/architecture.md">Architecture doc</a>
+      <a class="btn" href="./">Short version</a>
+    </div>
+  </div>
+
+  <section id="arch">
+    <div class="wrap split">
+      <div>
+        <h2>Two halves. The one that touches your bytes never touches the network.</h2>
+        <p>A Python API owns accounts, permissions, versions, sharing and search. A C++ engine owns hashing, storage and deduplication. Only the API can talk to the engine, over an internal Docker network. Click a box.</p>
+        <div class="arch" role="group" aria-label="Architecture">
+          <button type="button" data-note="clients" aria-pressed="true">Browser · Android · Desktop</button>
+          <div class="edge">HTTP, over Tailscale or your home network</div>
+          <button type="button" data-note="caddy" aria-pressed="false">Caddy (the front door)</button>
+          <div class="edge">→</div>
+          <button type="button" data-note="api" aria-pressed="false">Python API (FastAPI)</button>
+          <div class="edge">↔ <button type="button" data-note="db" aria-pressed="false" style="display:inline;padding:0.1rem 0.5rem">PostgreSQL</button></div>
+          <div class="edge dashed">internal network only</div>
+          <button type="button" data-note="engine" aria-pressed="false">C++ engine</button>
+          <div class="edge">→</div>
+          <button type="button" data-note="disk" aria-pressed="false">Your disk</button>
+        </div>
+      </div>
+      <div>
+        <div class="arch-note" id="arch-note" aria-live="polite">
+          <h3>Browser, Android app, desktop client</h3>
+          <p>Talk only to the API, over Tailscale or your home network. They never reach the engine or the database.</p>
+        </div>
+        <p class="caption">Code: <a href="https://github.com/chinchoooo/Choud/tree/main/server">server/</a> (FastAPI) · <a href="https://github.com/chinchoooo/Choud/tree/main/engine">engine/</a> (C++17) · <a href="https://github.com/chinchoooo/Choud/tree/main/web">web/</a> (React) · <a href="https://github.com/chinchoooo/Choud/tree/main/android">android/</a> (Kotlin) · <a href="https://github.com/chinchoooo/Choud/tree/main/client">client/</a> (Python)</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="storage">
+    <div class="wrap">
+      <h2>Storage: content-addressed, crash-safe, verified</h2>
+      <div class="split">
+        <div>
+          <ol class="steps">
+            <li><span><b>Name by content.</b> A file is stored at <code>objects/&lt;first two hex&gt;/&lt;sha256&gt;</code>. Same bytes under any name: one copy. Reference counting lives in PostgreSQL: an object is deleted only when nothing references it, by a trash purge or the opt-in garbage collector.</span></li>
+            <li><span><b>Write aside, flush, rename.</b> Bytes go to a unique temporary name, are flushed to the disk, renamed into place, and the folder entry is flushed. A power cut leaves the old state or the complete new one, never half.</span></li>
+            <li><span><b>Verify before trusting.</b> A put re-hashes the source before moving it (a wrong hash is refused and the source is left alone), and a get re-hashes the stored bytes, so silent disk damage is caught instead of served.</span></li>
+            <li><span><b>Confine paths.</b> The engine resolves every path (<code>..</code> and symlinks included) and refuses anything outside the storage root, and anything inside <code>objects/</code> unless it is a read.</span></li>
+          </ol>
+        </div>
+        <div>
+          <h3>How it is tested</h3>
+          <ul class="plain">
+            <li><b>91 engine tests.</b> They include forked processes killed (<code>_exit</code>) at named points mid-write, simulated full-disk failures, and 16 writers of the same object at once.</li>
+            <li><b>Sanitizers.</b> The engine suite also passes under AddressSanitizer, UndefinedBehaviorSanitizer and ThreadSanitizer.</li>
+            <li><b>Fuzzing.</b> A libFuzzer target feeds the JSON parser and path confinement; 660,000 executions ran clean.</li>
+            <li><b>384 server tests</b> on SQLite by default, and the whole suite can run against a real PostgreSQL (<code>TEST_DATABASE_URL</code>), using a fake engine that mirrors the real one.</li>
+          </ul>
+          <p class="small muted">The engine's request parser is a strict flat-object JSON reader (it rejects nesting, duplicate keys, bad escapes and trailing garbage). It handles up to 32 connections at once with a read timeout. <a href="https://github.com/chinchoooo/Choud/blob/main/docs/storage.md">docs/storage.md</a></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="perf">
+    <div class="wrap">
+      <h2>Performance, with the method</h2>
+      <p>The benchmark script reproduces the line speeds from Gizmodo's and Cloudwards' published Google Drive tests with a token-bucket paced client, and reports the share of the line each transfer used. It runs on the server itself over <code>localhost</code>.</p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Test (line speed)</th><th>Drive, published</th><th>Choud, first run</th><th>Choud, after fixes</th></tr></thead>
+          <tbody>
+            <tr><td>500 MB up, 19.69 Mbps</td><td class="num">3:33 (95%)</td><td class="num">3:43 (90.7%)</td><td class="num">3:31 (96.3%)</td></tr>
+            <tr><td>500 MB down, 187.95 Mbps</td><td class="num">0:24 (89%)</td><td class="num">0:24 (85.6%)</td><td class="num">0:24 (87.8%)</td></tr>
+            <tr class="gap"><td>5 GB, 1,045 files, up, 100 Mbps</td><td class="num">7:15 (92%)</td><td class="num">8:54 (74.9%)</td><td class="num">7:57 (83.8%)</td></tr>
+            <tr><td>5 GB, 1,045 files, down, 100 Mbps</td><td class="num">7:18 (91%)</td><td class="num">6:41 (99.6%)</td><td class="num">7:01 (94.9%)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="split" style="margin-top:1.4rem">
+        <div>
+          <h3>What changed between the two Choud columns</h3>
+          <ul class="plain">
+            <li>The two upload endpoints were <code>async</code> but made blocking engine and database calls, so one upload waiting on the disk stalled every other request. The blocking work now runs in worker threads.</li>
+            <li>Clients send up to three 5 MiB chunks at once.</li>
+            <li>The engine no longer reads an uploaded file twice (the backend tells it the engine just hashed it).</li>
+            <li>Downloads use a hard link into staging instead of a full copy.</li>
+          </ul>
+          <p class="small muted">The 5 GB download came out slower on the second run with nothing slower in its path: one run each, so it is most likely noise, and it is reported rather than hidden.</p>
+        </div>
+        <div>
+          <h3>API latency, server-side (first run, before the fixes)</h3>
+          <div class="scroll">
+            <table style="min-width:0">
+              <thead><tr><th>Call</th><th>p50</th><th>p95</th></tr></thead>
+              <tbody>
+                <tr><td>health check</td><td class="num">15.9 ms</td><td class="num">30.7 ms</td></tr>
+                <tr><td>upload 100 KB</td><td class="num">66.9 ms</td><td class="num">89.5 ms</td></tr>
+                <tr><td>list ~500 files</td><td class="num">133 ms</td><td class="num">217 ms</td></tr>
+                <tr><td>search by name</td><td class="num">23.3 ms</td><td class="num">36.3 ms</td></tr>
+                <tr><td>library index, unchanged (304)</td><td class="num">13.1 ms</td><td class="num">15.8 ms</td></tr>
+                <tr><td>24 thumbnails, 24 requests</td><td class="num">151 ms</td><td class="num">167 ms</td></tr>
+                <tr><td>24 thumbnails, one batch</td><td class="num">14.9 ms</td><td class="num">21.9 ms</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <p>Why the thousand-small-files upload is slower than Drive: each small upload costs about 65 ms of server work, including the flush to disk that makes it crash-safe. That is a deliberate trade.</p>
+      <p class="caption">Choud: one run each on the author's home server (Linux Mint, 4 CPUs, v0.5.1), client on the same machine. Drive: Gizmodo's and Cloudwards' published runs, each on its own network. Indicative, not a verdict. Repeat it yourself:</p>
+      <div class="codewrap">
+<pre id="bench">python3 -m venv /tmp/bench &amp;&amp; /tmp/bench/bin/pip install httpx pillow
+CHOUD_PASSWORD=... /tmp/bench/bin/python scripts/benchmark.py --url http://localhost --email you@example.com all</pre>
+        <button class="copy" type="button" data-copy="bench">copy</button>
+      </div>
+      <p class="small muted" style="margin-top:0.8rem"><a href="https://github.com/chinchoooo/Choud/blob/main/docs/benchmarks.md">docs/benchmarks.md</a> has every table and source, and <a href="https://github.com/chinchoooo/Choud/tree/main/docs/benchmark-results">the raw output</a> is kept as evidence.</p>
+    </div>
+  </section>
+
+  <section id="security">
+    <div class="wrap split">
+      <div>
+        <h2>Security model</h2>
+        <ul class="plain">
+          <li><b>Two doors.</b> The private door serves the app and the API. A second door serves only <code>/s/*</code> share links, and a header it stamps is stripped on the private door. A kill switch pauses every public link at once.</li>
+          <li><b>Passwords and tokens.</b> Argon2id hashes, short-lived access tokens with refresh tokens, optional TOTP two-factor login. The share-unlock cookie is signed with a key derived (HKDF) from the JWT secret, never the secret itself.</li>
+          <li><b>Rate limits</b> on login, registration, refresh, uploads, downloads, search, thumbnails, share views and unlock attempts, per client IP.</li>
+          <li><b>Request guards.</b> A body-size limit (413 before the body is read), security headers, <code>no-store</code> on auth responses, and CORS off unless you list origins.</li>
+          <li><b>Vault.</b> Sealed in the browser: the server stores ciphertext, and still sees how many sealed files there are, their sizes and dates.</li>
+          <li><b>Secrets.</b> <code>scripts/setup.sh</code> generates strong random ones; production refuses to start with placeholders.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>What it has not had</h3>
+        <ul class="plain">
+          <li>No independent security audit.</li>
+          <li>No weeks of use on many real phones.</li>
+          <li>No multi-machine or multi-tenant hardening: it is built for one household on one machine.</li>
+        </ul>
+        <p class="small muted">Found something? Report it privately: <a href="https://github.com/chinchoooo/Choud/blob/main/SECURITY.md">SECURITY.md</a>. Details: <a href="https://github.com/chinchoooo/Choud/blob/main/docs/security.md">docs/security.md</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="repo">
+    <div class="wrap split">
+      <div>
+        <h2>The repo, in one screen</h2>
+<pre>server/    FastAPI app, migrations, tests
+engine/    C++17 storage engine, tests, fuzz target
+web/       React + TypeScript web app
+android/   Kotlin app (views built in code)
+client/    Python desktop sync client
+scripts/   setup, deploy, backup, restore, benchmark
+docs/      architecture, storage, security, api, deployment
+site/      this website (plain HTML, CSS, JS)</pre>
+        <p style="margin-top:1rem" class="small muted">Run it for real: <code>scripts/setup.sh</code> then <code>scripts/deploy.sh</code>. Develop on it: <code>make dev</code>, then open <code>http://localhost:8080</code>. Verify: <code>make test</code>, <code>make engine-test</code>, <code>make lint</code>.</p>
+      </div>
+      <div>
+        <h3>Read next</h3>
+        <ul class="plain">
+          <li><a href="https://github.com/chinchoooo/Choud/blob/main/docs/guide.md">The guide</a></li>
+          <li><a href="https://github.com/chinchoooo/Choud/blob/main/docs/architecture.md">Architecture and non-goals</a></li>
+          <li><a href="https://github.com/chinchoooo/Choud/blob/main/docs/api.md">HTTP API reference</a></li>
+          <li><a href="https://github.com/chinchoooo/Choud/blob/main/docs/synchronization.md">How desktop sync resolves conflicts</a></li>
+          <li><a href="https://github.com/chinchoooo/Choud/blob/main/CONTRIBUTING.md">Contributing</a> and the <a href="https://github.com/chinchoooo/Choud/blob/main/docs/roadmap.md">roadmap</a></li>
+        </ul>
+        <h3 style="margin-top:1.4rem">Questions</h3>
+        <details><summary>Will it run on Windows or a Mac?</summary><p>To try it, yes: <code>make dev</code> with Docker Desktop. To keep your files, use Linux: Docker Desktop's virtual disk makes every write slow.</p></details>
+        <details><summary>Can I reach it away from home?</summary><p>Over Tailscale. Public share links work from anywhere with <code>scripts/enable-public-links.sh</code>, through the second door.</p></details>
+        <details><summary>What if the disk dies?</summary><p>Nightly verified backups with restore scripts. Point them at a second disk or machine.</p></details>
+        <details><summary>Can I import from Google Drive?</summary><p>No importer yet. Export with Google Takeout and upload the folder.</p></details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Choud · MIT · v0.5.1 · No analytics, no cookies, no third-party requests.</span>
+    <span><a href="./">Short version</a> · <a href="https://github.com/chinchoooo/Choud">GitHub</a> · <a href="https://github.com/chinchoooo/Choud/blob/main/SECURITY.md">Security</a> · <a href="https://github.com/chinchoooo/Choud/blob/main/CHANGELOG.md">Changelog</a></span>
+  </div>
+</footer>
+
+<script type="module" src="js/main.js"></script>
+<script type="module" src="js/dev.js"></script>
+</body>
+</html>
