@@ -25,3 +25,21 @@ cd scripts/site && npm i playwright@1.48.2 && node check.mjs http://localhost:80
 | Rented-drive column | Google's published terms and storage plans |
 
 When any of these change, change the page and this table together.
+
+## Screenshots
+
+Real crops of the app running on demo data, never mock-ups. To redo them for a new release:
+
+```
+# start the dev stack with open registration, in a throwaway database
+REGISTRATION_MODE=open docker compose --env-file .env.dev -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+pip install httpx pillow
+DEMO_EMAIL=demo1@example.com python scripts/site/seed_demo.py --url http://localhost:8080 --photos 17
+cd scripts/site && npm i playwright@1.48.2
+DEMO_EMAIL=demo1@example.com node shoot.mjs http://localhost:8080 ../../site/assets/shots
+```
+
+Then convert to WebP (about 1600 px wide, under 120 KB each) and name them `v<version>-<name>.webp`.
+`seed_demo.py` fetches public-domain NASA images into `scripts/site/nasa-cache/`; the filter skips images that
+mention people, but **look at every picture before publishing** (an earlier run let a lab photo through). Use a
+fresh `DEMO_EMAIL` each run so uploads do not merge into an old demo account.

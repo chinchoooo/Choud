@@ -73,3 +73,9 @@ Self-hosted so the site makes no third-party requests. All are under the SIL Ope
 
 - **Departure Mono**, by Helena Zhang (<https://departuremono.com>). Licence text: `site/assets/fonts/DepartureMono-LICENSE.txt`.
 - **IBM Plex Sans** and **IBM Plex Mono**, by IBM (<https://github.com/IBM/plex>), taken from the `@fontsource` packages.
+
+## Website screenshots (`site/assets/shots/`)
+
+The photos inside the screenshots are public-domain images from NASA (<https://images.nasa.gov>; NASA media are
+generally not copyrighted), re-saved without metadata. `scripts/site/seed_demo.py` fetches them and
+`scripts/site/shoot.mjs` captures the screenshots from a throwaway dev server.
