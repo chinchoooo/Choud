@@ -40,7 +40,7 @@ async function shot(page, route, name, wait = 2500) {
 
 // desktop, black on white (the two retro themes are the app's signature look)
 {
-  const { ctx, page } = await session("retro-paper", 1440, 900, 2);
+  const { ctx, page } = await session("retro-paper", 1000, 640, 2);
   await shot(page, "/photos", "photos-paper", 4500);
   await page.goto(base + "/files");
   await page.getByText("Documents", { exact: true }).first().click();
@@ -54,7 +54,7 @@ async function shot(page, route, name, wait = 2500) {
 }
 // desktop, white on black
 {
-  const { ctx, page } = await session("retro", 1440, 900, 2);
+  const { ctx, page } = await session("retro", 1000, 640, 2);
   await shot(page, "/photos", "photos-ink", 4500);
   await ctx.close();
 }
@@ -68,6 +68,11 @@ async function shot(page, route, name, wait = 2500) {
 {
   const { ctx, page } = await session("retro-paper", 390, 844, 3);
   await shot(page, "/photos", "photos-phone", 4500);
+  await ctx.close();
+}
+{
+  const { ctx, page } = await session("retro", 390, 844, 3);
+  await shot(page, "/photos", "photos-phone-ink", 4500);
   await ctx.close();
 }
 

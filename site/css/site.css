@@ -1127,3 +1127,63 @@ footer .wrap {
 .chapter.solo p {
   max-width: 62ch;
 }
+
+/* screenshots: the desktop shot gets the whole column, the phone overlaps its corner */
+
+.shots-photos {
+  display: block;
+  position: relative;
+  padding-bottom: 2.2rem;
+  margin-right: 1.2rem;
+}
+
+.shots-photos .frame {
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.shots-photos .phone {
+  position: absolute;
+  right: -1.2rem;
+  bottom: 0;
+  width: min(30%, 170px);
+  border-width: 5px;
+  border-radius: 16px;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+@media (max-width: 560px) {
+  .shots-photos {
+    margin-right: 0.6rem;
+  }
+  .shots-photos .phone {
+    right: -0.6rem;
+    width: 34%;
+    border-width: 4px;
+    border-radius: 12px;
+  }
+}
+
+.phone .logo-dark {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="paper"]) .phone .logo-light {
+    display: none;
+  }
+  :root:not([data-theme="paper"]) .phone .logo-dark {
+    display: block;
+  }
+}
+
+:root[data-theme="ink"] .phone .logo-light {
+  display: none;
+}
+
+:root[data-theme="ink"] .phone .logo-dark {
+  display: block;
+}
+
+:root[data-theme="paper"] .phone .logo-dark {
+  display: none;
+}

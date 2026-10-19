@@ -34,10 +34,9 @@
       Choud
     </a>
     <nav class="top" aria-label="Sections">
-      <a class="opt" href="#store">How it works</a>
+      <a class="opt" href="#plug">Pull the plug</a>
       <a class="opt" href="#speed">Speed</a>
-      <a href="#self-host">Self-host</a>
-      <a class="opt" href="#download">Download</a>
+      <a href="#get">Get it</a>
       <a href="https://github.com/chinchoooo/Choud">GitHub</a>
       <button class="flip" id="flip" type="button" aria-label="Switch between black-on-white and white-on-black">[ ink / paper ]</button>
     </nav>
@@ -51,7 +50,7 @@
         <h1>Your own cloud. Your own server. Nobody else's.</h1>
         <p class="lead">Choud is a free, open-source Google Drive alternative you run on one spare Linux machine at home. Your phone backs up its photos to it, your laptop syncs folders with it, and every byte stays on a disk you own.</p>
         <div class="row-btns">
-          <a class="btn solid" href="#self-host">Run your own</a>
+          <a class="btn solid" href="#get">Run your own</a>
           <a class="btn" href="https://github.com/chinchoooo/Choud/releases/latest">Android app</a>
           <a class="btn" href="https://github.com/chinchoooo/Choud">Read the code</a>
         </div>
@@ -103,31 +102,10 @@
     </div>
   </div>
 
-  <section id="store">
-    <div class="wrap split">
-      <div>
-        <h2>What just happened when you dropped that file</h2>
-        <p>That was the real naming rule from Choud's storage engine, run on your own device. Here is what the engine does for every file you give it:</p>
-        <ol class="steps">
-          <li><span>It names the file by its SHA-256 hash, a fingerprint of the bytes. The name is the content.</span></li>
-          <li><span>It files it under the first two characters, so no folder ever grows without end.</span></li>
-          <li><span>It writes to a temporary name, flushes the bytes to the disk, renames, then flushes the folder entry.</span></li>
-          <li><span>Same bytes under any name: stored once.</span></li>
-        </ol>
-        <p style="margin-top:1rem" class="muted">Downloads re-hash the stored bytes first, so a damaged file is caught instead of served.</p>
-      </div>
-      <div>
-        <h3>See step three go wrong</h3>
-        <p>Most storage trouble happens when the power dies halfway through saving. The next section lets you cut it.</p>
-        <a class="btn" href="#plug">Pull the plug ↓</a>
-      </div>
-    </div>
-  </section>
-
   <section id="plug" data-plug>
     <div class="wrap">
       <h2>Pull the plug</h2>
-      <p>Press the button, then pull the plug while the file is being written. Both disks lose power at the same instant.</p>
+      <p>Choud names every file by its fingerprint, writes it to a temporary name, flushes it to the disk, then renames it. Press the button, then cut the power mid-save and see why that order matters.</p>
       <div class="plug-grid">
         <div class="disk" id="disk-a">
           <h3>An app that saves over the old file</h3>
@@ -152,90 +130,37 @@
         <button class="btn solid" id="plug-btn" type="button">Start saving report.pdf</button>
         <button class="btn" id="plug-reset" type="button" hidden>Try again</button>
       </div>
-      <p class="caption">A simplified animation of the rule the engine follows. The real thing is tested by killing a process mid-write: <a href="https://github.com/chinchoooo/Choud/blob/main/engine/tests/durability_tests.cpp">durability_tests.cpp</a>.</p>
+      <p class="caption">A simplified animation of the engine's rule. The real thing is tested by killing a process mid-write: <a href="https://github.com/chinchoooo/Choud/blob/main/engine/tests/durability_tests.cpp">durability_tests.cpp</a>.</p>
     </div>
   </section>
 
-  <section id="built">
+  <section id="app">
     <div class="wrap split">
-      <div>
-        <h2>Two halves. The one that touches your bytes never touches the network.</h2>
-        <p>A Python API owns accounts, permissions, versions, sharing and search. A C++ engine owns hashing, storage and deduplication. Only the API can talk to the engine. Click a box.</p>
-        <div class="arch" role="group" aria-label="Architecture">
-          <button type="button" data-note="clients" aria-pressed="true">Browser · Android · Desktop</button>
-          <div class="edge">HTTP, over Tailscale or your home network</div>
-          <button type="button" data-note="caddy" aria-pressed="false">Caddy (the front door)</button>
-          <div class="edge">→</div>
-          <button type="button" data-note="api" aria-pressed="false">Python API (FastAPI)</button>
-          <div class="edge">↔ <button type="button" data-note="db" aria-pressed="false" style="display:inline;padding:0.1rem 0.5rem">PostgreSQL</button></div>
-          <div class="edge dashed">internal network only</div>
-          <button type="button" data-note="engine" aria-pressed="false">C++ engine</button>
-          <div class="edge">→</div>
-          <button type="button" data-note="disk" aria-pressed="false">Your disk</button>
-        </div>
+      <div class="shots-photos">
+        <figure class="frame"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
+          <img class="logo-light" src="assets/shots/v0.5.1-photos-paper.webp" alt="The Choud photo timeline: space photos grouped by month, in the app's black-and-white retro theme" width="1400" height="896" loading="lazy" decoding="async">
+          <img class="logo-dark" src="assets/shots/v0.5.1-photos-ink.webp" alt="The Choud photo timeline: space photos grouped by month, in the app's white-on-black retro theme" width="1400" height="896" loading="lazy" decoding="async"></figure>
+        <div class="phone">
+          <img class="logo-light" src="assets/shots/v0.5.1-photos-phone.webp" alt="The same photo timeline on a phone-width screen" width="480" height="1039" loading="lazy" decoding="async">
+          <img class="logo-dark" src="assets/shots/v0.5.1-photos-phone-ink.webp" alt="The same photo timeline on a phone-width screen, white on black" width="480" height="1039" loading="lazy" decoding="async"></div>
       </div>
       <div>
-        <div class="arch-note" id="arch-note" aria-live="polite">
-          <h3>Browser, Android app, desktop client</h3>
-          <p>Talk only to the API, over Tailscale or your home network. They never reach the engine or the database.</p>
-        </div>
-        <p class="caption">Code: <a href="https://github.com/chinchoooo/Choud/tree/main/server">server/</a> · <a href="https://github.com/chinchoooo/Choud/tree/main/engine">engine/</a> · <a href="https://github.com/chinchoooo/Choud/tree/main/web">web/</a> · <a href="https://github.com/chinchoooo/Choud/tree/main/android">android/</a> · <a href="https://github.com/chinchoooo/Choud/tree/main/client">client/</a></p>
+        <h2>A real app, not a folder of scripts</h2>
+        <ul class="plain">
+          <li><b>Photos</b> back up from your Android phone with their real dates, and the timeline stays quick on a slow link.</li>
+          <li><b>Search</b> finds words inside PDFs, Word files and code.</li>
+          <li><b>Versions and trash:</b> every overwrite is restorable, and Rewind puts a whole folder back to an earlier moment.</li>
+          <li><b>Share</b> by link, with an expiry and a password, and one switch to pause them all.</li>
+          <li><b>Vault, invites, two-factor login, nightly backups.</b></li>
+        </ul>
+        <p class="caption">Real screenshots on demo data (public-domain NASA images).</p>
       </div>
-    </div>
-  </section>
-
-  <section id="features">
-    <div class="wrap">
-      <h2>What it does for you</h2>
-      <div class="chapters">
-        <div class="chapter shot-first">
-          <div class="visual">
-            <div class="shots-photos">
-              <figure class="frame"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
-            <img class="logo-light" src="assets/shots/v0.5.1-photos-paper.webp" alt="The Choud photo timeline: space photos grouped by month, shown in the app's black-and-white retro theme" width="1600" height="1000" loading="lazy" decoding="async">
-            <img class="logo-dark" src="assets/shots/v0.5.1-photos-ink.webp" alt="The Choud photo timeline: space photos grouped by month, shown in the app's black-and-white retro theme" width="1600" height="1000" loading="lazy" decoding="async"></figure>
-              <div class="phone"><img src="assets/shots/v0.5.1-photos-phone.webp" alt="The same photo timeline on a phone-width screen" width="560" height="1212" loading="lazy" decoding="async"></div>
-            </div>
-          </div>
-          <div><h3>Photos</h3><p>The Android app backs up your camera roll in the background, keeping each photo's real date, and resumes if the connection drops. The timeline paints blurry placeholders first and fills in a screenful of thumbnails at a time, so it stays quick on a slow link.</p><p class="muted small">Shown: demo data (public-domain NASA images) in the app's retro theme.</p></div>
-        </div>
-        <div class="chapter">
-          <div><h3>Find and view</h3><p>Search by file name and by what is written inside documents: text, code, PDF, Word and OpenDocument. Images, video, audio, PDF and text open in built-in viewers, so you need no other app.</p></div>
-          <div class="visual">
-            <figure class="frame"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
-            <img src="assets/shots/v0.5.1-files-paper.webp" alt="The Files page listing a folder with a PDF and a text file, each with a size, date, star and download link" width="1600" height="622" loading="lazy" decoding="async"></figure>
-          </div>
-        </div>
-        <div class="chapter solo">
-          <div><h3>Never lose anything</h3><p>Every overwrite is a new version you can restore, and deleted files wait in a trash. Rewind puts any folder back the way it was at an earlier moment, with a preview first: an undo for ransomware and bad syncs.</p></div>
-        </div>
-        <div class="chapter shot-first">
-          <div class="visual">
-            <figure class="frame"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
-            <img src="assets/shots/v0.5.1-shares-paper.webp" alt="The shared links page showing one link with an expiry date, a password and a download count, with Copy link and Revoke buttons" width="1600" height="578" loading="lazy" decoding="async"></figure>
-          </div>
-          <div><h3>Share</h3><p>Links with an expiry and a password, view-only or "add and edit". File-request links let people send you files without seeing anything. The people you share with need no account, and one switch pauses every link at once.</p></div>
-        </div>
-        <div class="chapter solo">
-          <div><h3>Vault and people</h3><p>A vault sealed in your browser: the server never sees file contents or names, only how many sealed files there are, their sizes and when they were added. Invite family and friends with one-time codes; each gets their own storage and quota.</p></div>
-        </div>
-        <div class="chapter">
-          <div><h3>Four themes</h3><p>Two retro looks, black on white and white on black, plus an ordinary light and dark theme for people who prefer something plainer. Pick one in the sidebar; the choice follows you around the app.</p></div>
-          <div class="visual">
-            <figure class="frame"><div class="bar" aria-hidden="true"><i></i><i></i><i></i></div>
-            <img src="assets/shots/v0.5.1-photos-light.webp" alt="The same photo timeline in the app's ordinary light theme" width="1600" height="1000" loading="lazy" decoding="async"></figure>
-            <p class="caption" style="margin-top:1.1rem">The ordinary light theme.</p>
-          </div>
-        </div>
-      </div>
-      <p class="muted" style="margin-top:1rem">Also: a desktop client that mirrors a folder both ways with conflict copies and never a silent overwrite, optional two-factor login, nightly verified backups, and webhook alerts. All screenshots are the real app running on demo data.</p>
     </div>
   </section>
 
   <section id="speed">
     <div class="wrap">
       <h2>As fast as Drive on one big file. Slower on a thousand small ones.</h2>
-      <p>The benchmark script reproduces the line speeds from Gizmodo's and Cloudwards' published Google Drive tests and measures how much of the line each service uses.</p>
       <div class="scroll">
         <table>
           <thead><tr><th>Test</th><th>Google Drive (published)</th><th>Choud</th><th>Difference</th></tr></thead>
@@ -247,103 +172,53 @@
           </tbody>
         </table>
       </div>
-      <p style="margin-top:1rem">Why the slower row: Choud flushes every file to disk before it counts as saved, which is what keeps it intact through a power cut. It is a deliberate trade, and the next section's demo is the reason.</p>
-      <p>The photo grid is quick because a screen of 24 thumbnails is one request instead of 24: 151 ms the old way, 15 ms now, and 13 ms to find out nothing changed. Those two are measured on the server itself.</p>
-      <p class="caption">Choud: one run each, on the author's home server (Linux Mint, 4 CPUs, v0.5.1), with the client on the same machine and the line speeds simulated by scripts/benchmark.py. Google Drive: Gizmodo's (500 MB) and Cloudwards' (5 GB) published runs, each on its own network. Indicative, not a verdict. <a href="https://github.com/chinchoooo/Choud/blob/main/docs/benchmarks.md">Every number, and how to repeat it.</a></p>
+      <p style="margin-top:1rem">The slower row is the price of the demo above: every file is flushed to disk before it counts as saved. A screen of 24 thumbnails takes 15 ms as one request instead of 151 ms as 24.</p>
+      <p class="caption">Choud: one run each on the author's home server (Linux Mint, 4 CPUs, v0.5.1), client on the same machine, line speeds simulated by scripts/benchmark.py; the 15 ms and 151 ms figures are measured on the server itself. Drive: Gizmodo's (500 MB) and Cloudwards' (5 GB) published runs on their own networks. Indicative, not a verdict. <a href="https://github.com/chinchoooo/Choud/blob/main/docs/benchmarks.md">Every number, and how to repeat it.</a></p>
     </div>
   </section>
 
   <section id="landlord">
     <div class="wrap">
       <h2>The landlord problem</h2>
-      <p>Most cloud drives work the same way: your memories sit in someone else's building, and you pay rent to keep them there. It is a deal worth reading twice.</p>
       <div class="scroll">
         <table>
-          <thead><tr><th>The question</th><th>A rented cloud drive</th><th>Choud</th></tr></thead>
+          <thead><tr><th></th><th>A rented cloud drive</th><th>Choud</th></tr></thead>
           <tbody>
-            <tr><td>How much room do I get?</td><td>15 GB free, shared with your mail and photos. Then a monthly bill, for as long as you want your files.</td><td>Your whole disk. Buy a bigger one once.</td></tr>
-            <tr><td>Whose computer holds my files?</td><td>The company's servers.</td><td>The machine in your house.</td></tr>
-            <tr><td>Who can lock me out?</td><td>The company can suspend or close an account under its terms, and the files go with it.</td><td>Nobody but you. Your disk can still fail, so Choud makes nightly verified backups.</td></tr>
-            <tr><td>What if the product goes away?</td><td>That is the company's call, on its date.</td><td>It is your server and MIT-licensed code, so it keeps running.</td></tr>
-            <tr><td>What does it cost?</td><td>A subscription.</td><td>Nothing. You bring the hardware and the electricity.</td></tr>
+            <tr><td>Room</td><td>15 GB free, shared with your mail and photos. Then a monthly bill, for as long as you want your files.</td><td>Your whole disk.</td></tr>
+            <tr><td>Who can lock you out</td><td>The company can suspend or close an account under its terms, and the files go with it.</td><td>Nobody but you. Backups are nightly and verified.</td></tr>
+            <tr><td>Cost</td><td>A subscription.</td><td>Nothing but your hardware and electricity.</td></tr>
           </tbody>
         </table>
       </div>
-      <div class="stamp-row"><span class="stamp" id="stamp" aria-hidden="true">YOURS</span><p class="muted small">The middle column comes from Google's published terms and storage plans: check them at <a href="https://policies.google.com/terms">policies.google.com/terms</a>. Drive is a good product, and on speed Choud only matches it. The difference is who owns the building.</p></div>
+      <div class="stamp-row"><span class="stamp" id="stamp" aria-hidden="true">YOURS</span><p class="muted small">The middle column comes from Google's published terms and storage plans: <a href="https://policies.google.com/terms">policies.google.com/terms</a>. Drive is a good product, and on speed Choud only matches it. The difference is who owns the building.</p></div>
     </div>
   </section>
 
-  <section id="self-host">
+  <section id="get">
     <div class="wrap split">
       <div>
         <h2>One old laptop. Three commands.</h2>
-        <p>You need a Linux machine with Docker. Setup writes strong random secrets. Deploy checks the machine, builds, starts, and waits until everything reports healthy.</p>
         <div class="codewrap">
 <pre id="cmds">git clone https://github.com/chinchoooo/Choud &amp;&amp; cd Choud
 scripts/setup.sh     # strong random secrets in .env
 scripts/deploy.sh    # checks, builds, starts, waits until healthy</pre>
           <button class="copy" type="button" data-copy="cmds">copy</button>
         </div>
-        <p style="margin-top:1rem" class="small muted">For your phone away from home, add Tailscale. The full guide, with backups and public links, is in <a href="https://github.com/chinchoooo/Choud/blob/main/docs/deployment.md">docs/deployment.md</a>.</p>
+        <p style="margin-top:1rem" class="small muted">Needs Linux and Docker. Add Tailscale to reach it from your phone away from home. Full guide: <a href="https://github.com/chinchoooo/Choud/blob/main/docs/deployment.md">docs/deployment.md</a>.</p>
+        <div class="row-btns" style="margin-top:1rem">
+          <a class="btn solid" href="https://github.com/chinchoooo/Choud">Get the code</a>
+          <a class="btn" href="https://github.com/chinchoooo/Choud/releases/latest">Android app (.apk)</a>
+        </div>
       </div>
       <div>
-<pre aria-label="Health check output">$ scripts/healthcheck.sh
-{
-  "status": "healthy",
-  "database": "healthy",
-  "engine": "healthy",
-  "storage": "healthy"
-}</pre>
-      </div>
-    </div>
-  </section>
-
-  <section id="download">
-    <div class="wrap">
-      <h2>Get it</h2>
-      <div class="dl">
-        <div><b>Android</b><span>v0.5.1 APK (under 1 MB) from <a href="https://github.com/chinchoooo/Choud/releases/latest">GitHub releases</a>, with <code>SHA256SUMS.txt</code> to check it. Allow "install unknown apps" for your browser. It has had little time on real phones so far.</span></div>
-        <div><b>Desktop</b><span>A command-line sync client. Install it with <code>pip install -e client/</code> on Windows, macOS or Linux. It is not a point-and-click installer yet.</span></div>
-        <div><b>Web</b><span>Comes with your server, in any browser.</span></div>
-        <div><b>iPhone</b><span>No app. The web version runs in any modern browser, but it has not been tested much on iPhones.</span></div>
-      </div>
-    </div>
-  </section>
-
-  <section id="gaps">
-    <div class="wrap">
-      <h2>What it is not, yet</h2>
-      <ul class="plain">
-        <li>The Android app has had little time on a real phone, and there is no iOS app.</li>
-        <li>You can share by link only. Sharing with named accounts is not built.</li>
-        <li>The desktop client is command-line only, and there is no importer from Google Drive (use Google Takeout, then upload the folder).</li>
-        <li>It is built for one household on one machine, not for thousands of users.</li>
-        <li>It has not had an independent security audit. Report problems privately via <a href="https://github.com/chinchoooo/Choud/blob/main/SECURITY.md">SECURITY.md</a>.</li>
-      </ul>
-      <p class="muted">Plans and history: <a href="https://github.com/chinchoooo/Choud/blob/main/docs/roadmap.md">roadmap</a> and <a href="https://github.com/chinchoooo/Choud/blob/main/CHANGELOG.md">changelog</a>.</p>
-    </div>
-  </section>
-
-  <section id="read">
-    <div class="wrap split">
-      <div>
-        <h2>Read it in an afternoon</h2>
-        <p>Built by one person: a C++ storage engine, a Python API, a React web app, a Kotlin Android app and a Python sync client. The docs explain the reasoning, not only the commands.</p>
+        <h3>Honest gaps</h3>
         <ul class="plain">
-          <li><a href="https://github.com/chinchoooo/Choud/blob/main/docs/guide.md">The guide</a> and <a href="https://github.com/chinchoooo/Choud/blob/main/docs/architecture.md">architecture</a></li>
-          <li><a href="https://github.com/chinchoooo/Choud/blob/main/CONTRIBUTING.md">How to contribute</a></li>
-          <li><a href="https://github.com/chinchoooo/Choud/blob/main/docs/benchmarks.md">Benchmarks, with the raw output</a></li>
+          <li>The Android app has had little time on real phones, and there is no iOS app.</li>
+          <li>The desktop client is command-line only.</li>
+          <li>Sharing is by link only. One household, one machine.</li>
+          <li>No independent security audit yet. <a href="https://github.com/chinchoooo/Choud/blob/main/SECURITY.md">Report problems privately.</a></li>
         </ul>
-        <p class="small muted">More of my work: <a href="https://chinchoooo.github.io/">chinchoooo.github.io</a>.</p>
-      </div>
-      <div>
-        <h3>Questions</h3>
-        <details><summary>Is it free?</summary><p>Yes. It is MIT-licensed. You pay only for your own hardware and electricity.</p></details>
-        <details><summary>Can I reach it away from home?</summary><p>Yes, over Tailscale. Public share links work from anywhere with <code>scripts/enable-public-links.sh</code>, through a separate door that can only reach shared files.</p></details>
-        <details><summary>Will it run on Windows or a Mac?</summary><p>To try it, yes: <code>make dev</code> with Docker Desktop. To keep your files, use Linux. Docker Desktop's virtual disk makes every write slow.</p></details>
-        <details><summary>What if the disk dies?</summary><p>Choud makes nightly verified backups, with scripts to restore them. Point them at a second disk or machine.</p></details>
-        <details><summary>Is it secure?</summary><p>It has optional two-factor login, rate limiting, hash-checked uploads and a separate door for public links. It has not been independently audited.</p></details>
-        <details><summary>Can my family use it?</summary><p>Yes. Invite them with one-time codes; each person gets their own storage and quota.</p></details>
+        <p class="small muted">Two halves: a Python API for accounts and sharing, and a C++ engine that stores your bytes and is never reachable from the network. <a href="https://github.com/chinchoooo/Choud/blob/main/docs/architecture.md">How it fits together.</a></p>
       </div>
     </div>
   </section>
