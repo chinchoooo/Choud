@@ -12,6 +12,8 @@
 
 **Your own cloud. Your own server. Nobody else's.**
 
+**[Website](https://chinchoooo.github.io/Choud/)** · **[For developers](https://chinchoooo.github.io/Choud/dev.html)** · **[Android app](https://github.com/chinchoooo/Choud/releases/latest)**
+
 Choud is a self-hosted Google Drive alternative that runs on one spare Linux machine at home.
 Your files live on your disk, are stored once however many times they are uploaded, and are reachable
 from your phone and laptops over Tailscale or your home network. There are no subscriptions, no
